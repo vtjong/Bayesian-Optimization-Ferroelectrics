@@ -36,7 +36,8 @@ def init_df(files_exp):
     if len(end_files) < len(PV_files):
         row_names = [file.split("PV_",1)[1] for file in PV_files]
         row_names = [file[:file.rfind('.')] for file in row_names]
-        row_names = [file[:file.rfind('_after')] if "after" in file else file for file in row_names]
+        row_names = [file[:file.rfind('_after')] if "after" in file else 
+        file for file in row_names]
         n_devices = len(PV_files)
     else:
         n_devices = len(end_files)
