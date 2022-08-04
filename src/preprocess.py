@@ -70,7 +70,7 @@ def read_PV(df, file):
     data = np.array(PV_df)
 
     # Normalize data
-    data[:,1] /= devicelength**2*10**14 #um to cm
+    data[:,1] /= devicelength**2*10**(-14) #um to cm
 
     # Shift data
     max, min = np.amax(data,axis=0)[1],np.amin(data,axis=0)[1]
@@ -124,7 +124,7 @@ def main(dir, num_subdirs=23):
     main(dir, num_subdirs=23) operates as the main caller function to read in 
     all raw data in various subdirectories and write out processed df data.
     """
-    for idx in range(10, num_subdirs+1):
+    for idx in range(1, num_subdirs+1):
         df = read_file(dir, idx)
         df.to_csv(dir[:dir.rfind("/")] + "/processed/"+ str(idx)+ ".csv") 
 
