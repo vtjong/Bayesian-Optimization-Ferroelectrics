@@ -3,6 +3,87 @@ import sys
 import pandas as pd
 import numpy as np
 
+def get_devicelen(device): return int(device[:device.find('um')])
+
+def scale_pr(device, pr): return pr/(get_devicelen(device)**2*10**(-14))
+
+def get_dev(type, file):
+    """
+    get_dev(type, file) finds the device names given [file] and type of 
+    file [type].
+    """
+    file = file.split(type,1)[1]
+    file = file[:file.rfind('.')]
+    if file.rfind('_after') != -1:
+        file = file[:file.rfind('_after')]
+    return file
+
+def process_PV(df, file):
+    """
+    process_PV(df, file) calculates the Pr, Vc, and Imprint values for a 
+    given [file] and returns an updated dataframe. 
+    """
+    device = get_dev("PV_", file)  
+    dev_row = df[df["device"] == device].index.to_numpy()[0]
+    try: 
+        PV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Charge'])
+    except:
+        print("No Append2")
+        return df
+    data = np.array(PV_df)
+
+    # Normalize data
+    data[:,1] /= get_devicelen(device)**2*10**(-14) #um to cm
+
+    # Shift data
+    max, min = np.amax(data,axis=0)[1],np.amin(data,axis=0)[1]
+    data[:,1] -= np.mean((max, min))
+
+    # Find Pr, Vc and imprint for (P-V)
+    Pr = data[np.argwhere(data[300:,0] < 0)[0]+300,1][0]
+    Vc_neg = data[np.argwhere(data[300:,1] < 0)[0]+300,0][0]
+    Vc_pos = data[np.argwhere(data[50:,1] > 0)[0]+50,0][0]
+    Vc = np.mean((Vc_pos,-1*Vc_neg))
+    Imprint = np.mean((Vc_pos,Vc_neg))
+    
+    df.at[dev_row,"Pr (mC/cm^2)"] = Pr
+    df.at[dev_row,"Vc (P-V)"] = Vc
+    df.at[dev_row,"Imprint (P-V)"] = Imprint
+    return df
+
+def process_PUND(df, file):  
+    device = get_dev("PUND_", file)  
+    return df
+
+def process_endurance(df, file):
+    """
+    process_endurance(df, file) finds the endurance of a given [file] and returns
+    an updated dataframe. 
+    """
+    device = get_dev("endurance_", file)
+    dev_row = df[df["device"] == device].index.to_numpy()[0]
+    PV_df = pd.read_excel(file, usecols=['iteration','P','Qsw'])
+    data = np.array(PV_df)
+    # print(data)
+
+    # Find iteration before occurrence of breakdown
+    breakdown = np.argmax(data[:,1]>=1e-9)
+    df.at[dev_row,"endurance"] = data[breakdown -1][0] if breakdown!=0 else 0
+    
+    # Find max Pr (before break)
+    dat_bef_brk = data[:breakdown] if breakdown!=0 else data
+    Q_sw = np.amax(dat_bef_brk, axis=0)[2]
+    Pr_max = 0.5 * Q_sw
+    Pr_max /= get_devicelen(device)**2*10**(-14)
+    df.at[dev_row,"max Pr (mC/cm^2)"] = Pr_max
+
+    # Find Pr at 10^6 by applying polyfit & eval at 1e6
+    p = np.polyfit(dat_bef_brk[:,0], 0.5*dat_bef_brk[:,2], deg=2)
+    Pr_1e6 = 0.5 * np.polyval(p, 1e6)
+    Pr_1e6 /= get_devicelen(device)**2*10**(-14)
+    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = Pr_1e6
+    return df
+
 def read_file(dir, idx):
     """
     read_file(dir, idx) reads all files in subdirectory specified by [dir]
@@ -15,11 +96,11 @@ def read_file(dir, idx):
 
     for filename in files_exp:
         if 'PUND' in filename:
-            df = read_PUND(df, filename)
+            df = process_PUND(df, filename)
         elif 'PV' in filename:
-            df = read_PV(df, filename)
+            df = process_PV(df, filename)
         elif 'endurance' in filename:
-            df = read_endurance(df, filename)
+            df = process_endurance(df, filename)
     return df
 
 def init_df(files_exp):
@@ -51,82 +132,6 @@ def init_df(files_exp):
     df = pd.DataFrame(dat, columns=col_names)
     df['device'] = row_names
     return df
-
-def read_PV(df, file):
-    """
-    read_PV(df, file) calculates the Pr, Vc, and Imprint values for a 
-    given [file] and returns an updated dataframe. 
-    """
-    device = get_dev("PV_", file)  
-    dev_row = df[df["device"] == device].index.to_numpy()[0]
-    devicelength = int(device[:device.find('um')])
-    try: 
-        PV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Charge'])
-    except:
-        print("No Append2")
-        return df
-    data = np.array(PV_df)
-
-    # Normalize data
-    data[:,1] /= devicelength**2*10**(-14) #um to cm
-
-    # Shift data
-    max, min = np.amax(data,axis=0)[1],np.amin(data,axis=0)[1]
-    data[:,1] -= np.mean((max, min))
-
-    # Find Pr, Vc and imprint for (P-V)
-    Pr = data[np.argwhere(data[300:,0] < 0)[0]+300,1][0]
-    Vc_neg = data[np.argwhere(data[300:,1] < 0)[0]+300,0][0]
-    Vc_pos = data[np.argwhere(data[50:,1] > 0)[0]+50,0][0]
-    Vc = np.mean((Vc_pos,-1*Vc_neg))
-    Imprint = np.mean((Vc_pos,Vc_neg))
-    
-    df.at[dev_row,"Pr (mC/cm^2)"] = Pr
-    df.at[dev_row,"Vc (P-V)"] = Vc
-    df.at[dev_row,"Imprint (P-V)"] = Imprint
-    return df
-
-def read_PUND(df, file):  
-    device = get_dev("PUND_", file)  
-    return df
-
-def read_endurance(df, file):
-    """
-    read_endurance(df, file) finds the endurance of a given [file] and returns
-    an updated dataframe. 
-    """
-    device = get_dev("endurance_", file)
-    dev_row = df[df["device"] == device].index.to_numpy()[0]
-    PV_df = pd.read_excel(file, usecols=['iteration','P','Qsw'])
-    data = np.array(PV_df)
-    # print(data)
-
-    # Find iteration before occurrence of breakdown
-    breakdown = np.argmax(data[:,1]>=1e-9)
-    df.at[dev_row,"endurance"] = data[breakdown -1][0] if breakdown!=0 else 0
-    
-    # Find max Pr (before break)
-    dat_bef_brk = data[:breakdown] if breakdown!=0 else data
-    Q_sw = np.amax(dat_bef_brk, axis=0)[2]
-    Pr_max = 0.5 * Q_sw
-    df.at[dev_row,"max Pr (mC/cm^2)"] = Pr_max
-
-    # Find Pr at 10^6 by applying polyfit & eval at 1e6
-    p = np.polyfit(dat_bef_brk[:,0], 0.5*dat_bef_brk[:,2], deg=2)
-    Pr_1e6 = 0.5 * np.polyval(p, 1e6)
-    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = Pr_1e6
-    return df
-
-def get_dev(type, file):
-    """
-    get_dev(type, file) finds the device names given [file] and type of 
-    file [type].
-    """
-    file = file.split(type,1)[1]
-    file = file[:file.rfind('.')]
-    if file.rfind('_after') != -1:
-        file = file[:file.rfind('_after')]
-    return file
 
 def main(dir, num_subdirs=23):
     """
