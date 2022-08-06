@@ -29,8 +29,8 @@ def init_df(files_exp):
     """
     end_files = [file for file in files_exp if "endurance" in file]
     PV_files = [file for file in files_exp if "PV" in file]
-    print("num end", len(end_files))
-    print("num pv", len(PV_files))
+    # print("num end", len(end_files))
+    # print("num pv", len(PV_files))
 
     # If missing endurance files, use PV files to extract device names
     if len(end_files) < len(PV_files):
@@ -43,11 +43,11 @@ def init_df(files_exp):
         n_devices = len(end_files)
         row_names = [file.split("endurance_",1)[1] for file in end_files]
         row_names = [file[:file.rfind('.')] for file in row_names]
-    n_rows = 13
+    n_rows = 14
     dat = np.zeros((n_devices, n_rows))
-    col_names = ["device", "Pr", "Vc (P-V)", "Imprint (P-V)", "Vc (I-V)", 
-    "Imprint (I-V)", "endurance", "10^6 Pr", "10^6 Vc", "10^6 Imprint", 
-    "10^7 Pr", "10^7 Vc", "10^7 Imprint"] 
+    col_names = ["device", "Pr (mC/cm^2)", "Vc (P-V)", "Imprint (P-V)", "Vc (I-V)", 
+    "Imprint (I-V)", "endurance", "10^6 Pr (mC/cm^2)", "10^6 Vc", "10^6 Imprint", 
+    "10^7 Pr (mC/cm^2)", "10^7 Vc", "10^7 Imprint", "max Pr (mC/cm^2)"] 
     df = pd.DataFrame(dat, columns=col_names)
     df['device'] = row_names
     return df
@@ -58,8 +58,6 @@ def read_PV(df, file):
     given [file] and returns an updated dataframe. 
     """
     device = get_dev("PV_", file)  
-    print(device)
-    print(df)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     devicelength = int(device[:device.find('um')])
     try: 
@@ -83,7 +81,7 @@ def read_PV(df, file):
     Vc = np.mean((Vc_pos,-1*Vc_neg))
     Imprint = np.mean((Vc_pos,Vc_neg))
     
-    df.at[dev_row,"Pr"] = Pr
+    df.at[dev_row,"Pr (mC/cm^2)"] = Pr
     df.at[dev_row,"Vc (P-V)"] = Vc
     df.at[dev_row,"Imprint (P-V)"] = Imprint
     return df
@@ -99,13 +97,24 @@ def read_endurance(df, file):
     """
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
+    PV_df = pd.read_excel(file, usecols=['iteration','P','Qsw'])
+    data = np.array(PV_df)
+    # print(data)
 
     # Find iteration before occurrence of breakdown
-    PV_df = pd.read_excel(file, usecols=['iteration','P'])
-    data = np.array(PV_df)
-    if np.amax(data,axis=0)[1]>=1e-9:
-        iter_num = np.argmax(data,axis=0)[1]
-        df.at[dev_row,"endurance"] = data[iter_num -1][0]
+    breakdown = np.argmax(data[:,1]>=1e-9)
+    df.at[dev_row,"endurance"] = data[breakdown -1][0] if breakdown!=0 else 0
+    
+    # Find max Pr (before break)
+    dat_bef_brk = data[:breakdown] if breakdown!=0 else data
+    Q_sw = np.amax(dat_bef_brk, axis=0)[2]
+    Pr_max = 0.5 * Q_sw
+    df.at[dev_row,"max Pr (mC/cm^2)"] = Pr_max
+
+    # Find Pr at 10^6 by applying polyfit & eval at 1e6
+    p = np.polyfit(dat_bef_brk[:,0], 0.5*dat_bef_brk[:,2], deg=2)
+    Pr_1e6 = 0.5 * np.polyval(p, 1e6)
+    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = Pr_1e6
     return df
 
 def get_dev(type, file):

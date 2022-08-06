@@ -1,2 +1,2 @@
-,device,Pr,Vc (P-V),Imprint (P-V),Vc (I-V),Imprint (I-V),endurance,10^6 Pr,10^6 Vc,10^6 Imprint,10^7 Pr,10^7 Vc,10^7 Imprint
-0,30um_O_1D,-0.08015355585181727,0.012507525127148256,0.03509617508241151,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+,device,Pr (mC/cm^2),Vc (P-V),Imprint (P-V),Vc (I-V),Imprint (I-V),endurance,10^6 Pr (mC/cm^2),10^6 Vc,10^6 Imprint,10^7 Pr (mC/cm^2),10^7 Vc,10^7 Imprint,max Pr (mC/cm^2)
+0,30um_O_1D,-0.08015355585181727,0.012507525127148256,0.03509617508241151,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
