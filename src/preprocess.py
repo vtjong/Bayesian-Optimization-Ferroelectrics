@@ -31,8 +31,10 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     device = get_dev("PV_", file)  
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
-        PV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Charge'])
-        IV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Imeas'])
+        PV_df = pd.read_excel(file, sheet_name='Append2', 
+                            usecols=['Vforce','Charge'])
+        IV_df = pd.read_excel(file, sheet_name='Append2', 
+                            usecols=['Vforce','Imeas'])
     except:
         print("No Append2")
         return df
@@ -57,14 +59,6 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     df.at[dev_row,"Vc (P-V)"] = Vc
     df.at[dev_row,"Imprint (P-V)"] = Imprint
 
-    # Produce I-V plots
-    if print_flag_IV:
-        pv_neg = pv_data[np.argwhere(pv_data[:,0]==Vc_neg)[0][0]][1]
-        pv_neg_tup = (Vc_neg, pv_neg)
-        pv_pos = pv_data[np.argwhere(pv_data[:,0]==Vc_pos)[0][0]][1]
-        pv_pos_tup = (Vc_pos, pv_pos)
-        vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
-
     # Find Vc and imprint for I-V
     iv_filt = gf(iv_data[:,1],2)
     arg_vc_pos, arg_vc_neg = np.argmax(iv_filt), np.argmin(iv_filt)
@@ -73,7 +67,16 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     df.at[dev_row, "Vc (I-V)"] = np.mean((Vc_pos_iv, np.abs(Vc_neg_iv)))
     df.at[dev_row, "Imprint (I-V)"] = np.mean((Vc_pos_iv, Vc_neg_iv))
 
-    if print_flag_PV: 
+    # Produce P-V plots
+    if print_flag_PV:
+        pv_neg = pv_data[np.argwhere(pv_data[:,0]==Vc_neg)[0][0]][1]
+        pv_neg_tup = (Vc_neg, pv_neg)
+        pv_pos = pv_data[np.argwhere(pv_data[:,0]==Vc_pos)[0][0]][1]
+        pv_pos_tup = (Vc_pos, pv_pos)
+        vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
+
+    # Produce I-V plots
+    if print_flag_IV: 
         pos_tup, neg_tup = (Vc_pos_iv, Imeas_Vc_pos), (Vc_neg_iv, Imeas_Vc_neg)
         vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
     return df
