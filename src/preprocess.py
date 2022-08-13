@@ -21,7 +21,7 @@ def get_dev(type, file):
         file = file[:file.rfind('_after')]
     return file
 
-def process_PV(df, file, print_flag_IV=True, print_flag_PV=True):
+def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     """
     process_PV(df, file, print_flag_IV, print_flag_PV) calculates the 
     Pr, Vc, and Imprint values for the P-V and I-V loops for a given [file] 
