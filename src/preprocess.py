@@ -2,6 +2,10 @@ import os, glob
 import sys
 import pandas as pd
 import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
+from plotter import prettyplot, vis_iv, vis_pv
 
 def get_devicelen(device): return int(device[:device.find('um')])
 
@@ -18,37 +22,62 @@ def get_dev(type, file):
         file = file[:file.rfind('_after')]
     return file
 
-def process_PV(df, file):
+def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     """
-    process_PV(df, file) calculates the Pr, Vc, and Imprint values for a 
-    given [file] and returns an updated dataframe. 
+    process_PV(df, file, print_flag_IV, print_flag_PV) calculates the 
+    Pr, Vc, and Imprint values for the P-V and I-V loops for a given [file] 
+    and returns an updated dataframe; if print_flag = True, 
+    runs plot production code.
     """
     device = get_dev("PV_", file)  
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
         PV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Charge'])
+        IV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Imeas'])
     except:
         print("No Append2")
         return df
-    data = np.array(PV_df)
+    pv_data = np.array(PV_df)
+    iv_data = np.array(IV_df)
 
-    # Normalize data
-    data[:,1] /= get_devicelen(device)**2*10**(-14) #um to cm
-
-    # Shift data
-    max, min = np.amax(data,axis=0)[1],np.amin(data,axis=0)[1]
-    data[:,1] -= np.mean((max, min))
-
-    # Find Pr, Vc and imprint for (P-V)
-    Pr = data[np.argwhere(data[300:,0] < 0)[0]+300,1][0]
-    Vc_neg = data[np.argwhere(data[300:,1] < 0)[0]+300,0][0]
-    Vc_pos = data[np.argwhere(data[50:,1] > 0)[0]+50,0][0]
-    Vc = np.mean((Vc_pos,-1*Vc_neg))
-    Imprint = np.mean((Vc_pos,Vc_neg))
+    # Unit conversion
+    pv_data[:,1] = scale_pr(device, pv_data[:,1])
     
+    # Shift data
+    max, min = np.amax(pv_data,axis=0)[1],np.amin(pv_data,axis=0)[1]
+    pv_data[:,1] -= np.mean((max, min))
+
+    # Find Pr, Vc and imprint for P-V
+    dir_Δ = 300 # 300 marks data point of direction change
+    Pr = pv_data[np.argwhere(pv_data[dir_Δ:,0] < 0)[0]+dir_Δ,1][0]
+    Vc_neg = pv_data[np.argwhere(pv_data[dir_Δ:,1] < 0)[0]+dir_Δ,0][0]
+    Vc_pos = pv_data[np.argwhere(pv_data[50:,1] > 0)[0]+50,0][0]
+    Vc = np.mean((Vc_pos, np.abs(Vc_neg)))
+    Imprint = np.mean((Vc_pos,Vc_neg))
+
     df.at[dev_row,"Pr (mC/cm^2)"] = Pr
     df.at[dev_row,"Vc (P-V)"] = Vc
     df.at[dev_row,"Imprint (P-V)"] = Imprint
+
+    # Produce I-V plots
+    if print_flag_IV:
+        pv_neg = pv_data[np.argwhere(pv_data[:,0]==Vc_neg)[0][0]][1]
+        pv_neg_tup = (Vc_neg, pv_neg)
+        pv_pos = pv_data[np.argwhere(pv_data[:,0]==Vc_pos)[0][0]][1]
+        pv_pos_tup = (Vc_pos, pv_pos)
+        vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
+
+    # Find Vc and imprint for I-V
+    iv_filt = gaussian_filter1d(iv_data[:,1],2)
+    arg_vc_pos, arg_vc_neg = np.argmax(iv_filt), np.argmin(iv_filt)
+    Vc_pos_iv, Imeas_Vc_pos = iv_data[:,0][arg_vc_pos], iv_filt[arg_vc_pos]
+    Vc_neg_iv, Imeas_Vc_neg = iv_data[:,0][arg_vc_neg], iv_filt[arg_vc_neg]
+    df.at[dev_row, "Vc (I-V)"] = np.mean((Vc_pos_iv, np.abs(Vc_neg_iv)))
+    df.at[dev_row, "Imprint (I-V)"] = np.mean((Vc_pos_iv, Vc_neg_iv))
+
+    if print_flag_PV: 
+        pos_tup, neg_tup = (Vc_pos_iv, Imeas_Vc_pos), (Vc_neg_iv, Imeas_Vc_neg)
+        vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
     return df
 
 def process_PUND(df, file):  
@@ -141,5 +170,6 @@ def main(dir, num_subdirs=23):
         df.to_csv(dir[:dir.rfind("/")] + "/processed/"+ str(idx)+ ".csv") 
 
 # Update with file path on your local device 
+prettyplot()
 dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'
 main(dir)
