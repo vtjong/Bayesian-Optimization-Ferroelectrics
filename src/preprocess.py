@@ -151,7 +151,6 @@ def process_endurance(df, file):
         except:
             PV_df = pd.read_excel(file, sheet_name="Data", 
                                     usecols=['iteration','P','Qsw'])
-            return df
     
     data = np.array(PV_df)
 
