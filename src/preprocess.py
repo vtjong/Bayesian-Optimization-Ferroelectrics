@@ -140,8 +140,8 @@ def process_endurance(df, file):
     10^6 Pr, of a given endurance [file] and returns an updated dataframe.
     """
     device = get_dev("endurance_", file)
+    dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
-        dev_row = df[df["device"] == device].index.to_numpy()[0]
         PV_df = pd.read_excel(file, sheet_name="Append2", 
                                 usecols=['iteration','P','Qsw'])
     except:

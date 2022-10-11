@@ -4,7 +4,7 @@ import torch
 import gpytorch
 import wandb
 from model import GridGP
-from datasetmaker import dataset
+from archive.datasetmaker import dataset
 from acq_funcs import EI, PI, cust_acq, thompson
 
 ###### SWEEPS ########
@@ -14,9 +14,8 @@ config_defaults = {
     "lr": 0.1,
     "lscale_1": 5,
     "lscale_2": 10,
-    "lscale_3": None,
-    "lscale_4": None,
-    "dim": 2,
+    "lscale_3": 0.5,
+    "lscale_4": 1,
     "noise": 3.0
 }
 wandb.init(config=config_defaults)
@@ -32,11 +31,7 @@ def make_model(train_x, train_y, num_params, config):
     noises = config.noise * torch.ones(len(train_x))
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noises)
     model = GridGP(train_x, train_y, likelihood, kernel)
-    
-    if config.dim == 2:
-        lscale = [config.lscale_1, config.lscale_2]
-    elif config.dim == 4:
-        lscale = [config.lscale_1, config.lscale_2, config.lscale_3, config.lscale_4]
+    lscale = [config.lscale_1, config.lscale_2, config.lscale_3, config.lscale_4]
     model.covar_module.base_kernel.lengthscale = torch.tensor(lscale)
     return likelihood, model
 
@@ -53,7 +48,7 @@ def train(train_x, train_y, num_params, config):
         optimizer.zero_grad()
         output = model(train_x)
 
-        # backpropagate error
+        # backpropogate error
         wandb.define_metric("train loss", summary="min")
         loss = -mll(output, train_y)
         wandb.log({"train loss": loss.item()})
@@ -80,9 +75,9 @@ def eval(likelihood, model, test_x):
 
 def acq(obs, train_y, test_grid, n=30):
     # Evaluate acquisition functions on current predictions (observations)
-    bounds = [n for i in range(config.dim)]
-    nshape = tuple((n for i in range(config.dim)))
-
+    bounds = [1,1,1,1]
+    nshape = (n,n,n,n)
+    
     # Probability of Improvement
     PI_acq = PI(obs, bounds, train_y)
     PI_acq_shape = PI_acq.detach().numpy().reshape(nshape).T
@@ -105,12 +100,6 @@ def acq(obs, train_y, test_grid, n=30):
     print(test_grid[pi[1], 0], test_grid[pi[0], 1])
     print(test_grid[ucb[1], 0], test_grid[ucb[0], 1])
     print(test_grid[max_var[1], 0], test_grid[max_var[0], 1])
-    
-    pred_labels = obs.mean.view(n, n)
-    print(pred_labels[ei[0], ei[1]])
-    print(pred_labels[pi[0], pi[1]])
-    print(pred_labels[ucb[0], ucb[1]])
-    print(pred_labels[max_var[0], max_var[1]])
 
 def main():
     train_x, train_y, num_params, test_grid, test_x = dataset()

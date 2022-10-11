@@ -46,22 +46,15 @@ def make_dummy_data(dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectri
     fe_data = pd.read_csv(output_file_name, index_col=0)
     return fe_data
 
-def read_dat(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
-            src_file = "Data KHM010XX.xlsx", sheet= "3 cycles", out_file = "KHM010XX.csv"):
-    file = dir + src_file
-    fe_data = pd.read_excel(file, sheet_name=sheet, usecols=['voltage (V)',
-                                                    'time (ms)','2 Qsw/(U+|D|)'])
-    return fe_data
-
 def display_data(fe_data):
     """
     display_data(fe_data) creates a cross-section scatter plot of all combinations
     of the four input parameters and single output parameter.
     """
     # Plot each cross-section
-    fig = px.scatter_matrix(fe_data, dimensions=["voltage (V)", 
-    "time (ms)", "2 Qsw/(U+|D|)"])
-    fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
+    fig = px.scatter_matrix(fe_data, dimensions=["Flash voltage (kV)", 
+    "Flash time (msec)", "Duty Cycle", "Num Pulses", "Pr (uC/cm2), Pristine state"])
+    # fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
     fig.update_layout(height=1000)
     fig.show()
     
@@ -85,10 +78,12 @@ def datasetmaker(fe_data):
     """
     T_scaler = StandardScaler()
     # Filter training data 
-    mask = ~np.isnan(fe_data['2 Qsw/(U+|D|)'])
-    train_x = torch.Tensor(np.array([fe_data['voltage (V)'][mask].values, 
-                        fe_data['time (ms)'][mask].values])).T
-    train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|)'][mask].values)
+    mask = ~np.isnan(fe_data['Pr (uC/cm2), Pristine state'])
+    train_x = torch.Tensor(np.array([fe_data['Flash voltage (kV)'][mask].values, 
+                        fe_data['Flash time (msec)'][mask].values, 
+                        fe_data['Duty Cycle'][mask].values,
+                        fe_data['Num Pulses'][mask].values])).T
+    train_y = torch.Tensor(fe_data['Pr (uC/cm2), Pristine state'][mask].values)
     return train_x, train_y
 
 def grid_maker(train_x):
@@ -116,10 +111,9 @@ def dataset():
     """
     dataset() serves as main, to call the other utility functions.
     """
-    fe_data = read_dat()
+    fe_data = make_dummy_data()
     display_data(fe_data)
-    train_x, train_y = datasetmaker(fe_data)
+    train_x, train_y = filter(fe_data)
     num_params, test_grid, test_x = grid_maker(train_x)
     return train_x, train_y, num_params, test_grid, test_x
 
-dataset()
