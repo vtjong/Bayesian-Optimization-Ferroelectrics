@@ -6,18 +6,19 @@ import wandb
 from model import GridGP
 from datasetmaker import dataset
 from acq_funcs import EI, PI, cust_acq, thompson
+from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 1000,
+    "epochs": 10000,
     "kernel": "rbf",
     "lr": 0.1,
-    "lscale_1": 5,
-    "lscale_2": 10,
+    "lscale_1": 500,
+    "lscale_2": 200,
     "lscale_3": None,
     "lscale_4": None,
     "dim": 2,
-    "noise": 3.0
+    "noise": 4.0
 }
 wandb.init(config=config_defaults)
 config = wandb.config
@@ -78,10 +79,12 @@ def eval(likelihood, model, test_x):
         obs = likelihood(model(test_x), noise=(torch.ones(len(test_x))*5))
     return obs
 
-def acq(obs, train_y, test_grid, n=30):
+def get_bounds(n):
+    return [n for i in range(config.dim)]
+
+def acq(obs, train_y, test_grid, bounds):
     # Evaluate acquisition functions on current predictions (observations)
-    bounds = [n for i in range(config.dim)]
-    nshape = tuple((n for i in range(config.dim)))
+    nshape = tuple(bounds)
 
     # Probability of Improvement
     PI_acq = PI(obs, bounds, train_y)
@@ -91,32 +94,52 @@ def acq(obs, train_y, test_grid, n=30):
     EI_acq = EI(obs, bounds, train_y)
     EI_acq_shape = EI_acq.detach().numpy().reshape(nshape).T
 
+    # Custom Acquisition (something I was playing with)
+    ca_acq = cust_acq(obs, bounds, train_y)
+    ca_acq_shape = ca_acq.detach().numpy().reshape(nshape).T
+
+    # Thompson Acquisition function
+    th_acq = thompson(obs, bounds, train_y)
+    th_acq_shape = th_acq.detach().numpy().reshape(nshape).T
+
     ei = np.unravel_index(EI_acq_shape.argmax(), EI_acq_shape.shape)
     pi = np.unravel_index(PI_acq_shape.argmax(), PI_acq_shape.shape)
+    ca = np.unravel_index(ca_acq_shape.argmax(), ca_acq_shape.shape)
+    th = np.unravel_index(th_acq_shape.argmax(), th_acq_shape.shape)    
 
     pred_var = obs.variance.view(nshape).detach().numpy().T
+    pred_labels = obs.mean.view(nshape)
     lower, upper = obs.confidence_region()
     upper_surf = upper.detach().numpy().reshape(nshape).T
+    lower_surf = lower.detach().numpy().reshape(nshape).T
 
     ucb = np.unravel_index(upper_surf.argmax(), upper_surf.shape)
     max_var = np.unravel_index(pred_var.argmax(), pred_var.shape)
 
-    print(test_grid[ei[1], 0], test_grid[ei[0], 1])
-    print(test_grid[pi[1], 0], test_grid[pi[0], 1])
-    print(test_grid[ucb[1], 0], test_grid[ucb[0], 1])
-    print(test_grid[max_var[1], 0], test_grid[max_var[0], 1])
+    print("EI", test_grid[ei[1], 0], test_grid[ei[0], 1])
+    print("PI", test_grid[pi[1], 0], test_grid[pi[0], 1])
+    print("CA", test_grid[ca[1], 0], test_grid[ca[0], 1])
+    print("UCB", test_grid[ucb[1], 0], test_grid[ucb[0], 1])
+    print("TH", test_grid[th[1], 0], test_grid[th[0], 1])
+    print("Max_var", test_grid[max_var[1], 0], test_grid[max_var[0], 1])
     
-    pred_labels = obs.mean.view(n, n)
-    print(pred_labels[ei[0], ei[1]])
-    print(pred_labels[pi[0], pi[1]])
-    print(pred_labels[ucb[0], ucb[1]])
-    print(pred_labels[max_var[0], max_var[1]])
+    print("EI", pred_labels[ei[0], ei[1]])
+    print("PI", pred_labels[pi[0], pi[1]])
+    print("CA", pred_labels[ca[0], ca[1]])
+    print("UCB", pred_labels[ucb[0], ucb[1]])
+    print("TH", pred_labels[th[0], th[1]])
+    print("Max_var", pred_labels[max_var[0], max_var[1]])
+
+    return pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca
 
 def main():
     train_x, train_y, num_params, test_grid, test_x = dataset()
     likelihood, model = train(train_x, train_y, num_params, config)
     obs = eval(likelihood, model, test_x)
-    acq(obs, train_y, test_grid)
+    bounds = get_bounds(n=30)
+    vis_pred(train_x, train_y, test_grid, obs, tuple(bounds))
+    pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(obs, train_y, test_grid, bounds)
+    vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
     
 if __name__ == "__main__":
     main()
