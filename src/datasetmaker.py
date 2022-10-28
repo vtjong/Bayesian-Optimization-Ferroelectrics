@@ -51,12 +51,14 @@ def datasetmaker(fe_data):
     mask = ~np.isnan(fe_data['2 Qsw/(U+|D|)'])
     train_x = np.array([fe_data['voltage (V)'][mask].values, 
                         fe_data['time (ms)'][mask].values]).transpose()
-    train_x-= np.mean(train_x, axis=0)
-    train_x/= np.std(train_x, axis=0)    
+    
     column_mean = np.mean(train_x, axis=0)
+    column_sd = np.std(train_x, axis=0) 
+    train_x-= column_mean
+    train_x/= column_sd
     train_x = torch.Tensor(train_x)
     train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|)'][mask].values)
-    return train_x, train_y
+    return column_mean, column_sd, train_x, train_y
 
 def grid_maker(train_x):
     """
@@ -85,8 +87,8 @@ def dataset():
     """
     fe_data = read_dat()
     # display_data(fe_data)
-    train_x, train_y = datasetmaker(fe_data)
+    column_mean, column_sd, train_x, train_y = datasetmaker(fe_data)
     num_params, test_grid, test_x = grid_maker(train_x)
-    return train_x, train_y, num_params, test_grid, test_x
+    return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
 
 dataset()
