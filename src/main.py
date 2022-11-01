@@ -122,9 +122,6 @@ def acq(column_mean, column_sd, obs, train_y, test_grid, bounds):
     sd_0, sd_1 = column_sd[0], column_sd[1]
     mu_0, mu_1 = column_mean[0], column_mean[1]
 
-    test_grid[ei[1], 0]*column_sd[0] + column_mean[0]
-    test_grid[ei[1], 0]*column_sd[1] + column_mean[1]
-
     print("EI:", x_raw(test_grid[ei[1], 0], sd_0, mu_0), x_raw(test_grid[ei[1], 1], sd_1, mu_1))
     print("PI:", x_raw(test_grid[pi[1], 0], sd_0, mu_0), x_raw(test_grid[pi[1], 1], sd_1, mu_1))
     print("CA:", x_raw(test_grid[ca[1], 0], sd_0, mu_0), x_raw(test_grid[ca[1], 1], sd_1, mu_1))
@@ -146,9 +143,9 @@ def main():
     likelihood, model = train(train_x, train_y, num_params, config)
     obs = eval(likelihood, model, test_x)
     bounds = get_bounds(n=30)
-    vis_pred(train_x, train_y, test_grid, obs, tuple(bounds))
+    vis_pred(column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
     pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
-    vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
+    vis_acq(column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
     
 if __name__ == "__main__":
     main()
