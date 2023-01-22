@@ -11,16 +11,17 @@ from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 1000,
+    "epochs": 5000,
     "kernel": "rbf",
-    "lr": 0.01,
+    "lr": 0.001,
     "lscale_1": 1.0,
     "lscale_2": 1.0,
     "lscale_3": None,
     "lscale_4": None,
     "dim": 2,
-    "noise": 0.1
+    "noise": 0.11
 }
+
 wandb.init(config=config_defaults)
 config = wandb.config
 
@@ -31,8 +32,9 @@ def kernel_func(config_kernel, num_params):
 
 def make_model(train_x, train_y, num_params, config):
     kernel = kernel_func(config.kernel, num_params)
-    noises = config.noise * torch.ones(len(train_x))
-    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noises)
+    noise = config.noise * torch.ones(len(train_x))
+    print(noise)
+    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noise)
     model = GridGP(train_x, train_y, likelihood, kernel)
     
     if config.dim == 2:
@@ -143,9 +145,9 @@ def main():
     likelihood, model = train(train_x, train_y, num_params, config)
     obs = eval(likelihood, model, test_x)
     bounds = get_bounds(n=30)
-    vis_pred(column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
+    vis_pred(config.noise, column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
     pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
-    vis_acq(column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
+    vis_acq(config.noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
     
 if __name__ == "__main__":
     main()

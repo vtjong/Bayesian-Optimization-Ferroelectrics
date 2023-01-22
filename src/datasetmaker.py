@@ -9,11 +9,31 @@ import plotly.express as px
 sys.path.append('..')
 sys.path.insert(0, '../src')
 
-def read_dat(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
-            src_file = "Data KHM010XX.xlsx", sheet= "3 cycles", out_file = "KHM010XX.csv"):
+def read_dat(type, dir, src_file, sheets, out_file):
     file = dir + src_file
-    fe_data = pd.read_excel(file, sheet_name=sheet, usecols=['voltage (V)',
-                                                    'time (ms)','2 Qsw/(U+|D|)'])
+    cols = ['voltage (V)','time (ms)','2 Qsw/(U+|D|)'] if type == "volt" else ['Energy density old cone (J/cm^2)','Energy density new cone (J/cm^2)','time (μs)']
+
+
+def read_dat_dens(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
+            src_file = "Bolometer_readings_under_the_cone_new_old.xlsx", sheet= "3 cycles", 
+            out_file = "Bolometer_readings_under_the_cone_new_old.csv"):
+    """
+    read_dat_dens(dir, src_file, sheet, out_file) reads in data in [sheet]
+    to a pandas dataframe for energy density, time input parameters.
+    """
+    file = dir + src_file
+    cols = ['voltage (V)','time (s)','2 Qsw/(U+|D|)'] 
+
+
+def read_dat_volt(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
+            src_file = "Data KHM010XX.xlsx", sheet= "3 cycles", out_file = "KHM010XX.csv"):
+    """
+    read_dat_volt(dir, src_file, sheet, out_file) reads in data in [sheet]
+    to a pandas dataframe for voltage, time input parameters.
+    """
+    file = dir + src_file
+    cols = ['voltage (V)','time (ms)','2 Qsw/(U+|D|)'] 
+    fe_data = pd.read_excel(file, sheet_name=sheet, usecols=cols) 
     return fe_data
 
 def display_data(fe_data):
@@ -22,8 +42,8 @@ def display_data(fe_data):
     of the four input parameters and single output parameter.
     """
     # Plot each cross-section
-    fig = px.scatter_matrix(fe_data, dimensions=["voltage (V)", 
-    "time (ms)", "2 Qsw/(U+|D|)"])
+    fig = px.scatter_matrix(fe_data, dimensions=["voltage (V)", "time (ms)", 
+    "2 Qsw/(U+|D|)"])
     fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
     fig.update_layout(height=1000)
     fig.show()
@@ -86,9 +106,10 @@ def dataset():
     dataset() serves as main, to call the other utility functions.
     """
     fe_data = read_dat()
+    # print(fe_data)
     # display_data(fe_data)
-    column_mean, column_sd, train_x, train_y = datasetmaker(fe_data)
-    num_params, test_grid, test_x = grid_maker(train_x)
-    return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
+    # column_mean, column_sd, train_x, train_y = datasetmaker(fe_data)
+    # num_params, test_grid, test_x = grid_maker(train_x)
+    # return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
 
 dataset()

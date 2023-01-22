@@ -81,7 +81,7 @@ def vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device):
     plt.savefig(dir + "/IV/" + device + "_" + "IV-plot")    
     # plt.show()
 
-def vis_pred(column_mean, column_sd, train_x, train_y, test_grid, obs, nshape):
+def vis_pred(noise, column_mean, column_sd, train_x, train_y, test_grid, obs, nshape):
     pred_labels = obs.mean.view(nshape)
 
     # Get back real values from standardized version
@@ -112,9 +112,11 @@ def vis_pred(column_mean, column_sd, train_x, train_y, test_grid, obs, nshape):
     )
 
     fig.update_layout(scene_camera=camera)
+    dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
+    # plt.savefig(dir + "/noise= "+ str(noise) + ", fig1.png")   
     fig.show()
 
-def vis_acq(column_mean, column_sd, train_x, train_y, test_grid, pred_labels, 
+def vis_acq(noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, 
             upper_surf, lower_surf, ucb, th, pi, ei, ca):
     # Get back real values from standardized version
     x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
@@ -166,4 +168,6 @@ def vis_acq(column_mean, column_sd, train_x, train_y, test_grid, pred_labels,
                         yaxis_title="Pulse Width (msec)",
                         zaxis_title='2 Qsw/(U+|D|)')
                     )
+    dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
+    # plt.savefig(dir + "/noise= " + str(noise) + ", fig2.png")   
     fig.show()

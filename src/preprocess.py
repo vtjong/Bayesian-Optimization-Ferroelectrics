@@ -229,7 +229,7 @@ def main(dir, num_subdirs=23):
     """
     for idx in range(1, num_subdirs+1):
         df = read_file(dir, idx)
-        df.to_csv(dir[:dir.rfind("/")] + "/processed/"+ str(idx)+ ".csv") 
+        df.to_csv(dir[:dir.rfind("/")] + "/processed010/"+ str(idx)+ ".csv") 
 
 # Update with file path on your local device 
 prettyplot()
