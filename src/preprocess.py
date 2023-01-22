@@ -10,6 +10,8 @@ def get_devicelen(device): return int(device[:device.find('um')])
 
 def scale_pr(device, pr): return pr/(get_devicelen(device)**2*10**(-14))
 
+def calc_metric(qsw, u, d): return 2*qsw/(u + np.abs(d))
+
 def get_dev(type, file):
     """
     get_dev(type, file) finds the device names given [file] and type of 
@@ -86,22 +88,23 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
     process_PUND(df, file, sheet_name, print_flag_PUND) finds the Vc and Imprint 
     for max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
     """
-    if sheet_name == 'Data' and print_flag_PUND==False:
-        return df
+    # if sheet_name == 'Data' and print_flag_PUND==False:
+    #     return df
     
     device = get_dev("PUND_", file)  
     try: 
         dev_row = df[df["device"] == device].index.to_numpy()[0]
         PUND_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['t','V'])
         IV_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['t','I'])
-        Pr_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['Qsw'])
+        Pr_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['U','D','Qsw'])
     except:
         print("No Data")
         return df
 
     PUND_df, IV_df = PUND_df[['t','V']], IV_df[['t','I']]
     pund_data, iv_data = np.array(PUND_df), np.array(IV_df)
-    pr_data = np.array(Pr_df)[0]
+    pr_dat = np.array(Pr_df)[0]
+    u,d,qsw = pr_dat[0], pr_dat[1], pr_dat[-1]
 
     # Scale by ramp rate (alpha) + ratios of maxes for easy viewing
     t_data = pund_data[:,0] 
@@ -119,19 +122,24 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
     P_idx = np.argmax(iv_data[:,1][:int(len(iv_data)/4)])
     N_idx = np.argmin(iv_data[:,1][int(len(iv_data)/2):int(3*len(iv_data)/4)])
 
+    # Corresponds to 3 cycle files
+    if sheet_name == 'Data':
+        df.at[dev_row, "2 Qsw/(U+|D|)"] = calc_metric(qsw, u, d)
+
     # Corresponds to 10^6 cycle files
-    if sheet_name == 'Append1':
+    elif sheet_name == 'Append1':
         Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
         df.at[dev_row, "10^6 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
         df.at[dev_row, "10^6 Imprint"] = np.mean((Vc_pos, Vc_neg))
-        df.at[dev_row, "10^6 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, pr_data)
+        df.at[dev_row, "10^6 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
+        df.at[dev_row, "10^6 2 Qsw/(U+|D|)"] = calc_metric(qsw, u, d)
     
     # Corresponds to 10^7 cycle files
     elif sheet_name == 'Append2':
         Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
         df.at[dev_row, "10^7 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
         df.at[dev_row, "10^7 Imprint"] = np.mean((Vc_pos, Vc_neg))
-        df.at[dev_row, "10^7 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, pr_data)
+        df.at[dev_row, "10^7 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
     return df
 
 def process_endurance(df, file):
@@ -199,8 +207,6 @@ def init_df(files_exp):
     """
     end_files = [file for file in files_exp if "endurance" in file]
     PV_files = [file for file in files_exp if "PV" in file]
-    # print("num end", len(end_files))
-    # print("num pv", len(PV_files))
 
     # If missing endurance files, use PV files to extract device names
     if len(end_files) < len(PV_files):
@@ -213,25 +219,29 @@ def init_df(files_exp):
         n_devices = len(end_files)
         row_names = [file.split("endurance_",1)[1] for file in end_files]
         row_names = [file[:file.rfind('.')] for file in row_names]
-    n_rows = 14
+    n_rows = 16
     dat = np.zeros((n_devices, n_rows))
-    col_names = ["device", "Pr (mC/cm^2)", "Vc (P-V)", "Imprint (P-V)", "Vc (I-V)", 
-    "Imprint (I-V)", "endurance", "10^6 Pr (mC/cm^2)", "10^6 Vc", "10^6 Imprint", 
+    col_names = ["device", "Pr (mC/cm^2)", "2 Qsw/(U+|D|)", "Vc (P-V)", "Imprint (P-V)", "Vc (I-V)", 
+    "Imprint (I-V)", "endurance", "10^6 Pr (mC/cm^2)", "10^6 2 Qsw/(U+|D|)", "10^6 Vc", "10^6 Imprint", 
     "10^7 Pr (mC/cm^2)", "10^7 Vc", "10^7 Imprint", "max Pr (mC/cm^2)"] 
     df = pd.DataFrame(dat, columns=col_names)
     df['device'] = row_names
     return df
 
-def main(dir, num_subdirs=23):
+def main(dir, beam_flag, num_subdirs=23):
     """
-    main(dir, num_subdirs=23) operates as the main caller function to read in 
-    all raw data in various subdirectories and write out processed df data.
+    main(dir, beam_flag, num_subdirs=23) operates as the main caller function to 
+    read in all raw data in various subdirectories and write out processed df data.
+    If beam_flag is True, KHM010 files, if False, KHM090 files.  
     """
-    for idx in range(1, num_subdirs+1):
+    subdir = range(1, num_subdirs+1) if beam_flag else [14, 15, 16, 17, 20]
+    outdir = "/processed010/" if beam_flag else "/processed009/"
+
+    for idx in subdir:
         df = read_file(dir, idx)
-        df.to_csv(dir[:dir.rfind("/")] + "/processed010/"+ str(idx)+ ".csv") 
+        df.to_csv(dir[:dir.rfind("/")] + outdir + str(idx)+ ".csv") 
 
 # Update with file path on your local device 
 prettyplot()
-dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'
-main(dir)
+dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM009_'
+main(dir, False)
