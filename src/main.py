@@ -1,5 +1,6 @@
-import sys
+import sys, os
 import this
+from tkinter import Y
 import numpy as np
 import torch
 import gpytorch
@@ -11,7 +12,7 @@ from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 5000,
+    "epochs": 1000,
     "kernel": "rbf",
     "lr": 0.001,
     "lscale_1": 1.0,
