@@ -15,16 +15,6 @@ import numpy as np
 # n=30
 # print([n for i in range(2)])
 
-def addingOne(arr):
-    eArr = [] 
-    for i in arr:
-        eArr.append(i +1)
-    print (eArr)
-    return eArr
-
-def adding_one_shifu(arr):
-    eArr = [i+1 for i in arr] 
-    return eArr
-
-
-addingOne([1, 2])
+import re
+s1 = "thishasadigit4here"
+m = re.search(r"\d", s1).start()

@@ -1,4 +1,4 @@
-import sys, glob, os, re
+import sys, glob
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d as gf
@@ -6,9 +6,7 @@ from scipy.interpolate import UnivariateSpline as us
 from plotter import prettyplot, vis_iv, vis_pv, vis_pund
 import matplotlib.pyplot as plt
 
-def get_devicelen(device): 
-    idx = [x.isdigit() for x in device].index(True)
-    return int(device[idx:device.find('um')])
+def get_devicelen(device): return int(device[:device.find('um')])
 
 def scale_pr(device, pr): return pr/(get_devicelen(device)**2*10**(-14))
 
@@ -21,10 +19,6 @@ def get_dev(type, file):
     """
     file = file.split(type,1)[1]
     file = file[:file.rfind('.')]
-    idx = [x.isdigit() for x in file].index(True)
-    file = file[idx:]
-    if file.rfind('_endurance') != -1:
-        file = file[:file.rfind('_endurance')]
     if file.rfind('_after') != -1:
         file = file[:file.rfind('_after')]
     return file
@@ -37,7 +31,6 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     runs plot production code.
     """
     device = get_dev("PV_", file)  
-    print(device)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
         PV_df = pd.read_excel(file, sheet_name='Append2', 
@@ -157,19 +150,15 @@ def process_endurance(df, file):
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
-        PV_df = pd.read_excel(file, sheet_name="Append3", 
+        PV_df = pd.read_excel(file, sheet_name="Append2", 
                                 usecols=['iteration','P','Qsw'])
     except:
         try: 
-            PV_df = pd.read_excel(file, sheet_name="Append2", 
+            PV_df = pd.read_excel(file, sheet_name="Append1", 
                                     usecols=['iteration','P','Qsw'])
         except:
-            try: 
-                PV_df = pd.read_excel(file, sheet_name="Append1", 
-                                        usecols=['iteration','P','Qsw'])
-            except:
-                PV_df = pd.read_excel(file, sheet_name="Data", 
-                                        usecols=['iteration','P','Qsw'])
+            PV_df = pd.read_excel(file, sheet_name="Data", 
+                                    usecols=['iteration','P','Qsw'])
     
     data = np.array(PV_df)
 
@@ -194,7 +183,6 @@ def read_file(dir, idx):
     subdir = dir + str(idx)
     files = subdir + '/*.xls'
     files_exp = glob.glob(files, recursive = True)
-    # files_exp = file_combine(files_exp)
     df = init_df(files_exp)
 
     for filename in files_exp:
@@ -217,14 +205,13 @@ def init_df(files_exp):
     init_df(files_exp) initializes a dataframe with all device names in current
     subdirectory whose filenames are in [files_exp].  
     """
-    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
+    end_files = [file for file in files_exp if "endurance" in file]
     PV_files = [file for file in files_exp if "PV" in file]
 
     # If missing endurance files, use PV files to extract device names
     if len(end_files) < len(PV_files):
         row_names = [file.split("PV_",1)[1] for file in PV_files]
         row_names = [file[:file.rfind('.')] for file in row_names]
-        row_names = [file[re.search(r"\d", file).start():] for file in row_names]
         row_names = [file[:file.rfind('_after')] if "after" in file else 
         file for file in row_names]
         n_devices = len(PV_files)
@@ -241,21 +228,20 @@ def init_df(files_exp):
     df['device'] = row_names
     return df
 
-def main(dir, samp_ID, subdir_arr):
+def main(dir, beam_flag, num_subdirs=23):
     """
-    main(dir, subID, subdir_arr) operates as the main caller function to 
+    main(dir, beam_flag, num_subdirs=23) operates as the main caller function to 
     read in all raw data in various subdirectories and write out processed df data.
+    If beam_flag is True, KHM010 files, if False, KHM090 files.  
     """
-    subdir = range(1, subdir_arr[0]+1) if len(subdir_arr) == 1 else subdir_arr
-    outdir = "/processed" + samp_ID + "_1"
-    out_dir = dir[:dir.rfind("/")] + outdir 
-    if not os.path.exists(out_dir): os.mkdir(out_dir)
+    subdir = range(1, num_subdirs+1) if beam_flag else [14, 15, 16, 17, 20]
+    outdir = "/processed006/" if beam_flag else "/processed009/"
 
     for idx in subdir:
         df = read_file(dir, idx)
-        df.to_csv(out_dir +  "/" + str(idx)+ ".csv") 
+        df.to_csv(dir[:dir.rfind("/")] + outdir + str(idx)+ ".csv") 
 
 # Update with file path on your local device 
 prettyplot()
 dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM006_'
-main(dir, "006", [2])
+main(dir, True)
