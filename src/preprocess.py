@@ -243,5 +243,5 @@ def main(dir, beam_flag, num_subdirs=23):
 
 # Update with file path on your local device 
 prettyplot()
-dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM009_'
-main(dir, False)
+dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'
+main(dir, True)
