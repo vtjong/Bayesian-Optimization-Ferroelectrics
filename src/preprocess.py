@@ -1,4 +1,4 @@
-import sys, glob, os, re
+import sys, glob, os, re, shutil
 import xlwings as xw
 import pandas as pd
 import numpy as np
@@ -6,6 +6,10 @@ from scipy.ndimage import gaussian_filter1d as gf
 from scipy.interpolate import UnivariateSpline as us
 from plotter import prettyplot, vis_iv, vis_pv, vis_pund
 import matplotlib.pyplot as plt
+
+def df_try_except(success, param, *exceptions):
+    try: return success(param)
+    except exceptions or Exception: return pd.DataFrame()
 
 def get_devicelen(device): 
     idx = [x.isdigit() for x in device].index(True)
@@ -28,10 +32,6 @@ def get_dev(type, file):
     if file.rfind('_after') != -1: file = file[:file.rfind('_after')]
     return file
 
-def df_try_except(success, param, *exceptions):
-    try: return success(param)
-    except exceptions or Exception: return pd.DataFrame()
-
 def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     """
     process_PV(df, file, print_flag_IV, print_flag_PV) calculates the 
@@ -40,7 +40,6 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     runs plot production code.
     """
     device = get_dev("PV_", file)  
-    print(device)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     
     try: 
@@ -162,24 +161,34 @@ def process_endurance(df, file):
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     read_x = lambda sheet_name: pd.read_excel(file, sheet_name=sheet_name, 
                                 usecols=['iteration','P','Qsw'])
-    PV_df, i, sheet_names = pd.DataFrame(), 0, ["Append3", "Append2", "Append1", "Data"]
+    PV_df, i, sheet_names = pd.DataFrame(), 0, ["Append4", "Append3", "Append2", "Append1", "Data"]
     while PV_df.empty: 
         PV_df = df_try_except(read_x, sheet_names[i+1], ValueError)
         i+=1
     data = np.array(PV_df)
 
     # Find iteration before occurrence of breakdown
-    breakdown = np.argmax(data[:,1]>=1e-9)
+    breakdown = find_breakdown(data)
+
+    # Write endurance based on breakdown
     df.at[dev_row,"endurance"] = data[breakdown -1][0] if breakdown!=0 else 0
-    
+
     # Find max Pr (before break)
+    write_max_Pr(data, df, device, breakdown, dev_row)
+    return df
+
+def find_breakdown(data): return np.argmax(data[:,1]>=1e-9)
+
+def write_max_Pr(data, df, device, breakdown, dev_row):
+    """
+    write_max_Pr(data, df, device, breakdown, dev_row) finds and writes max_Pr
+    value to [df].
+    """
     dat_bef_brk = data[:breakdown] if breakdown!=0 else data
     Q_sw = np.amax(dat_bef_brk, axis=0)[2]
     Pr_max = 0.5 * Q_sw
-
     col_name = "max Pr (mC/cm^2)"
     df.at[dev_row,col_name] = scale_pr(device, Pr_max)
-    return df
 
 def init_df(files_exp):
     """
@@ -212,36 +221,6 @@ def init_df(files_exp):
     df['device'] = row_names
     return df
 
-def file_combine(files_exp):
-    """
-    file_combine(files_exp) combines files with same device and different cycles
-    into single file with multiple sheets:
-        i.e. KHM0ID_subID_PUND_devspecs_3cycles_1e6_1e7cycles.xls
-    """
-    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
-    PV_files = [file for file in files_exp if "PV" in file]
-    PUND_files = [file for file in files_exp if "PUND" in file]
-    PV_PUND_sheet_map = {"1e6cycles":"Append1", "1e7cycles":"Append2", "1e8cycles":"Append3"}
-
-    devs = set([get_dev("PV_", PV_file)for PV_file in PV_files])
-    for PV_file in PV_files:
-        # Make a dictionary with device as key and list of filenames with device in name as values
-        # Then sort the list by your own method (make sure 3 cycles appear before 1e6 cycles)
-            # Easy, sort first and then cycle first and last terms by 1
-        # Then read the 3 cycles one and then the following ones in alphabetical order to Append1 etc
-        # But... some of them are missing files so you may actually have to have a main map they read from...
-        # Yeah... in that case we don't need to sort them; we just have to have the main map
-        # Awww, nah the endurance one needs to be sorted... bcuz you could have the 1e5 or 1e6 etc...
-        # Also some of them do not have 3 cycles data, so you really gotta save it such that they are mapped by your master dictionary 
-        # So we see that there are 2 separate cases because for PV is saved without 3 cycles in the title, jus like endurance
-    
-        pd.read_excel(PV_file, sheet_name='Append2')
-
-
-    for end_file in end_files:
-        print(get_dev("endurance_", end_file))
-    sys.exit()
-
 def read_file(dir, idx):
     """
     read_file(dir, idx) reads all files in subdirectory specified by [dir]
@@ -250,7 +229,6 @@ def read_file(dir, idx):
     subdir = dir + str(idx)
     files = subdir + '/*.xls'
     files_exp = glob.glob(files, recursive = True)
-    # files_exp = file_combine(files_exp)
     df = init_df(files_exp)
 
     for filename in files_exp:
@@ -268,21 +246,137 @@ def read_file(dir, idx):
             df = process_endurance(df, filename)
     return df
 
+def file_combine(dir, idx):
+    """
+    file_combine(files_exp) combines files with same device and different cycles
+    into single file with multiple sheets:
+        i.e. KHM0ID_subID_PUND_devspecs_3cycles_1e6_1e7cycles.xls
+    """
+    subdir = dir + str(idx)
+    files = subdir + '/*.xls'
+    files_exp = glob.glob(files, recursive = True)
+
+    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
+    PV_files = [file for file in files_exp if "PV" in file]
+    PUND_files = [file for file in files_exp if "PUND" in file]
+    files_col = [PV_files, PUND_files, end_files]
+    
+    devs = set([get_dev("PV_", PV_file)for PV_file in PV_files])
+    make_dict = lambda: dict.fromkeys(devs, [])
+    PV_dict, PUND_dict, end_dict = make_dict(), make_dict(), make_dict()
+    file_dicts = [PV_dict, PUND_dict, end_dict]
+    
+    for f_d, fs in list(zip(file_dicts, files_col)): file_dict_maker(f_d, fs, devs)
+    get_iter = lambda fn:fn[fn.rfind('_'):]
+    cut_ext = lambda fn, cut_word:fn[:fn.rfind(cut_word)]
+    for f_d in [PV_dict, end_dict]: 
+        for dev, fn_list in f_d.items():
+            fn_to = fn_list[0]
+            fn_temp = cut_ext(fn_to, '.') + "_after_3cycles.xls"
+            os.rename(fn_to, fn_temp)
+            fn_to = fn_temp
+            wb_to = xw.Book(fn_to)
+            for fn_idx in range(1, len(fn_list)):
+                fn_from = fn_list[fn_idx]
+                wb_from = xw.Book(fn_from)
+                ws_from = wb_from.sheets['Data']
+                ws_from.copy(after=wb_to.sheets[-1])
+                wb_to.sheets[-1].name = 'Append' + str(2+fn_idx)
+                wb_from.close()
+                os.remove(fn_from)
+                wb_to.save()
+                wb_to.close()
+                fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
+                os.rename(fn_to, fn_temp)
+                fn_to = fn_temp
+        
+    for f_d in [PUND_dict]:
+        for dev, fn_list in f_d.items():
+            fn_to = fn_list[-1]
+            for fn_idx in range(len(fn_list)-1):
+                wb_to = xw.Book(fn_to)
+                fn_from = fn_list[fn_idx]
+                wb_from = xw.Book(fn_from)
+                ws_from = wb_from.sheets['Data']
+                ws_from.copy(after=wb_to.sheets[-1])
+                wb_to.sheets[-1].name = 'Append' + str(1+fn_idx)
+                wb_from.close()
+                os.remove(fn_from)
+                wb_to.save()
+                wb_to.close()
+                fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
+                os.rename(fn_to, fn_temp)
+                fn_to = fn_temp
+    app = xw.App(visible=False)
+    # file_combiner()
+    app.quit()
+
+# def file_combiner():
+#     get_iter = lambda fn:fn[fn.rfind('_'):]
+#     cut_ext = lambda fn, cut_word:fn[:fn.rfind(cut_word)]
+#     for f_d in [PV_dict, end_dict]: 
+#         for dev, fn_list in f_d.items():
+#             fn_to = fn_list[0]
+#             fn_temp = cut_ext(fn_to, '.') + "_after_3cycles.xls"
+#             os.rename(fn_to, fn_temp)
+#             fn_to = fn_temp
+#             wb_to = xw.Book(fn_to)
+#             for fn_idx in range(1, len(fn_list)):
+#                 fn_from = fn_list[fn_idx]
+#                 wb_from = xw.Book(fn_from)
+#                 ws_from = wb_from.sheets['Data']
+#                 ws_from.copy(after=wb_to.sheets[-1])
+#                 wb_to.sheets[-1].name = 'Append' + str(2+fn_idx)
+#                 wb_from.close()
+#                 os.remove(fn_from)
+#                 wb_to.save()
+#                 wb_to.close()
+#                 fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
+#                 os.rename(fn_to, fn_temp)
+#                 fn_to = fn_temp
+        
+#     for f_d in [PUND_dict]:
+#         for dev, fn_list in f_d.items():
+#             fn_to = fn_list[-1]
+#             for fn_idx in range(len(fn_list)-1):
+#                 wb_to = xw.Book(fn_to)
+#                 fn_from = fn_list[fn_idx]
+#                 wb_from = xw.Book(fn_from)
+#                 ws_from = wb_from.sheets['Data']
+#                 ws_from.copy(after=wb_to.sheets[-1])
+#                 wb_to.sheets[-1].name = 'Append' + str(1+fn_idx)
+#                 wb_from.close()
+#                 os.remove(fn_from)
+#                 wb_to.save()
+#                 wb_to.close()
+#                 fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
+#                 os.rename(fn_to, fn_temp)
+#                 fn_to = fn_temp
+
+def file_dict_maker(file_dict, files, devs):
+    for dev in devs:
+        temp = []
+        for file in files:
+            if dev in file: temp.append(file)
+        if len(temp)>=2: file_dict[dev] = sorted(temp)
+        elif len(temp)<2: file_dict.pop(dev) 
+
 def main(dir, samp_ID, subdir_arr):
     """
     main(dir, subID, subdir_arr) operates as the main caller function to 
     read in all raw data in various subdirectories and write out processed df data.
     """
     subdir = range(1, subdir_arr[0]+1) if len(subdir_arr) == 1 else subdir_arr
-    outdir = "/processed" + samp_ID + "_1"
+    outdir = "/processed" + samp_ID
     out_dir = dir[:dir.rfind("/")] + outdir 
     if not os.path.exists(out_dir): os.mkdir(out_dir)
 
     for idx in subdir:
+        file_combine(dir, idx)
         df = read_file(dir, idx)
         df.to_csv(out_dir +  "/" + str(idx)+ ".csv") 
 
 # Update with file path on your local device 
 prettyplot()
-dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'
-main(dir, "010", [24])
+dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM006_'
+main(dir, "006", [6,7,8,11,13,14,15,17,18,19,20,21])
