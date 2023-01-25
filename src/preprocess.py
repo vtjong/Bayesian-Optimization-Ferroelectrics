@@ -269,6 +269,8 @@ def file_combine(dir, idx):
     for f_d, fs in list(zip(file_dicts, files_col)): file_dict_maker(f_d, fs, devs)
     get_iter = lambda fn:fn[fn.rfind('_'):]
     cut_ext = lambda fn, cut_word:fn[:fn.rfind(cut_word)]
+
+    app = xw.App(visible=False)
     for f_d in [PV_dict, end_dict]: 
         for dev, fn_list in f_d.items():
             fn_to = fn_list[0]
@@ -307,7 +309,6 @@ def file_combine(dir, idx):
                 fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
                 os.rename(fn_to, fn_temp)
                 fn_to = fn_temp
-    app = xw.App(visible=False)
     # file_combiner()
     app.quit()
 
