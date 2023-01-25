@@ -150,16 +150,20 @@ def process_endurance(df, file):
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
-        PV_df = pd.read_excel(file, sheet_name="Append2", 
+        PV_df = pd.read_excel(file, sheet_name="Append3", 
                                 usecols=['iteration','P','Qsw'])
     except:
         try: 
-            PV_df = pd.read_excel(file, sheet_name="Append1", 
+            PV_df = pd.read_excel(file, sheet_name="Append2", 
                                     usecols=['iteration','P','Qsw'])
         except:
-            PV_df = pd.read_excel(file, sheet_name="Data", 
-                                    usecols=['iteration','P','Qsw'])
-    
+            try: 
+                PV_df = pd.read_excel(file, sheet_name="Append1", 
+                                        usecols=['iteration','P','Qsw'])
+            except:
+                PV_df = pd.read_excel(file, sheet_name="Data", 
+                                        usecols=['iteration','P','Qsw'])
+        
     data = np.array(PV_df)
 
     # Find iteration before occurrence of breakdown
