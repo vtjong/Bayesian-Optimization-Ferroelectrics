@@ -330,7 +330,7 @@ def main(dir, samp_ID, subdir_arr):
     if not os.path.exists(out_dir): os.mkdir(out_dir)
 
     for idx in subdir:
-        file_combine(dir, idx)
+        # file_combine(dir, idx)
         df = read_file(dir, idx)
         df.to_csv(out_dir +  "/" + str(idx)+ ".csv") 
 
