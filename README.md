@@ -18,3 +18,5 @@ conda install --file requirements.txt
 # Basics
 Gaussian process functionality provided by `gpytorch`, bayesian optimization framework provided by `botorch`.  Acqusition functions were written to fit with the `botorch` API.  
 
+# Preprocessing
+To run the data preprocessing script, simply change 'dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'' in src\preprocess.py and run. The processed data will be saved to a subdirectoy processed in the data folder. 
