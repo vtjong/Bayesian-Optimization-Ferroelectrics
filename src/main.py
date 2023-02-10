@@ -1,4 +1,5 @@
 import sys
+import this
 import numpy as np
 import torch
 import gpytorch
@@ -10,7 +11,7 @@ from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 10000,
+    "epochs": 1000,
     "kernel": "rbf",
     "lr": 0.01,
     "lscale_1": 1.0,
@@ -18,7 +19,7 @@ config_defaults = {
     "lscale_3": None,
     "lscale_4": None,
     "dim": 2,
-    "noise": 1.0
+    "noise": 0.1
 }
 wandb.init(config=config_defaults)
 config = wandb.config
@@ -82,7 +83,7 @@ def eval(likelihood, model, test_x):
 def get_bounds(n):
     return [n for i in range(config.dim)]
 
-def acq(obs, train_y, test_grid, bounds):
+def acq(column_mean, column_sd, obs, train_y, test_grid, bounds):
     # Evaluate acquisition functions on current predictions (observations)
     nshape = tuple(bounds)
 
@@ -94,7 +95,7 @@ def acq(obs, train_y, test_grid, bounds):
     EI_acq = EI(obs, bounds, train_y)
     EI_acq_shape = EI_acq.detach().numpy().reshape(nshape).T
 
-    # Custom Acquisition (something I was playing with)
+    # Custom Acquisition 
     ca_acq = cust_acq(obs, bounds, train_y)
     ca_acq_shape = ca_acq.detach().numpy().reshape(nshape).T
 
@@ -116,12 +117,20 @@ def acq(obs, train_y, test_grid, bounds):
     ucb = np.unravel_index(upper_surf.argmax(), upper_surf.shape)
     max_var = np.unravel_index(pred_var.argmax(), pred_var.shape)
 
-    print("EI:", test_grid[ei[1], 0], test_grid[ei[0], 1])
-    print("PI:", test_grid[pi[1], 0], test_grid[pi[0], 1])
-    print("CA:", test_grid[ca[1], 0], test_grid[ca[0], 1])
-    print("UCB:", test_grid[ucb[1], 0], test_grid[ucb[0], 1])
-    print("TH:", test_grid[th[1], 0], test_grid[th[0], 1])
-    print("Max_var:", test_grid[max_var[1], 0], test_grid[max_var[0], 1])
+    # Get back real values from standardized version
+    x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
+    sd_0, sd_1 = column_sd[0], column_sd[1]
+    mu_0, mu_1 = column_mean[0], column_mean[1]
+
+    test_grid[ei[1], 0]*column_sd[0] + column_mean[0]
+    test_grid[ei[1], 0]*column_sd[1] + column_mean[1]
+
+    print("EI:", x_raw(test_grid[ei[1], 0], sd_0, mu_0), x_raw(test_grid[ei[1], 1], sd_1, mu_1))
+    print("PI:", x_raw(test_grid[pi[1], 0], sd_0, mu_0), x_raw(test_grid[pi[1], 1], sd_1, mu_1))
+    print("CA:", x_raw(test_grid[ca[1], 0], sd_0, mu_0), x_raw(test_grid[ca[1], 1], sd_1, mu_1))
+    print("UCB:", x_raw(test_grid[ucb[1], 0], sd_0, mu_0), x_raw(test_grid[ucb[1], 1], sd_1, mu_1))
+    print("TH:", x_raw(test_grid[th[1], 0], sd_0, mu_0), x_raw(test_grid[th[1], 1], sd_1, mu_1))
+    print("Max_var:", x_raw(test_grid[max_var[1], 0], sd_0, mu_0), x_raw(test_grid[max_var[1], 1], sd_1, mu_1))
     
     print("EI:", pred_labels[ei[0], ei[1]])
     print("PI:", pred_labels[pi[0], pi[1]])
@@ -133,12 +142,12 @@ def acq(obs, train_y, test_grid, bounds):
     return pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca
 
 def main():
-    train_x, train_y, num_params, test_grid, test_x = dataset()
+    column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x = dataset()
     likelihood, model = train(train_x, train_y, num_params, config)
     obs = eval(likelihood, model, test_x)
     bounds = get_bounds(n=30)
     vis_pred(train_x, train_y, test_grid, obs, tuple(bounds))
-    pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(obs, train_y, test_grid, bounds)
+    pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
     vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
     
 if __name__ == "__main__":
