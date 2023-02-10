@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import os
 
 def make_dummy_data(dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
     src_file="KHM005_KHM006_quartz_HZO_samples.csv", 
