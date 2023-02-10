@@ -41,8 +41,8 @@ def vis_pv(pv_data, pv_pos_tup, pv_neg_tup, device):
     plt.plot(pv_data[:,0], pv_data[:,1], c = '#580F41', label = "raw")
     plt.plot(pv_pos_tup[0], pv_pos_tup[1], 'C3o')
     plt.plot(pv_neg_tup[0], pv_neg_tup[1], 'C3o')
-    plt.xlabel('Vforce')
-    plt.ylabel('Charge Density')
+    plt.xlabel('Vforce (V)')
+    plt.ylabel('Charge Density (mC/cm^2)')
     together = [pv_pos_tup, pv_neg_tup]
     texts=[]
     for i_x, i_y in together:
@@ -67,8 +67,8 @@ def vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device):
     plt.plot(iv_data[:,0], iv_filt, c = '#A9561E', label = "filtered")
     plt.plot(pos_tup[0], pos_tup[1], 'C3o')
     plt.plot(neg_tup[0], neg_tup[1], 'C3o')
-    plt.xlabel('Vforce')
-    plt.ylabel('Imeas')
+    plt.xlabel('Vforce (V)')
+    plt.ylabel('Imeas (mC)')
     col = [pos_tup, neg_tup]
     for i_x, i_y in col:
         plt.text(i_x, i_y, r'({0:.3f}, {1:.3E})'.format(i_x, i_y), 
