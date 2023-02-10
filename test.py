@@ -10,7 +10,21 @@ import numpy as np
 # plt.savefig(dir + "/PUND/" + device + "_" + iter +"_PUND-plot")  
 # plt.show() 
 
-print(np.ones([2]))
-print([1,1])
-n=30
-print([n for i in range(2)])
+# print(np.ones([2]))
+# print([1,1])
+# n=30
+# print([n for i in range(2)])
+
+def addingOne(arr):
+    eArr = [] 
+    for i in arr:
+        eArr.append(i +1)
+    print (eArr)
+    return eArr
+
+def adding_one_shifu(arr):
+    eArr = [i+1 for i in arr] 
+    return eArr
+
+
+addingOne([1, 2])
