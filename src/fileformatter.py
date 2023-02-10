@@ -13,7 +13,8 @@ def get_dev(type, file):
     file = file[:file.rfind('.')]
     idx = [x.isdigit() for x in file].index(True)
     file = file[idx:]
-    if file.rfind('_after') != -1: file = file[:file.rfind('_after')]
+    trim_idx = file.rfind("_after")
+    file = file[:trim_idx] if trim_idx!=-1 else file
     return file
 
 def file_combine(dir):
@@ -25,16 +26,34 @@ def file_combine(dir):
     files = dir + '/*.xls'
     files_exp = glob.glob(files, recursive = True)
 
-    # Set-up for file iteration
-    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
-    PV_files = [file for file in files_exp if "PV" in file]
-    PUND_files = [file for file in files_exp if "PUND" in file]
+    # Set-up conditions for file list iteration
+    cond_end = lambda file: "endurance" in file and "PV" not in file
+    cond0_PV = lambda file: "PV" in file
+    cond1_PV = lambda file: cond0_PV(file) and "after_endurance" not in file 
+    cond2_PV = lambda file: cond0_PV(file) and "1PUND" not in file
+    cond_PV = lambda file: cond1_PV(file) and cond2_PV(file)
+    cond_PUND = lambda file: "PUND" in file and "PV" not in file
+
+    # Make lists of all files of endurance, PV, and PUND 
+    end_files = [file for file in files_exp if cond_end(file)]
+    PV_files = [file for file in files_exp if cond_PV(file)]
+    PUND_files = [file for file in files_exp if cond_PUND(file)]
+
+    # Rename PV files with endurance as 1e7 
+    for file in PV_files: 
+        if "endurance" in file:
+            sub_end = file[:file.rfind("endurance")]
+            sub_1e7 = sub_end + "1e7cycles.xls"
+            os.rename(file, sub_1e7)
+            PV_files.append(sub_1e7)
+            PV_files.remove(file)
+
     files_col = [PV_files, PUND_files, end_files]
     devs = set([get_dev("PV_", PV_file)for PV_file in PV_files])
     make_dict = lambda: dict.fromkeys(devs, [])
     PV_dict, PUND_dict, end_dict = make_dict(), make_dict(), make_dict()
     file_dicts = [PV_dict, PUND_dict, end_dict]
-    
+
     for f_d, fs in list(zip(file_dicts, files_col)): file_dict_maker(f_d, fs, devs)
 
     # File interation and combine
@@ -60,8 +79,8 @@ def file_combiner(type, f_d):
             fn_to = fn_temp
             iter = range(1, len(fn_list))
         for fn_idx in iter:
-            wb_to = xw.Book(fn_to)
             fn_from = fn_list[fn_idx]
+            wb_to = xw.Book(fn_to)
             wb_from = xw.Book(fn_from)
             ws_from = wb_from.sheets['Data']
             ws_from.copy(after=wb_to.sheets[-1])
@@ -83,7 +102,10 @@ def file_dict_maker(file_dict, files, devs):
     for dev in devs:
         temp = []
         for file in files:
-            if dev in file: temp.append(file)
+            if dev in file: 
+                subfile = file[file.rindex(dev)+len(dev):]
+                if not subfile[0].isdigit():
+                    temp.append(file)
         if len(temp)>=2: file_dict[dev] = sorted(temp)
         elif len(temp)<2: file_dict.pop(dev) 
 
