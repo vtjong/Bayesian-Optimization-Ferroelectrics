@@ -74,14 +74,12 @@ def process_endurance(df, file):
     dat_bef_brk = data[:breakdown] if breakdown!=0 else data
     Q_sw = np.amax(dat_bef_brk, axis=0)[2]
     Pr_max = 0.5 * Q_sw
-    Pr_max /= get_devicelen(device)**2*10**(-14)
-    df.at[dev_row,"max Pr (mC/cm^2)"] = Pr_max
+    df.at[dev_row,"max Pr (mC/cm^2)"] = scale_pr(device, Pr_max)
 
     # Find Pr at 10^6 by applying polyfit & eval at 1e6
     p = np.polyfit(dat_bef_brk[:,0], 0.5*dat_bef_brk[:,2], deg=2)
     Pr_1e6 = 0.5 * np.polyval(p, 1e6)
-    Pr_1e6 /= get_devicelen(device)**2*10**(-14)
-    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = Pr_1e6
+    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = scale_pr(device, Pr_1e6)
     return df
 
 def read_file(dir, idx):
