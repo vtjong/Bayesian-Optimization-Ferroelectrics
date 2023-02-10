@@ -18,4 +18,3 @@ def read_joulemeter(in_file="data/MKS_Ophir_joulemeter_readings.xlsx",
     for i in range(2, len(df2)): 
         for j in range(2, len(df)):     
             if cond1 and cond2: sheet.range((i,7)).value = df.iloc[j-2, 2]  
-read_joulemeter()
