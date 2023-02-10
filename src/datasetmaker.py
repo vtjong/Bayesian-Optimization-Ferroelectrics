@@ -1,5 +1,6 @@
 # Prep training data
 from sklearn.preprocessing import StandardScaler
+from sklearn import preprocessing
 import sys, os
 import numpy as np
 import pandas as pd
@@ -48,8 +49,12 @@ def datasetmaker(fe_data):
     T_scaler = StandardScaler()
     # Filter training data 
     mask = ~np.isnan(fe_data['2 Qsw/(U+|D|)'])
-    train_x = torch.Tensor(np.array([fe_data['voltage (V)'][mask].values, 
-                        fe_data['time (ms)'][mask].values])).T
+    train_x = np.array([fe_data['voltage (V)'][mask].values, 
+                        fe_data['time (ms)'][mask].values]).transpose()
+    train_x-= np.mean(train_x, axis=0)
+    train_x/= np.std(train_x, axis=0)    
+    column_mean = np.mean(train_x, axis=0)
+    train_x = torch.Tensor(train_x)
     train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|)'][mask].values)
     return train_x, train_y
 
