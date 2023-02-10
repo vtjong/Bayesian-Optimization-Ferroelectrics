@@ -8,6 +8,8 @@ parameters:
     values: [5000,6000,7000,8000,9000,10000]
   kernel:
     values: ["rbf"]
+  dim:
+    values: [2]
   lr:
     values: [1e1, 1e0, 1e-1, 1e-2]
   lscale_1:
