@@ -32,7 +32,6 @@ def get_dev(type, file):
     file = file[:file.rfind('.')]
     idx = [x.isdigit() for x in file].index(True)
     file = file[idx:]
-    if file.rfind('_endurance') != -1: file = file[:file.rfind('_endurance')]
     if file.rfind('_after') != -1: file = file[:file.rfind('_after')]
     return file
 
@@ -44,6 +43,8 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     runs plot production code.
     """
     device = get_dev("PV_", file)  
+    print(device)
+    print(df)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     
     try: 
@@ -334,11 +335,11 @@ def main(dir, samp_ID, subdir_arr):
     if not os.path.exists(out_dir): os.mkdir(out_dir)
 
     for idx in subdir:
-        file_combine(dir, idx)
+        # file_combine(dir, idx)
         df = read_file(dir, idx)
         df.to_csv(out_dir +  "/" + str(idx)+ ".csv") 
 
 # Update with file path on your local device 
 prettyplot()
 dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM006_'
-main(dir, "006", [6,7,8,11,13,14,15,17,18,19,20,21])
+main(dir, "006", [3,6,7,8,11,13,14,15,17,18,19,20,21])
