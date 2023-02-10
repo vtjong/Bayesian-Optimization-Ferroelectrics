@@ -1,8 +1,8 @@
 import sys, glob
 import pandas as pd
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
-from scipy.interpolate import UnivariateSpline
+from scipy.ndimage import gaussian_filter1d as gf
+from scipy.interpolate import UnivariateSpline as us
 from plotter import prettyplot, vis_iv, vis_pv, vis_pund
 import matplotlib.pyplot as plt
 
@@ -66,7 +66,7 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
         vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
 
     # Find Vc and imprint for I-V
-    iv_filt = gaussian_filter1d(iv_data[:,1],2)
+    iv_filt = gf(iv_data[:,1],2)
     arg_vc_pos, arg_vc_neg = np.argmax(iv_filt), np.argmin(iv_filt)
     Vc_pos_iv, Imeas_Vc_pos = iv_data[:,0][arg_vc_pos], iv_filt[arg_vc_pos]
     Vc_neg_iv, Imeas_Vc_neg = iv_data[:,0][arg_vc_neg], iv_filt[arg_vc_neg]
@@ -78,49 +78,79 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
         vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
     return df
 
-def process_PUND(df, file, print_flag_PUND=True):  
+def process_PUND(df, file, sheet_name, print_flag_PUND=False):  
     """ 
-    process_PUND(df, file, print_flag_PUND=False) finds the Vc and Imprint for 
-    max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
+    process_PUND(df, file, sheet_name, print_flag_PUND) finds the Vc and Imprint 
+    for max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
     """
+    if sheet_name == 'Data' and print_flag_PUND==False:
+        return df
+    
     device = get_dev("PUND_", file)  
-    # dev_row = df[df["device"] == device].index.to_numpy()[0]
     try: 
-        PUND_df = pd.read_excel(file, sheet_name='Data', usecols=['t','V'])
-        IV_df = pd.read_excel(file, sheet_name='Data', usecols=['t','I'])
+        dev_row = df[df["device"] == device].index.to_numpy()[0]
+        PUND_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['t','V'])
+        IV_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['t','I'])
+        Pr_df = pd.read_excel(file, sheet_name=sheet_name, usecols=['Qsw'])
     except:
         print("No Data")
         return df
-    PUND_df = PUND_df[['t','V']]
-    IV_df = IV_df[['t','I']]
-    pund_data = np.array(PUND_df)
-    iv_data = np.array(IV_df)
+
+    PUND_df, IV_df = PUND_df[['t','V']], IV_df[['t','I']]
+    pund_data, iv_data = np.array(PUND_df), np.array(IV_df)
+    pr_data = np.array(Pr_df)[0]
 
     # Scale by ramp rate (alpha) + ratios of maxes for easy viewing
     t_data = pund_data[:,0] 
-    spline_fun = UnivariateSpline(t_data,pund_data[:,1],s=0,k=4)
+    spline_fun = us(t_data,pund_data[:,1],s=0,k=4)
     spline_1d = spline_fun.derivative(n=1)
-    filt_iv_arr = gaussian_filter1d(iv_data[:,1],3)
-    filt_spline_arr = gaussian_filter1d(spline_1d(t_data), 3)
-    alpha = np.polyfit(filt_spline_arr, filt_iv_arr, deg=1)[1]
-    iv_data[:,1] = filt_iv_arr/(np.abs(alpha))
+    filt_iv, filt_spline = gf(iv_data[:,1],3), gf(spline_1d(t_data), 3)
+    alpha = np.polyfit(filt_spline, filt_iv, deg=1)[1]
+    iv_data[:,1] = filt_iv/np.abs(alpha)
     
-    pund_max, iv_max = np.amax(pund_data[:,1]), np.amax(iv_data[:,1])
-    iv_data[:,1]*=(pund_max/iv_max)
-    prettyplot()
-    vis_pund(pund_data, iv_data, device)
+    if print_flag_PUND:
+        pund_max, iv_max = np.amax(pund_data[:,1]), np.amax(iv_data[:,1])
+        iv_data[:,1]*=(pund_max/iv_max)
+        vis_pund(pund_data, iv_data, device, sheet_name)
+    
+    P_idx = np.argmax(iv_data[:,1][:int(len(iv_data)/4)])
+    N_idx = np.argmin(iv_data[:,1][int(len(iv_data)/2):int(3*len(iv_data)/4)])
+
+    # Corresponds to 10^6 cycle files
+    if sheet_name == 'Append1':
+        Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
+        df.at[dev_row, "10^6 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
+        df.at[dev_row, "10^6 Imprint"] = np.mean((Vc_pos, Vc_neg))
+        df.at[dev_row, "10^6 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, pr_data)
+    
+    # Corresponds to 10^7 cycle files
+    elif sheet_name == 'Append2':
+        Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
+        df.at[dev_row, "10^7 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
+        df.at[dev_row, "10^7 Imprint"] = np.mean((Vc_pos, Vc_neg))
+        df.at[dev_row, "10^7 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, pr_data)
     return df
 
 def process_endurance(df, file):
     """
-    process_endurance(df, file) finds the endurance, max Pr, 
+    process_endurance(df, file,sheet_name) finds the endurance, max Pr, 
     10^6 Pr, of a given endurance [file] and returns an updated dataframe.
     """
     device = get_dev("endurance_", file)
-    dev_row = df[df["device"] == device].index.to_numpy()[0]
-    PV_df = pd.read_excel(file, usecols=['iteration','P','Qsw'])
+    try: 
+        dev_row = df[df["device"] == device].index.to_numpy()[0]
+        PV_df = pd.read_excel(file, sheet_name="Append2", 
+                                usecols=['iteration','P','Qsw'])
+    except:
+        try: 
+            PV_df = pd.read_excel(file, sheet_name="Append1", 
+                                    usecols=['iteration','P','Qsw'])
+        except:
+            PV_df = pd.read_excel(file, sheet_name="Data", 
+                                    usecols=['iteration','P','Qsw'])
+        return df
+    
     data = np.array(PV_df)
-    # print(data)
 
     # Find iteration before occurrence of breakdown
     breakdown = np.argmax(data[:,1]>=1e-9)
@@ -130,12 +160,9 @@ def process_endurance(df, file):
     dat_bef_brk = data[:breakdown] if breakdown!=0 else data
     Q_sw = np.amax(dat_bef_brk, axis=0)[2]
     Pr_max = 0.5 * Q_sw
-    df.at[dev_row,"max Pr (mC/cm^2)"] = scale_pr(device, Pr_max)
 
-    # Find Pr at 10^6 by applying polyfit & eval at 1e6
-    p = np.polyfit(dat_bef_brk[:,0], 0.5*dat_bef_brk[:,2], deg=2)
-    Pr_1e6 = 0.5 * np.polyval(p, 1e6)
-    df.at[dev_row,"10^6 Pr (mC/cm^2)"] = scale_pr(device, Pr_1e6)
+    col_name = "max Pr (mC/cm^2)"
+    df.at[dev_row,col_name] = scale_pr(device, Pr_max)
     return df
 
 def read_file(dir, idx):
@@ -150,7 +177,13 @@ def read_file(dir, idx):
 
     for filename in files_exp:
         if 'PUND' in filename:
-            df = process_PUND(df, filename)
+            if '1e6' in filename:
+                sheet_name = 'Append1'
+                df = process_PUND(df, filename, sheet_name)
+            if '1e7' in filename:
+                sheet_name = 'Append2'
+                df = process_PUND(df, filename, sheet_name)
+            df = process_PUND(df, filename, 'Data')
         elif 'PV' in filename:
             df = process_PV(df, filename)
         elif 'endurance' in filename:

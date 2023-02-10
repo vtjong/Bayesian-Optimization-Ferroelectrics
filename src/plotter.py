@@ -15,17 +15,22 @@ def prettyplot():
     mpl.rcParams['lines.linewidth'] = 1.5
     plt.rcParams['figure.dpi'] = 200
 
-def vis_pund(pund_data, iv_data, device):
+def vis_pund(pund_data, iv_data, device, sheet_name):
     plt.clf()
     plt.plot(pund_data[:,0], pund_data[:,1], c = '#580F41', label = "PUND")
     plt.plot(iv_data[:,0], iv_data[:,1], c = '#A9561E', label = "Current")
     plt.xlabel('time (s)')
     plt.ylabel('V (V)')
     dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
-    plt.title(device + " PUND")
+    if sheet_name == 'Data':
+        iter = '3 cycle'
+    elif sheet_name == 'Append1':
+        iter = '10^6 cycle'
+    elif sheet_name == 'Append2':
+        iter = '10^7 cycle'
+    plt.title(device + " PUND "+ iter)
     plt.legend(loc="upper right")
-    plt.savefig(dir + "/PUND/" + device + "_" + "PUND-plot")   
-    # plt.show() 
+    plt.savefig(dir + "/PUND/" + device + "_" + iter +"_PUND-plot")   
 
 def vis_pv(pv_data, pv_pos_tup, pv_neg_tup, device):
     """
