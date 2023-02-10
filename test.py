@@ -15,6 +15,9 @@ import numpy as np
 # n=30
 # print([n for i in range(2)])
 
-import re
-s1 = "thishasadigit4here"
-m = re.search(r"\d", s1).start()
+# import re
+# s1 = "thishasadigit4here"
+# m = re.search(r"\d", s1).start()
+cut_ext = lambda fn:fn[:fn.rfind('.')]
+get_iter = lambda fn:fn[fn.rfind('_'):]
+print(get_iter("fuckyou_4.txt"))
