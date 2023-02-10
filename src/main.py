@@ -12,15 +12,15 @@ from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 1000,
+    "epochs": 3000,
     "kernel": "rbf",
-    "lr": 0.001,
+    "lr": 0.005,
     "lscale_1": 1.0,
     "lscale_2": 1.0,
     "lscale_3": None,
     "lscale_4": None,
     "dim": 2,
-    "noise": 0.11
+    "noise": 0.2
 }
 
 wandb.init(config=config_defaults)
@@ -129,12 +129,16 @@ def pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid):
     inputs and their respective predicted outputs to csv. 
     """    
     x_raw = lambda acq: test_grid[acq[1]]*col_sd + col_mean # undo standardization
-
-    for lab, pred in acqs.items():
-        print(lab, x_raw(pred))
+    dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/predictions/"
+    file = open(dir + "preds.csv", "w", encoding="utf-8")
     
+    file.write("Energy density \t Time (ms)\n")
     for lab, pred in acqs.items():
-        print(lab, pred_labels[pred])
+        file.write(lab + ": " + str(x_raw(pred).tolist()[0]) + "\t" + str(x_raw(pred).tolist()[1]) + "\n")
+    
+    file.write("\nFigure of merit\n")
+    for lab, pred in acqs.items():
+        file.write(lab + ": " + str(pred_labels[pred].item()) + "\n")
 
 def main():
     column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x = dataset()
@@ -142,7 +146,7 @@ def main():
     obs = eval_mod(likelihood, model, test_x)
     bounds = get_bounds(n=30)
     vis_pred(config.noise, column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
-    pred_labels, upper_surf, lower_surf, acqs = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
+    pred_labels, upper_surf, lower_surf, acqs = acq(obs, train_y, bounds)
     pred_to_csv(acqs, pred_labels, column_mean, column_sd, test_grid)
     vis_acq(config.noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, acqs)
     
