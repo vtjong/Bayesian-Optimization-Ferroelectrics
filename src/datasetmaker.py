@@ -10,10 +10,10 @@ sys.path.append('..')
 sys.path.insert(0, '../src')
 
 def read_dat(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
-            src_file = "Bolometer_readings_PulseForge.xlsx", sheet= "Data"):
+            src_file = "Bolometer_readings_PulseForge.xlsx", sheet= "Combined"):
     file = dir + src_file
     fe_data = pd.read_excel(file, sheet_name=sheet, usecols=['Energy density new cone (J/cm^2)',
-                            'Time (ms)','2 Qsw/(U+|D|) 3cycles', '2 Qsw/(U+|D|) 1e6cycles'])
+                            'Time (ms)','2 Qsw/(U+|D|) 1e6cycles'])
     fe_data.dropna(subset=['2 Qsw/(U+|D|) 1e6cycles'], inplace=True)
     return fe_data
 

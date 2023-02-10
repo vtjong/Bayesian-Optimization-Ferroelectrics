@@ -263,4 +263,4 @@ def main(dir, sampID):
 # Update with file path on your local device 
 prettyplot()
 dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data'
-main(dir, "009")
+main(dir, "005")

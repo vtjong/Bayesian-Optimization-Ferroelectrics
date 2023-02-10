@@ -1,4 +1,5 @@
 import glob
+import sys
 import pandas as pd
 import xlwings as xw
 
@@ -29,14 +30,18 @@ def write_fig_of_merit(ID, out_file="Bolometer_readings_PulseForge.xlsx"):
     subdir = "processed" + ID 
     files = dir + subdir + '/*.csv'
     file_lst = glob.glob(files, recursive = True)
-
-    df = pd.read_excel(dir+out_file, sheet_name="Combined")
+    df2 = pd.read_excel(dir+out_file, sheet_name="Combined")
 
     for file in file_lst:
         sub_ID = file[file.rfind('/')+1:file.rfind('.')]
         df = pd.read_csv(file)
         fig_merit_1e6 = df['10^6 2 Qsw/(U+|D|)'].max()
         row_max = df['10^6 2 Qsw/(U+|D|)'].idxmax()
+
+        # Handle case fig_merit_1e6 for all devices are 0
+        if not fig_merit_1e6:
+            row_max = df['2 Qsw/(U+|D|)'].idxmax()
+        
         device = df['device'][row_max]
         fig_merit_3 = df['2 Qsw/(U+|D|)'][row_max]
 
@@ -48,11 +53,14 @@ def write_fig_of_merit(ID, out_file="Bolometer_readings_PulseForge.xlsx"):
         cond = lambda i: sheet.range((i,1)).value == "KHM" + ID + "_" + sub_ID
 
         # Write energy density  
-        for i in range(2, 79): 
+        for i in range(2, len(df2)+1): 
             if cond(i):                 
                 sheet.range((i,2)).value = device
                 sheet.range((i,8)).value = fig_merit_3
                 sheet.range((i,9)).value = fig_merit_1e6
 
-write_fig_of_merit('010')
+subIDs = ['005','006','009','010']
+
+for subID in subIDs: 
+    write_fig_of_merit(subID)
 

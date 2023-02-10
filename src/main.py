@@ -27,14 +27,21 @@ wandb.init(config=config_defaults)
 config = wandb.config
 
 def kernel_func(config_kernel, num_params):
+    """
+    kernel_func(config_kernel, num_params) returns kernel function with 
+    dimensions specified by [num_params]. 
+    """
     if config_kernel == "rbf":
         return gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.RBFKernel(ard_num_dims=num_params))
 
 def make_model(train_x, train_y, num_params, config):
+    """
+    make_model(train_x, train_y, num_params, config) returns likelihood and model
+    with lengthscale, noise, kernel function specified by sweeps. 
+    """
     kernel = kernel_func(config.kernel, num_params)
     noise = config.noise * torch.ones(len(train_x))
-    print(noise)
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noise)
     model = GridGP(train_x, train_y, likelihood, kernel)
     
@@ -73,82 +80,71 @@ def train(train_x, train_y, num_params, config):
         optimizer.step()
     return likelihood, model
 
-def eval(likelihood, model, test_x):
-    # make predictions (whether by long or short form)
-    model.eval()
-    likelihood.eval()
-
+def eval_mod(likelihood, model, test_x):
+    """ 
+    eval_mod(likelihood, model, test_x) evaluates GP model. 
+    """
+    model.eval(), likelihood.eval()
     with torch.no_grad(), gpytorch.settings.fast_pred_var():
-        # also use mll from short form 
         obs = likelihood(model(test_x), noise=(torch.ones(len(test_x))*5))
     return obs
 
-def get_bounds(n):
-    return [n for i in range(config.dim)]
+def get_bounds(n): return [n for i in range(config.dim)]
 
-def acq(column_mean, column_sd, obs, train_y, test_grid, bounds):
-    # Evaluate acquisition functions on current predictions (observations)
+def unravel_acq(acq_func, obs, bounds, train_y, nshape):
+    """ 
+    unravel_acq(acq_func, obs, bounds, train_y, nshape) is a helper function 
+    for acq. 
+    """
+    acq = acq_func(obs, bounds, train_y).detach().numpy().reshape(nshape).T
+    return np.unravel_index(acq.argmax(), acq.shape)
+
+def acq(obs, train_y, bounds):
+    """ 
+    acq(obs, train_y, bounds) evaluates acquisition functions on current 
+    predictions (observations) and outputs suggested points for exploration on manifold. 
+    """
+    transpose = lambda tensor: tensor.detach().numpy().reshape(nshape).T
     nshape = tuple(bounds)
 
-    # Probability of Improvement
-    PI_acq = PI(obs, bounds, train_y)
-    PI_acq_shape = PI_acq.detach().numpy().reshape(nshape).T
-    
-    # Expected Improvement
-    EI_acq = EI(obs, bounds, train_y)
-    EI_acq_shape = EI_acq.detach().numpy().reshape(nshape).T
+    pi = unravel_acq(PI, obs, bounds, train_y, nshape) # prob of improvement
+    ei = unravel_acq(EI, obs, bounds, train_y, nshape) # expected improvement
+    ca = unravel_acq(cust_acq, obs, bounds, train_y, nshape) # custom acq
+    th = unravel_acq(thompson, obs, bounds, train_y, nshape) # thompson acq
 
-    # Custom Acquisition 
-    ca_acq = cust_acq(obs, bounds, train_y)
-    ca_acq_shape = ca_acq.detach().numpy().reshape(nshape).T
-
-    # Thompson Acquisition function
-    th_acq = thompson(obs, bounds, train_y)
-    th_acq_shape = th_acq.detach().numpy().reshape(nshape).T
-
-    ei = np.unravel_index(EI_acq_shape.argmax(), EI_acq_shape.shape)
-    pi = np.unravel_index(PI_acq_shape.argmax(), PI_acq_shape.shape)
-    ca = np.unravel_index(ca_acq_shape.argmax(), ca_acq_shape.shape)
-    th = np.unravel_index(th_acq_shape.argmax(), th_acq_shape.shape)    
+    lower, upper = obs.confidence_region()
+    upper_surf, lower_surf = transpose(upper), transpose(lower)
+    ucb = np.unravel_index(upper_surf.argmax(), upper_surf.shape)
 
     pred_var = obs.variance.view(nshape).detach().numpy().T
     pred_labels = obs.mean.view(nshape)
-    lower, upper = obs.confidence_region()
-    upper_surf = upper.detach().numpy().reshape(nshape).T
-    lower_surf = lower.detach().numpy().reshape(nshape).T
-
-    ucb = np.unravel_index(upper_surf.argmax(), upper_surf.shape)
     max_var = np.unravel_index(pred_var.argmax(), pred_var.shape)
+    acqs = {"PI":pi, "EI":ei, "CA":ca, "TH":th, "UCB":ucb, "Max_var":max_var}
 
-    # Get back real values from standardized version
-    x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
-    sd_0, sd_1 = column_sd[0], column_sd[1]
-    mu_0, mu_1 = column_mean[0], column_mean[1]
+    return pred_labels, upper_surf, lower_surf, acqs
 
-    print("EI:", x_raw(test_grid[ei[1], 0], sd_0, mu_0), x_raw(test_grid[ei[1], 1], sd_1, mu_1))
-    print("PI:", x_raw(test_grid[pi[1], 0], sd_0, mu_0), x_raw(test_grid[pi[1], 1], sd_1, mu_1))
-    print("CA:", x_raw(test_grid[ca[1], 0], sd_0, mu_0), x_raw(test_grid[ca[1], 1], sd_1, mu_1))
-    print("UCB:", x_raw(test_grid[ucb[1], 0], sd_0, mu_0), x_raw(test_grid[ucb[1], 1], sd_1, mu_1))
-    print("TH:", x_raw(test_grid[th[1], 0], sd_0, mu_0), x_raw(test_grid[th[1], 1], sd_1, mu_1))
-    print("Max_var:", x_raw(test_grid[max_var[1], 0], sd_0, mu_0), x_raw(test_grid[max_var[1], 1], sd_1, mu_1))
+def pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid):
+    """
+    pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid) outputs suggested
+    inputs and their respective predicted outputs to csv. 
+    """    
+    x_raw = lambda acq: test_grid[acq[1]]*col_sd + col_mean # undo standardization
+
+    for lab, pred in acqs.items():
+        print(lab, x_raw(pred))
     
-    print("EI:", pred_labels[ei[0], ei[1]])
-    print("PI:", pred_labels[pi[0], pi[1]])
-    print("CA:", pred_labels[ca[0], ca[1]])
-    print("UCB:", pred_labels[ucb[0], ucb[1]])
-    print("TH:", pred_labels[th[0], th[1]])
-    print("Max_var:", pred_labels[max_var[0], max_var[1]])
-
-    return pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca
+    for lab, pred in acqs.items():
+        print(lab, pred_labels[pred])
 
 def main():
     column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x = dataset()
     likelihood, model = train(train_x, train_y, num_params, config)
-    obs = eval(likelihood, model, test_x)
+    obs = eval_mod(likelihood, model, test_x)
     bounds = get_bounds(n=30)
     vis_pred(config.noise, column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
-    pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
-    vis_acq(config.noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ucb, th, pi, ei, ca)
+    pred_labels, upper_surf, lower_surf, acqs = acq(column_mean, column_sd, obs, train_y, test_grid, bounds)
+    pred_to_csv(acqs, pred_labels, column_mean, column_sd, test_grid)
+    vis_acq(config.noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, acqs)
     
 if __name__ == "__main__":
     main()

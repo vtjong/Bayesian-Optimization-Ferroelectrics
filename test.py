@@ -15,4 +15,3 @@ import numpy as np
 # n=30
 # print([n for i in range(2)])
 
-# import re

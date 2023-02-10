@@ -1,2 +1,12 @@
-{'20um_O_1D': ['/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_20um_O_1D.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_20um_O_1D_2.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_20um_O_1D_3.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_20um_O_1D_4.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_20um_O_1D_5.xls'], 
-'100um_O_1D': ['/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D_1e7cycles.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D_2.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D_3.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D_4.xls', '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM005_10/KHM005_fla10_PV_100um_O_1D_5.xls']}
+EI: tensor(10.2590) tensor(3.1656)
+PI: tensor(10.2590) tensor(3.1656)
+CA: tensor(10.2590) tensor(3.1656)
+UCB: tensor(10.2590) tensor(3.1656)
+TH: tensor(10.2590) tensor(3.1656)
+Max_var: tensor(2.2761) tensor(0.3393)
+EI: tensor(0.8319)
+PI: tensor(0.8319)
+CA: tensor(0.9224)
+UCB: tensor(0.9224)
+TH: tensor(0.9307)
+Max_var: tensor(1.0881)

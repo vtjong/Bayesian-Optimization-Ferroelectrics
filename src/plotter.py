@@ -101,9 +101,9 @@ def vis_pred(noise, column_mean, column_sd, train_x, train_y, test_grid, obs, ns
                     legend=dict(orientation="h", yanchor="top", y=1.02, 
                     xanchor="left",x=1), margin=dict(r=20, l=10, b=10, t=10), 
                         scene=dict(
-                        xaxis_title="Voltage (V)",
+                        xaxis_title="Energy density new cone (J/cm^2)",
                         yaxis_title="Pulse Width (msec)",
-                        zaxis_title='2 Qsw/(U+|D|)')
+                        zaxis_title='2 Qsw/(U+|D|) 1e6')
                     )
     camera = dict(
         up=dict(x=0, y=0, z=1),
@@ -117,11 +117,13 @@ def vis_pred(noise, column_mean, column_sd, train_x, train_y, test_grid, obs, ns
     fig.show()
 
 def vis_acq(noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, 
-            upper_surf, lower_surf, ucb, th, pi, ei, ca):
+            upper_surf, lower_surf, acqs):
     # Get back real values from standardized version
     x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
     sd_0, sd_1 = column_sd[0], column_sd[1]
     mu_0, mu_1 = column_mean[0], column_mean[1]
+
+    pi, ei, ca, th, ucb = acqs["PI"], acqs["EI"], acqs["CA"], acqs["TH"], acqs["UCB"]
 
     fig = go.Figure(data=[go.Surface(z = upper_surf, x=x_raw(test_grid[:,0], sd_0, mu_0),
                     y=x_raw(test_grid[:,1], sd_1, mu_1), opacity=0.5, showscale=False)])
@@ -164,9 +166,9 @@ def vis_acq(noise, column_mean, column_sd, train_x, train_y, test_grid, pred_lab
                     legend=dict(orientation="h", yanchor="bottom", 
                                 y=1.02, xanchor="right",x=1),
                     scene=dict(
-                        xaxis_title="Voltage (V)",
+                        xaxis_title="Energy density new cone (J/cm^2)",
                         yaxis_title="Pulse Width (msec)",
-                        zaxis_title='2 Qsw/(U+|D|)')
+                        zaxis_title='2 Qsw/(U+|D|) 1e6')
                     )
     dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
     # plt.savefig(dir + "/noise= " + str(noise) + ", fig2.png")   
