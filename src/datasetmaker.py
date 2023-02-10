@@ -10,10 +10,11 @@ sys.path.append('..')
 sys.path.insert(0, '../src')
 
 def read_dat(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
-            src_file = "data/Bolometer_readings_PulseForge.xlsx", sheet= "Data"):
+            src_file = "Bolometer_readings_PulseForge.xlsx", sheet= "Data"):
     file = dir + src_file
     fe_data = pd.read_excel(file, sheet_name=sheet, usecols=['Energy density new cone (J/cm^2)',
-                            'time (ms)','2 Qsw/(U+|D|) 3cycles'])
+                            'Time (ms)','2 Qsw/(U+|D|) 3cycles', '2 Qsw/(U+|D|) 1e6cycles'])
+    fe_data.dropna(subset=['2 Qsw/(U+|D|) 1e6cycles'], inplace=True)
     return fe_data
 
 def display_data(fe_data):
@@ -23,7 +24,7 @@ def display_data(fe_data):
     """
     # Plot each cross-section
     fig = px.scatter_matrix(fe_data, dimensions=['Energy density new cone (J/cm^2)', 
-    "time (ms)", "2 Qsw/(U+|D|) 3cycles"])
+    "Time (ms)", "2 Qsw/(U+|D|) 1e6cycles"])
     fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
     fig.update_layout(height=1000)
     fig.show()
@@ -48,16 +49,16 @@ def datasetmaker(fe_data):
     """
     T_scaler = StandardScaler()
     # Filter training data 
-    mask = ~np.isnan(fe_data['2 Qsw/(U+|D|) 3cycles'])
+    mask = ~np.isnan(fe_data['2 Qsw/(U+|D|) 1e6cycles'])
     train_x = np.array([fe_data['Energy density new cone (J/cm^2)'][mask].values, 
-                        fe_data['time (ms)'][mask].values]).transpose()
+                        fe_data['Time (ms)'][mask].values]).transpose()
     
     column_mean = np.mean(train_x, axis=0)
     column_sd = np.std(train_x, axis=0) 
     train_x-= column_mean
     train_x/= column_sd
     train_x = torch.Tensor(train_x)
-    train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|) 3cycles'][mask].values)
+    train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|) 1e6cycles'][mask].values)
     return column_mean, column_sd, train_x, train_y
 
 def grid_maker(train_x):
@@ -86,6 +87,7 @@ def dataset():
     dataset() serves as main, to call the other utility functions.
     """
     fe_data = read_dat()
+    # display_data(fe_data)
     column_mean, column_sd, train_x, train_y = datasetmaker(fe_data)
     num_params, test_grid, test_x = grid_maker(train_x)
     return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
