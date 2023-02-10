@@ -1,11 +1,10 @@
-import os, glob
-import sys
+import sys, glob
 import pandas as pd
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
-from plotter import prettyplot, vis_iv, vis_pv
+from scipy.interpolate import UnivariateSpline
+from plotter import prettyplot, vis_iv, vis_pv, vis_pund
+import matplotlib.pyplot as plt
 
 def get_devicelen(device): return int(device[:device.find('um')])
 
@@ -37,8 +36,7 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     except:
         print("No Append2")
         return df
-    pv_data = np.array(PV_df)
-    iv_data = np.array(IV_df)
+    pv_data, iv_data = np.array(PV_df), np.array(IV_df)
 
     # Unit conversion
     pv_data[:,1] = scale_pr(device, pv_data[:,1])
@@ -80,14 +78,43 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
         vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
     return df
 
-def process_PUND(df, file):  
+def process_PUND(df, file, print_flag_PUND=True):  
+    """ 
+    process_PUND(df, file, print_flag_PUND=False) finds the Vc and Imprint for 
+    max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
+    """
     device = get_dev("PUND_", file)  
+    # dev_row = df[df["device"] == device].index.to_numpy()[0]
+    try: 
+        PUND_df = pd.read_excel(file, sheet_name='Data', usecols=['t','V'])
+        IV_df = pd.read_excel(file, sheet_name='Data', usecols=['t','I'])
+    except:
+        print("No Data")
+        return df
+    PUND_df = PUND_df[['t','V']]
+    IV_df = IV_df[['t','I']]
+    pund_data = np.array(PUND_df)
+    iv_data = np.array(IV_df)
+
+    # Scale by ramp rate (alpha) + ratios of maxes for easy viewing
+    t_data = pund_data[:,0] 
+    spline_fun = UnivariateSpline(t_data,pund_data[:,1],s=0,k=4)
+    spline_1d = spline_fun.derivative(n=1)
+    filt_iv_arr = gaussian_filter1d(iv_data[:,1],3)
+    filt_spline_arr = gaussian_filter1d(spline_1d(t_data), 3)
+    alpha = np.polyfit(filt_spline_arr, filt_iv_arr, deg=1)[1]
+    iv_data[:,1] = filt_iv_arr/(np.abs(alpha))
+    
+    pund_max, iv_max = np.amax(pund_data[:,1]), np.amax(iv_data[:,1])
+    iv_data[:,1]*=(pund_max/iv_max)
+    prettyplot()
+    vis_pund(pund_data, iv_data, device)
     return df
 
 def process_endurance(df, file):
     """
-    process_endurance(df, file) finds the endurance of a given [file] and returns
-    an updated dataframe. 
+    process_endurance(df, file) finds the endurance, max Pr, 
+    10^6 Pr, of a given endurance [file] and returns an updated dataframe.
     """
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
