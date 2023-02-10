@@ -1,4 +1,5 @@
 import sys, glob, os, re
+import xlwings as xw
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d as gf
@@ -23,11 +24,13 @@ def get_dev(type, file):
     file = file[:file.rfind('.')]
     idx = [x.isdigit() for x in file].index(True)
     file = file[idx:]
-    if file.rfind('_endurance') != -1:
-        file = file[:file.rfind('_endurance')]
-    if file.rfind('_after') != -1:
-        file = file[:file.rfind('_after')]
+    if file.rfind('_endurance') != -1: file = file[:file.rfind('_endurance')]
+    if file.rfind('_after') != -1: file = file[:file.rfind('_after')]
     return file
+
+def df_try_except(success, param, *exceptions):
+    try: return success(param)
+    except exceptions or Exception: return pd.DataFrame()
 
 def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     """
@@ -39,11 +42,10 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     device = get_dev("PV_", file)  
     print(device)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
+    
     try: 
-        PV_df = pd.read_excel(file, sheet_name='Append2', 
-                            usecols=['Vforce','Charge'])
-        IV_df = pd.read_excel(file, sheet_name='Append2', 
-                            usecols=['Vforce','Imeas'])
+        PV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Charge'])
+        IV_df = pd.read_excel(file, sheet_name='Append2', usecols=['Vforce','Imeas'])
     except:
         print("No Append2")
         return df
@@ -95,9 +97,6 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
     process_PUND(df, file, sheet_name, print_flag_PUND) finds the Vc and Imprint 
     for max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
     """
-    # if sheet_name == 'Data' and print_flag_PUND==False:
-    #     return df
-    
     device = get_dev("PUND_", file)  
     try: 
         dev_row = df[df["device"] == device].index.to_numpy()[0]
@@ -135,19 +134,24 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
 
     # Corresponds to 10^6 cycle files
     elif sheet_name == 'Append1':
-        Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
-        df.at[dev_row, "10^6 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
-        df.at[dev_row, "10^6 Imprint"] = np.mean((Vc_pos, Vc_neg))
-        df.at[dev_row, "10^6 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
-        df.at[dev_row, "10^6 2 Qsw/(U+|D|)"] = calc_metric(qsw, u, d)
+        PUND_helper("10^6", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
     
     # Corresponds to 10^7 cycle files
     elif sheet_name == 'Append2':
-        Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
-        df.at[dev_row, "10^7 Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
-        df.at[dev_row, "10^7 Imprint"] = np.mean((Vc_pos, Vc_neg))
-        df.at[dev_row, "10^7 Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
+        PUND_helper("10^7", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
     return df
+
+def PUND_helper(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d):
+    """
+    PUND_helper(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
+    is a helper function for process_PUND that carries out df writing for shared
+    rows for different [iter]'s.
+    """
+    Vc_pos, Vc_neg = pund_data[:,1][P_idx], pund_data[:,1][N_idx]
+    df.at[dev_row, iter+" Vc"] = np.mean((Vc_pos, np.abs(Vc_neg)))
+    df.at[dev_row, iter+" Imprint"] = np.mean((Vc_pos, Vc_neg))
+    df.at[dev_row, iter+" Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
+    df.at[dev_row, iter+" 2 Qsw/(U+|D|)"] = calc_metric(qsw, u, d)
 
 def process_endurance(df, file):
     """
@@ -156,21 +160,12 @@ def process_endurance(df, file):
     """
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
-    try: 
-        PV_df = pd.read_excel(file, sheet_name="Append3", 
+    read_x = lambda sheet_name: pd.read_excel(file, sheet_name=sheet_name, 
                                 usecols=['iteration','P','Qsw'])
-    except:
-        try: 
-            PV_df = pd.read_excel(file, sheet_name="Append2", 
-                                    usecols=['iteration','P','Qsw'])
-        except:
-            try: 
-                PV_df = pd.read_excel(file, sheet_name="Append1", 
-                                        usecols=['iteration','P','Qsw'])
-            except:
-                PV_df = pd.read_excel(file, sheet_name="Data", 
-                                        usecols=['iteration','P','Qsw'])
-    
+    PV_df, i, sheet_names = pd.DataFrame(), 0, ["Append3", "Append2", "Append1", "Data"]
+    while PV_df.empty: 
+        PV_df = df_try_except(read_x, sheet_names[i+1], ValueError)
+        i+=1
     data = np.array(PV_df)
 
     # Find iteration before occurrence of breakdown
@@ -185,6 +180,67 @@ def process_endurance(df, file):
     col_name = "max Pr (mC/cm^2)"
     df.at[dev_row,col_name] = scale_pr(device, Pr_max)
     return df
+
+def init_df(files_exp):
+    """
+    init_df(files_exp) initializes a dataframe with all device names in current
+    subdirectory whose filenames are in [files_exp].  
+    """
+    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
+    PV_files = [file for file in files_exp if "PV" in file]
+
+    # If missing endurance files, use PV files to extract device names
+    if len(end_files) < len(PV_files):
+        row_names = [file.split("PV_",1)[1] for file in PV_files]
+        row_names = [file[:file.rfind('.')] for file in row_names]
+        row_names = [file[re.search(r"\d", file).start():] for file in row_names]
+        row_names = [file[:file.rfind('_after')] if "after" in file else 
+        file for file in row_names]
+        n_devices = len(PV_files)
+    else:
+        n_devices = len(end_files)
+        row_names = [file.split("endurance_",1)[1] for file in end_files]
+        row_names = [file[:file.rfind('.')] for file in row_names]
+    n_rows = 17
+    dat = np.zeros((n_devices, n_rows))
+    col_names = ["device", "Pr (mC/cm^2)", "2 Qsw/(U+|D|)", "Vc (P-V)", 
+    "Imprint (P-V)", "Vc (I-V)", "Imprint (I-V)", "endurance", 
+    "10^6 Pr (mC/cm^2)", "10^6 2 Qsw/(U+|D|)", "10^6 Vc", "10^6 Imprint", 
+    "10^7 Pr (mC/cm^2)",  "10^7 2 Qsw/(U+|D|)", "10^7 Vc", "10^7 Imprint",
+    "max Pr (mC/cm^2)"] 
+    df = pd.DataFrame(dat, columns=col_names)
+    df['device'] = row_names
+    return df
+
+def file_combine(files_exp):
+    """
+    file_combine(files_exp) combines files with same device and different cycles
+    into single file with multiple sheets:
+        i.e. KHM0ID_subID_PUND_devspecs_3cycles_1e6_1e7cycles.xls
+    """
+    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
+    PV_files = [file for file in files_exp if "PV" in file]
+    PUND_files = [file for file in files_exp if "PUND" in file]
+    PV_PUND_sheet_map = {"1e6cycles":"Append1", "1e7cycles":"Append2", "1e8cycles":"Append3"}
+
+    devs = set([get_dev("PV_", PV_file)for PV_file in PV_files])
+    for PV_file in PV_files:
+        # Make a dictionary with device as key and list of filenames with device in name as values
+        # Then sort the list by your own method (make sure 3 cycles appear before 1e6 cycles)
+            # Easy, sort first and then cycle first and last terms by 1
+        # Then read the 3 cycles one and then the following ones in alphabetical order to Append1 etc
+        # But... some of them are missing files so you may actually have to have a main map they read from...
+        # Yeah... in that case we don't need to sort them; we just have to have the main map
+        # Awww, nah the endurance one needs to be sorted... bcuz you could have the 1e5 or 1e6 etc...
+        # Also some of them do not have 3 cycles data, so you really gotta save it such that they are mapped by your master dictionary 
+        # So we see that there are 2 separate cases because for PV is saved without 3 cycles in the title, jus like endurance
+    
+        pd.read_excel(PV_file, sheet_name='Append2')
+
+
+    for end_file in end_files:
+        print(get_dev("endurance_", end_file))
+    sys.exit()
 
 def read_file(dir, idx):
     """
@@ -212,35 +268,6 @@ def read_file(dir, idx):
             df = process_endurance(df, filename)
     return df
 
-def init_df(files_exp):
-    """
-    init_df(files_exp) initializes a dataframe with all device names in current
-    subdirectory whose filenames are in [files_exp].  
-    """
-    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
-    PV_files = [file for file in files_exp if "PV" in file]
-
-    # If missing endurance files, use PV files to extract device names
-    if len(end_files) < len(PV_files):
-        row_names = [file.split("PV_",1)[1] for file in PV_files]
-        row_names = [file[:file.rfind('.')] for file in row_names]
-        row_names = [file[re.search(r"\d", file).start():] for file in row_names]
-        row_names = [file[:file.rfind('_after')] if "after" in file else 
-        file for file in row_names]
-        n_devices = len(PV_files)
-    else:
-        n_devices = len(end_files)
-        row_names = [file.split("endurance_",1)[1] for file in end_files]
-        row_names = [file[:file.rfind('.')] for file in row_names]
-    n_rows = 16
-    dat = np.zeros((n_devices, n_rows))
-    col_names = ["device", "Pr (mC/cm^2)", "2 Qsw/(U+|D|)", "Vc (P-V)", "Imprint (P-V)", "Vc (I-V)", 
-    "Imprint (I-V)", "endurance", "10^6 Pr (mC/cm^2)", "10^6 2 Qsw/(U+|D|)", "10^6 Vc", "10^6 Imprint", 
-    "10^7 Pr (mC/cm^2)", "10^7 Vc", "10^7 Imprint", "max Pr (mC/cm^2)"] 
-    df = pd.DataFrame(dat, columns=col_names)
-    df['device'] = row_names
-    return df
-
 def main(dir, samp_ID, subdir_arr):
     """
     main(dir, subID, subdir_arr) operates as the main caller function to 
@@ -257,5 +284,5 @@ def main(dir, samp_ID, subdir_arr):
 
 # Update with file path on your local device 
 prettyplot()
-dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM006_'
-main(dir, "006", [2])
+dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/KHM010_'
+main(dir, "010", [24])
