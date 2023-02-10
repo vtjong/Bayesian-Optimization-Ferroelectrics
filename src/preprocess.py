@@ -1,4 +1,8 @@
-import sys, glob, os, re, shutil
+import sys
+import glob
+import os
+import re
+import shutil
 import xlwings as xw
 import pandas as pd
 import numpy as np
@@ -115,7 +119,7 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
     t_data = pund_data[:,0] 
     spline_fun = us(t_data,pund_data[:,1],s=0,k=4)
     spline_1d = spline_fun.derivative(n=1)
-    filt_iv, filt_spline = gf(iv_data[:,1],3), gf(spline_1d(t_data), 3)
+    filt_iv, filt_spline = gf(iv_data[:,1],3), gf(spline_1d(t_data),3)
     alpha = np.polyfit(filt_spline, filt_iv, deg=1)[1]
     iv_data[:,1] = filt_iv/np.abs(alpha)
     
@@ -161,7 +165,8 @@ def process_endurance(df, file):
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     read_x = lambda sheet_name: pd.read_excel(file, sheet_name=sheet_name, 
                                 usecols=['iteration','P','Qsw'])
-    PV_df, i, sheet_names = pd.DataFrame(), 0, ["Append4", "Append3", "Append2", "Append1", "Data"]
+    PV_df, i = pd.DataFrame(), 0 
+    sheet_names = ["Append4", "Append3", "Append2", "Append1", "Data"]
     while PV_df.empty: 
         PV_df = df_try_except(read_x, sheet_names[i+1], ValueError)
         i+=1
@@ -296,7 +301,8 @@ def file_combiner(type, f_d):
             wb_from = xw.Book(fn_from)
             ws_from = wb_from.sheets['Data']
             ws_from.copy(after=wb_to.sheets[-1])
-            wb_to.sheets[-1].name = 'Append' + str(2+fn_idx) if type != "PUND" else 'Append' + str(1+fn_idx)
+            idx = 2+fn_idx if type != "PUND" else 1+fn_idx
+            wb_to.sheets[-1].name = 'Append' + str(idx) 
             wb_from.close()
             os.remove(fn_from)
             wb_to.save()
@@ -306,6 +312,10 @@ def file_combiner(type, f_d):
             fn_to = fn_temp
 
 def file_dict_maker(file_dict, files, devs):
+    """
+    file_dict_maker(file_dict, files, devs) fills in file_dicts with [devs] as keys
+    and [files] with the appropriate device as values. 
+    """
     for dev in devs:
         temp = []
         for file in files:
