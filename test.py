@@ -1,3 +1,4 @@
+from re import T
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -15,3 +16,10 @@ import numpy as np
 # n=30
 # print([n for i in range(2)])
 
+A = np.array([[56.0, 0.0, 4.4, 68.0],
+            [1.2, 104.0, 52.0, 8.0],
+            [1.8, 135.0, 99.0, 0.9]])
+cal = A.sum(axis=0)
+cal = cal.reshape(1,4)
+print(cal)
+# print(A/cal)

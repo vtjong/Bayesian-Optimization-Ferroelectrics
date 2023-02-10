@@ -37,8 +37,8 @@ def kernel_func(config_kernel, num_params):
 
 def make_model(train_x, train_y, num_params, config):
     """
-    make_model(train_x, train_y, num_params, config) returns likelihood and model
-    with lengthscale, noise, kernel function specified by sweeps. 
+    make_model(train_x, train_y, num_params, config) returns likelihood and 
+    model with lengthscale, noise, kernel function specified by sweeps. 
     """
     kernel = kernel_func(config.kernel, num_params)
     noise = config.noise * torch.ones(len(train_x))
@@ -102,7 +102,8 @@ def unravel_acq(acq_func, obs, bounds, train_y, nshape):
 def acq(obs, train_y, bounds):
     """ 
     acq(obs, train_y, bounds) evaluates acquisition functions on current 
-    predictions (observations) and outputs suggested points for exploration on manifold. 
+    predictions (observations) and outputs suggested points for exploration 
+    on manifold. 
     """
     transpose = lambda tensor: tensor.detach().numpy().reshape(nshape).T
     nshape = tuple(bounds)
