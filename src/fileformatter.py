@@ -62,6 +62,21 @@ def file_combine(dir):
         file_combiner(type, f_d)
     app.quit()
 
+def file_dict_maker(file_dict, files, devs):
+    """
+    file_dict_maker(file_dict, files, devs) fills in file_dicts with [devs] as keys
+    and [files] with the appropriate device as values. 
+    """
+    for dev in devs:
+        temp = []
+        for file in files:
+            if dev in file: 
+                subfile = file[file.rindex(dev)+len(dev):]
+                if not subfile[0].isdigit():
+                    temp.append(file)
+        if len(temp)>=2: file_dict[dev] = sorted(temp)
+        elif len(temp)<2: file_dict.pop(dev) 
+
 def file_combiner(type, f_d):
     """
     file_combiner(type, f_d) performs actual combining of files with same device 
@@ -93,21 +108,6 @@ def file_combiner(type, f_d):
             fn_temp = cut_ext(fn_to, 'cycles')+ get_iter(fn_from)
             os.rename(fn_to, fn_temp)
             fn_to = fn_temp
-
-def file_dict_maker(file_dict, files, devs):
-    """
-    file_dict_maker(file_dict, files, devs) fills in file_dicts with [devs] as keys
-    and [files] with the appropriate device as values. 
-    """
-    for dev in devs:
-        temp = []
-        for file in files:
-            if dev in file: 
-                subfile = file[file.rindex(dev)+len(dev):]
-                if not subfile[0].isdigit():
-                    temp.append(file)
-        if len(temp)>=2: file_dict[dev] = sorted(temp)
-        elif len(temp)<2: file_dict.pop(dev) 
 
 def main(dir, sampID):
     """

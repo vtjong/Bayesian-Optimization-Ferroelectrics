@@ -12,7 +12,7 @@ from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 config_defaults = {
-    "epochs": 3000,
+    "epochs": 1000,
     "kernel": "rbf",
     "lr": 0.005,
     "lscale_1": 1.0,
@@ -20,7 +20,7 @@ config_defaults = {
     "lscale_3": None,
     "lscale_4": None,
     "dim": 2,
-    "noise": 0.2
+    "noise": 0.1
 }
 
 wandb.init(config=config_defaults)

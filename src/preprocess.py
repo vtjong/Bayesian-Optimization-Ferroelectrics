@@ -1,11 +1,17 @@
 import glob
 import os
 import re
+import sys
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d as gf
 from scipy.interpolate import UnivariateSpline as us
 from plotter import prettyplot, vis_iv, vis_pv, vis_pund
+import matplotlib.pyplot as plt
+
+def no_file_try_except(dict, file, *exceptions):
+    try: return dict[file]
+    except exceptions or Exception: return False
 
 def df_try_except(success, param, *exceptions):
     try: return success(param)
@@ -33,7 +39,7 @@ def get_dev(type, file):
 
 def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     """
-    process_PV(df, file, print_flag_IV, print_flag_PV) calculates the 
+    [process_PV(df, file, print_flag_IV, print_flag_PV)] calculates the 
     Pr, Vc, and Imprint values for the P-V and I-V loops for a given [file] 
     and returns an updated dataframe; if print_flag = True, 
     runs plot production code.
@@ -56,7 +62,21 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     max, min = np.amax(pv_data,axis=0)[1],np.amin(pv_data,axis=0)[1]
     pv_data[:,1] -= np.mean((max, min))
 
-    # Find Pr, Vc and imprint for P-V
+    # PV, IV loop calculations
+    Vc_neg, Vc_pos = find_PV_PV(df, dev_row, pv_data) 
+    pos_tup, neg_tup, iv_filt = find_IV_PV(df, dev_row, iv_data)
+
+    # Produce P-V, I-V plots
+    if print_flag_PV: make_PV_plot(pv_data, Vc_neg, Vc_pos, device)
+    if print_flag_IV: vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
+
+    return df
+
+def find_PV_PV(df, dev_row, pv_data):
+    """
+    [find_PV_PV(df, dev_row, pv_data)] finds Pr, Vc and imprint and sets them in
+    the dataframe [df], using the P-V loop, for P-V files.
+    """
     dir_Δ = 300 # 300 marks data point of direction change
     Pr = pv_data[np.argwhere(pv_data[dir_Δ:,0] < 0)[0]+dir_Δ,1][0]
     Vc_neg = pv_data[np.argwhere(pv_data[dir_Δ:,1] < 0)[0]+dir_Δ,0][0]
@@ -67,32 +87,35 @@ def process_PV(df, file, print_flag_IV=False, print_flag_PV=False):
     df.at[dev_row,"Pr (mC/cm^2)"] = Pr
     df.at[dev_row,"Vc (P-V)"] = Vc
     df.at[dev_row,"Imprint (P-V)"] = Imprint
+    return Vc_neg, Vc_pos
 
-    # Find Vc and imprint for I-V
+def find_IV_PV(df, dev_row, iv_data):
+    """
+    [find_IV_PV(df, dev_row, iv_data)] finds Vc and imprint for I-V. 
+    """
     iv_filt = gf(iv_data[:,1],2)
     arg_vc_pos, arg_vc_neg = np.argmax(iv_filt), np.argmin(iv_filt)
     Vc_pos_iv, Imeas_Vc_pos = iv_data[:,0][arg_vc_pos], iv_filt[arg_vc_pos]
     Vc_neg_iv, Imeas_Vc_neg = iv_data[:,0][arg_vc_neg], iv_filt[arg_vc_neg]
     df.at[dev_row, "Vc (I-V)"] = np.mean((Vc_pos_iv, np.abs(Vc_neg_iv)))
     df.at[dev_row, "Imprint (I-V)"] = np.mean((Vc_pos_iv, Vc_neg_iv))
+    pos_tup, neg_tup = (Vc_pos_iv, Imeas_Vc_pos), (Vc_neg_iv, Imeas_Vc_neg)
+    return pos_tup, neg_tup, iv_filt
 
-    # Produce P-V plots
-    if print_flag_PV:
-        pv_neg = pv_data[np.argwhere(pv_data[:,0]==Vc_neg)[0][0]][1]
-        pv_neg_tup = (Vc_neg, pv_neg)
-        pv_pos = pv_data[np.argwhere(pv_data[:,0]==Vc_pos)[0][0]][1]
-        pv_pos_tup = (Vc_pos, pv_pos)
-        vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
-
-    # Produce I-V plots
-    if print_flag_IV: 
-        pos_tup, neg_tup = (Vc_pos_iv, Imeas_Vc_pos), (Vc_neg_iv, Imeas_Vc_neg)
-        vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device)  
-    return df
+def make_PV_plot(pv_data, Vc_neg, Vc_pos, device):
+    """
+    [make_PV_plot(pv_data, Vc_neg, Vc_pos, device)] makes PV plots using imported
+    function [vis_pv].
+    """
+    pv_neg = pv_data[np.argwhere(pv_data[:,0]==Vc_neg)[0][0]][1]
+    pv_neg_tup = (Vc_neg, pv_neg)
+    pv_pos = pv_data[np.argwhere(pv_data[:,0]==Vc_pos)[0][0]][1]
+    pv_pos_tup = (Vc_pos, pv_pos)
+    vis_pv(pv_data, pv_neg_tup, pv_pos_tup, device)
 
 def process_PUND(df, file, sheet_name, print_flag_PUND=False):  
     """ 
-    process_PUND(df, file, sheet_name, print_flag_PUND) finds the Vc and Imprint 
+    [process_PUND(df, file, sheet_name, print_flag_PUND)] finds the Vc and Imprint 
     for max, 10^6, 10^7 cycles. If print_flag_PUND=True, PUND plots are generated.
     """
     device = get_dev("PUND_", file)  
@@ -105,19 +128,13 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
         print("No Data")
         return df
 
+    # Plotting
     PUND_df, IV_df = PUND_df[['t','V']], IV_df[['t','I']]
     pund_data, iv_data = np.array(PUND_df), np.array(IV_df)
     pr_dat = np.array(Pr_df)[0]
     u,d,qsw = pr_dat[0], pr_dat[1], pr_dat[-1]
 
-    # Scale by ramp rate (alpha) + ratios of maxes for easy viewing
-    t_data = pund_data[:,0] 
-    spline_fun = us(t_data,pund_data[:,1],s=0,k=4)
-    spline_1d = spline_fun.derivative(n=1)
-    filt_iv, filt_spline = gf(iv_data[:,1],3), gf(spline_1d(t_data),3)
-    alpha = np.polyfit(filt_spline, filt_iv, deg=1)[1]
-    iv_data[:,1] = filt_iv/np.abs(alpha)
-    
+    PUND_plot_scaler(pund_data, iv_data)    
     if print_flag_PUND:
         pund_max, iv_max = np.amax(pund_data[:,1]), np.amax(iv_data[:,1])
         iv_data[:,1]*=(pund_max/iv_max)
@@ -132,16 +149,25 @@ def process_PUND(df, file, sheet_name, print_flag_PUND=False):
 
     # Corresponds to 10^6 cycle files
     elif sheet_name == 'Append1':
-        PUND_helper("10^6", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
+        write_PUND("10^6", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
     
     # Corresponds to 10^7 cycle files
     elif sheet_name == 'Append2':
-        PUND_helper("10^7", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
+        write_PUND("10^7", df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
     return df
 
-def PUND_helper(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d):
+def PUND_plot_scaler(pund_data, iv_data):
+    # Scale by ramp rate (alpha) + ratios of maxes for easy viewing
+    t_data = pund_data[:,0] 
+    spline_fun = us(t_data,pund_data[:,1],s=0,k=4)
+    spline_1d = spline_fun.derivative(n=1)
+    filt_iv, filt_spline = gf(iv_data[:,1],3), gf(spline_1d(t_data),3)
+    alpha = np.polyfit(filt_spline, filt_iv, deg=1)[1]
+    iv_data[:,1] = filt_iv/np.abs(alpha)
+
+def write_PUND(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d):
     """
-    PUND_helper(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)
+    [write_PUND(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d)]
     is a helper function for process_PUND that carries out df writing for shared
     rows for different [iter]'s.
     """
@@ -151,84 +177,152 @@ def PUND_helper(iter, df, pund_data, P_idx, N_idx, dev_row, device, qsw, u, d):
     df.at[dev_row, iter+" Pr (mC/cm^2)"] = 0.5 * scale_pr(device, qsw)
     df.at[dev_row, iter+" 2 Qsw/(U+|D|)"] = calc_metric(qsw, u, d)
 
-def process_endurance(df, file):
+def process_endurance(df, file, end_bool_dict):
     """
-    process_endurance(df, file,sheet_name) finds the endurance, max Pr, 
-    10^6 Pr, of a given endurance [file] and returns an updated dataframe.
+    [process_endurance(df, file, end_bool_dict)] finds the endurance, max Pr, 
+    10^6 figure of merit, for a given endurance [file] and returns an 
+    updated dataframe.
     """
     device = get_dev("endurance_", file)
     dev_row = df[df["device"] == device].index.to_numpy()[0]
     read_x = lambda sheet_name: pd.read_excel(file, sheet_name=sheet_name, 
-                                usecols=['iteration','P','Qsw'])
-    PV_df, i = pd.DataFrame(), 0 
+                                usecols=['iteration','P','U','D','Qsw'])
+    end_df, i = pd.DataFrame(), 0 
     sheet_names = ["Append4", "Append3", "Append2", "Append1", "Data"]
-    while PV_df.empty: 
-        PV_df = df_try_except(read_x, sheet_names[i+1], ValueError)
+    while end_df.empty: 
+        end_df = df_try_except(read_x, sheet_names[i+1], ValueError)
         i+=1
-    data = np.array(PV_df)
-
-    # Find iteration before occurrence of breakdown
+    data = np.array(end_df)
+        
+    # Find, write iteration before occurrence of breakdown
     breakdown = find_breakdown(data)
-
-    # Write endurance based on breakdown
     df.at[dev_row,"endurance"] = data[breakdown -1][0] if breakdown!=0 else 0
 
-    # Find max Pr (before break)
-    write_max_Pr(data, df, device, breakdown, dev_row)
+    # Max Pr
+    find_max_Pr(data, df, device, breakdown, dev_row)
+
+    # Find 1e6 figure of merit
+    end_true = no_file_try_except(end_bool_dict, file, KeyError)
+    no_break = (breakdown==0)
+    if end_true and no_break: 
+        find_1e6_fig_merit(df, end_df, dev_row)
+        print(file)
     return df
 
 def find_breakdown(data): return np.argmax(data[:,1]>=1e-9)
 
-def write_max_Pr(data, df, device, breakdown, dev_row):
+def find_max_Pr(data, df, device, breakdown, dev_row):
     """
-    write_max_Pr(data, df, device, breakdown, dev_row) finds and writes max_Pr
+    [write_max_Pr(data, df, device, breakdown, dev_row)] finds and writes max_Pr
     value to [df].
     """
     dat_bef_brk = data[:breakdown] if breakdown!=0 else data
-    Q_sw = np.amax(dat_bef_brk, axis=0)[2]
+    Q_sw = np.amax(dat_bef_brk, axis=0)[4]
     Pr_max = 0.5 * Q_sw
     col_name = "max Pr (mC/cm^2)"
     df.at[dev_row,col_name] = scale_pr(device, Pr_max)
 
-def init_df(files_exp):
+def find_1e6_fig_merit(df, end_df, dev_row):
     """
-    init_df(files_exp) initializes a dataframe with all device names in current
-    subdirectory whose filenames are in [files_exp].  
+    [find_1e6_fig_merit(df, end_df, dev_row)]
     """
-    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
-    PV_files = [file for file in files_exp if "PV" in file]
+    Qsw = end_df.get(["Qsw"])
+    D, U = end_df.get(["D"]), end_df.get(["U"])
+    Qsw_val = np.average([Qsw.iloc[-1][0], Qsw.iloc[-2][0]])
+    U_val = np.average([U.iloc[-1][0], U.iloc[-2][0]])
+    abs_D_val = np.abs(np.average([D.iloc[-1][0], D.iloc[-2][0]]))
+    df.at[dev_row,"10^6 2 Qsw/(U+|D|)"]= 2*Qsw_val/(U_val + abs_D_val)
 
+def get_device(end_files, PV_files):
+    """
+    [get_device(end_files, PV_files)] parses files for device names and number
+    of devices.
+    """
     # If missing endurance files, use PV files to extract device names
     if len(end_files) < len(PV_files):
-        row_names = [file.split("PV_",1)[1] for file in PV_files]
-        row_names = [file[:file.rfind('.')] for file in row_names]
-        row_names = [file[re.search(r"\d", file).start():] for file in row_names]
-        row_names = [file[:file.rfind('_after')] if "after" in file else 
-        file for file in row_names]
+        devices = [file.split("PV_",1)[1] for file in PV_files]
+        devices = [file[:file.rfind('.')] for file in devices]
+        devices = [file[re.search(r"\d", file).start():] for file in devices]
+        devices = [file[:file.rfind('_after')] if "after" in file else 
+        file for file in devices]
         n_devices = len(PV_files)
     else:
         n_devices = len(end_files)
-        row_names = [file.split("endurance_",1)[1] for file in end_files]
-        row_names = [file[:file.rfind('.')] for file in row_names]
+        devices = [file.split("endurance_",1)[1] for file in end_files]
+        devices = [file[:file.rfind('.')] for file in devices]
+    return devices, n_devices
+
+def init_df(files_exp):
+    """
+    [init_df(files_exp)] initializes a dataframe with all device names in current
+    subdirectory whose filenames are in [files_exp], as well as 
+    """
+    # Make lists of all files of endurance, PV, and PUND 
+    end_files = [file for file in files_exp if "endurance" in file and "PV" not in file]
+    PV_files = [file for file in files_exp if "PV" in file]
+    PUND_files = [file for file in files_exp if  "PUND" in file and "PV" not in file]
+
+    # Initialize dataframe column names, fill devices
+    devs, n_devs = get_device(end_files, PV_files)
     n_rows = 17
-    dat = np.zeros((n_devices, n_rows))
+    dat = np.zeros((n_devs, n_rows))
     col_names = ["device", "Pr (mC/cm^2)", "2 Qsw/(U+|D|)", "Vc (P-V)", 
     "Imprint (P-V)", "Vc (I-V)", "Imprint (I-V)", "endurance", 
     "10^6 Pr (mC/cm^2)", "10^6 2 Qsw/(U+|D|)", "10^6 Vc", "10^6 Imprint", 
-    "10^7 Pr (mC/cm^2)",  "10^7 2 Qsw/(U+|D|)", "10^7 Vc", "10^7 Imprint",
+    "10^7 Pr (mC/cm^2)", "10^7 2 Qsw/(U+|D|)", "10^7 Vc", "10^7 Imprint",
     "max Pr (mC/cm^2)"] 
     df = pd.DataFrame(dat, columns=col_names)
-    df['device'] = row_names
-    return df
+    df['device'] = devs
+    end_bool_dict = end_1e6_dict_maker(PV_files, PUND_files, end_files, devs)
+    return df, end_bool_dict
+
+def end_1e6_dict_maker(PV_files, PUND_files, end_files, devs):
+    """
+    [end_1e6_dict_maker(PV_files, PUND_files, end_files, devs)] creates a boolean
+    dictionary of endurance 
+    """
+    # Set-up file lists/dicts
+    files_col = [PV_files, PUND_files, end_files]
+    make_dict = lambda: dict.fromkeys(devs, [])
+    PV_dict, PUND_dict, end_dict = make_dict(), make_dict(), make_dict()
+    file_dicts = {"PV": PV_dict, "PUND": PUND_dict, "end": end_dict}
+
+    for f_d, fs in list(zip(file_dicts.values(), files_col)): 
+        file_dict_maker(f_d, fs, devs)
+
+    # Interation to find endurance files that require endurance processing
+    # Make a bool dict that contains boolean values of whether endurance 
+    # processing is required
+    end_bool_dict = dict()
+    process_cond = lambda str: ("1e7" in str or "1e8" in str) and "1e6" not in str
+    for dev in devs:
+        if PUND_dict[dev] != [] and end_dict[dev] != []:
+            fn = end_dict[dev][0]
+            end_bool_dict[fn] = process_cond(PUND_dict[dev][0])
+    return end_bool_dict
+
+def file_dict_maker(file_dict, files, devs):
+    """
+    file_dict_maker(file_dict, files, devs) fills in file_dicts with [devs] 
+    as keys and [files] with the appropriate device as values. 
+    """
+    for dev in devs:
+        temp = []
+        for file in files:
+            if dev in file: 
+                subfile = file[file.rindex(dev)+len(dev):]
+                if not subfile[0].isdigit():
+                    temp.append(file)
+        file_dict[dev] = sorted(temp)
 
 def read_file(dir):
     """
-    read_file(dir) reads all files in subdirectory specified by [dir] and 
+    [read_file(dir)] reads all files in subdirectory specified by [dir] and 
     returns calculated metrics, written to a pandas df.
     """
     files = dir + '/*.xls'
     files_exp = glob.glob(files, recursive = True)
-    df = init_df(files_exp)
+    df, end_bool_dict = init_df(files_exp)
 
     for filename in files_exp:
         if 'PUND' in filename:
@@ -242,7 +336,7 @@ def read_file(dir):
         elif 'PV' in filename:
             df = process_PV(df, filename)
         elif 'endurance' in filename:
-            df = process_endurance(df, filename)
+            df = process_endurance(df, filename, end_bool_dict)
     return df
 
 def main(dir, sampID):
@@ -263,4 +357,4 @@ def main(dir, sampID):
 # Update with file path on your local device 
 prettyplot()
 dir = '/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data'
-main(dir, "005")
+main(dir, "006")
