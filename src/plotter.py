@@ -80,21 +80,14 @@ def vis_iv(iv_data, iv_filt, pos_tup, neg_tup, device):
     plt.legend(loc="upper right")
     plt.savefig(dir + "/IV/" + device + "_" + "IV-plot")    
     # plt.show()
-
-def vis_pred(noise, column_mean, column_sd, train_x, train_y, test_grid, obs, nshape):
-    pred_labels = obs.mean.view(nshape)
-
-    # Get back real values from standardized version
-    x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
-    sd_0, sd_1 = column_sd[0], column_sd[1]
-    mu_0, mu_1 = column_mean[0], column_mean[1]
-
+    
+def vis_pred(train_x, train_y, test_grid, pred_labels):
     fig = go.Figure(data=[go.Surface(z=pred_labels.numpy().T, 
-                                    x=x_raw(test_grid[:,0],sd_0, mu_0),
-                                    y=x_raw(test_grid[:,1],sd_1, mu_1),
+                                    x=test_grid[:,0],
+                                    y=test_grid[:,1],
                                     name='GP regression')])
-    fig.add_trace(go.Scatter3d(x=x_raw(train_x[:,0].numpy(), sd_0, mu_0),
-                              y=x_raw(train_x[:,1].numpy(), sd_1, mu_1),
+    fig.add_trace(go.Scatter3d(x=train_x[:,0].numpy(),
+                              y=train_x[:,1].numpy(),
                             z=train_y.numpy(), mode='markers', 
                             marker={'color':'darkgreen'}, name='training data'))
     fig.update_layout( width=1000, height=800,
@@ -112,52 +105,46 @@ def vis_pred(noise, column_mean, column_sd, train_x, train_y, test_grid, obs, ns
     )
 
     fig.update_layout(scene_camera=camera)
-    dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
-    # plt.savefig(dir + "/noise= "+ str(noise) + ", fig1.png")   
     fig.show()
 
-def vis_acq(noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, 
-            upper_surf, lower_surf, acqs):
+def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, acqs):
     # Get back real values from standardized version
-    x_raw = lambda x_stand, sd, x_mean : x_stand*sd + x_mean
-    sd_0, sd_1 = column_sd[0], column_sd[1]
-    mu_0, mu_1 = column_mean[0], column_mean[1]
 
     pi, ei, ca, th, ucb = acqs["PI"], acqs["EI"], acqs["CA"], acqs["TH"], acqs["UCB"]
 
-    fig = go.Figure(data=[go.Surface(z = upper_surf, x=x_raw(test_grid[:,0], sd_0, mu_0),
-                    y=x_raw(test_grid[:,1], sd_1, mu_1), opacity=0.5, showscale=False)])
-    fig.add_trace(go.Surface(z=lower_surf, x=x_raw(test_grid[:,0], sd_0, mu_0), 
-                            y=x_raw(test_grid[:,1], sd_1, mu_1), 
+    fig = go.Figure(data=[go.Surface(z = upper_surf, x=test_grid[:,0],
+                    y=test_grid[:,1], opacity=0.5, showscale=False)])
+    fig.add_trace(go.Surface(z=lower_surf, x=test_grid[:,0],
+                            y=test_grid[:,1], 
                             opacity=0.2, showscale=False))
-    fig.add_trace(go.Scatter3d(x=x_raw(train_x[:,0].numpy(), sd_0, mu_0),
-                                y=x_raw(train_x[:,1].numpy(), sd_1, mu_1), 
+    fig.add_trace(go.Scatter3d(x=train_x[:,0].numpy(), 
+                                y=train_x[:,1].numpy(), 
                                 z=train_y.numpy(), 
                                 mode='markers', 
                                 name='training data', 
                                 marker={'color':'darkgreen'}))
 
-    fig.add_trace(go.Scatter3d(x=[x_raw(test_grid[ucb[1], 0].numpy(), sd_0, mu_0)], 
-                                y=[x_raw(test_grid[ucb[1], 1].numpy(), sd_1, mu_1)],
+    fig.add_trace(go.Scatter3d(x=[test_grid[ucb[1], 0].numpy()], 
+                                y=[test_grid[ucb[1], 1].numpy()],
                                 z=[pred_labels[ucb[0], ucb[1]]], mode='markers', 
                                 name='max(upper confidence bound)')) 
 
-    fig.add_trace(go.Scatter3d(x=[x_raw(test_grid[th[1], 0].numpy(), sd_0, mu_0)], 
-                                y=[x_raw(test_grid[th[0],1].numpy(), sd_1, mu_1)],
+    fig.add_trace(go.Scatter3d(x=[test_grid[th[1], 0].numpy()], 
+                                y=[test_grid[th[0],1].numpy()],
                                 z=[pred_labels[th[0], th[1]].detach().numpy()],
                                  mode='markers', name='max(thompson)')) 
-    fig.add_trace(go.Scatter3d(x=[x_raw(test_grid[pi[1], 0].numpy(), sd_0, mu_0)], 
-                                y=[x_raw(test_grid[pi[0], 1].numpy(), sd_1, mu_1)],
+    fig.add_trace(go.Scatter3d(x=[test_grid[pi[1], 0].numpy()], 
+                                y=[test_grid[pi[0], 1].numpy()],
                                 z=[pred_labels[pi[0], pi[1]]], 
                                 mode='markers', name='max(pi)'))
 
-    fig.add_trace(go.Scatter3d(x=[x_raw(test_grid[ei[1], 0].numpy(), sd_0, mu_0)], 
-                            y=[x_raw(test_grid[ei[0], 1].numpy(), sd_1, mu_1)],
+    fig.add_trace(go.Scatter3d(x=[test_grid[ei[1], 0].numpy()], 
+                            y=[test_grid[ei[0], 1].numpy()],
                             z=[pred_labels[ei[0], ei[1]]], mode='markers', 
                             name='max(ei)'))
 
-    fig.add_trace(go.Scatter3d(x=[x_raw(test_grid[ca[1], 0].numpy(), sd_0, mu_0)], 
-                                y=[x_raw(test_grid[ca[0], 1].numpy(), sd_1, mu_1)],
+    fig.add_trace(go.Scatter3d(x=[test_grid[ca[1], 0].numpy()], 
+                                y=[test_grid[ca[0], 1].numpy()],
                                 z=[pred_labels[ca[0], ca[1]]], 
                                 mode='markers', name='max(ca)'))
 
@@ -171,5 +158,4 @@ def vis_acq(noise, column_mean, column_sd, train_x, train_y, test_grid, pred_lab
                         zaxis_title='2 Qsw/(U+|D|) 1e6')
                     )
     dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
-    # plt.savefig(dir + "/noise= " + str(noise) + ", fig2.png")   
     fig.show()

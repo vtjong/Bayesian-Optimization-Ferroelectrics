@@ -1,34 +1,62 @@
-import sys, os
-import this
+import sys
+import itertools
+import gzip
+import pickle as pk
 from tkinter import Y
 import numpy as np
 import torch
 import gpytorch
 import wandb
 from model import GridGP
-from datasetmaker import dataset
 from acq_funcs import EI, PI, cust_acq, thompson
 from plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
-config_defaults = {
-    "epochs": 1000,
-    "kernel": "rbf",
-    "lr": 0.005,
-    "lscale_1": 1.0,
-    "lscale_2": 1.0,
-    "lscale_3": None,
-    "lscale_4": None,
-    "dim": 2,
-    "noise": 0.1
-}
+# config_defaults = {
+#     "epochs": 1000,
+#     "kernel": "rbf",
+#     "lr": 0.005,
+#     "lscale_1": 1.0,
+#     "lscale_2": 1.0,
+#     "lscale_3": None,
+#     "lscale_4": None,
+#     "dim": 2,
+#     "noise": 0.1
+# }
+# wandb.init(config=config_defaults)
+# config = wandb.config
 
-wandb.init(config=config_defaults)
-config = wandb.config
+class Config():
+    def __init__(self):
+        self.epochs = 10000
+        self.kernel = "rbf"
+        self.lr = 0.005
+        self.lscale_1 = 1.0
+        self.lscale_2 = 1.0
+        self.lscale_3 = None
+        self.lscale_4 = None
+        self.dim = 2
+        # self.noise = 0.1
+
+config = Config()
+
+def load_dataset():
+    """
+    [load_dataset()] loads dataset and parameters already created by 
+    datasetmaker.py and located in dir "/quickload."
+    """
+    dir = "quickload/"
+    with gzip.open(dir + "train_x", "rb") as f: train_x = pk.load(f)[0]
+    with gzip.open(dir + "train_y", "rb") as f: train_y = pk.load(f)[0]
+    with gzip.open(dir + "test_grid", "rb") as f: test_grid = pk.load(f)[0]
+    with gzip.open(dir + "test_x", "rb") as f: test_x = pk.load(f)[0]
+    with gzip.open(dir + "params", "rb") as f: params = pk.load(f)
+    column_mean, column_sd, num_params = itertools.chain(params)
+    return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
 
 def kernel_func(config_kernel, num_params):
     """
-    kernel_func(config_kernel, num_params) returns kernel function with 
+    [kernel_func(config_kernel, num_params)] returns kernel function with 
     dimensions specified by [num_params]. 
     """
     if config_kernel == "rbf":
@@ -37,11 +65,14 @@ def kernel_func(config_kernel, num_params):
 
 def make_model(train_x, train_y, num_params, config):
     """
-    make_model(train_x, train_y, num_params, config) returns likelihood and 
+    [make_model(train_x, train_y, num_params, config)] returns likelihood and 
     model with lengthscale, noise, kernel function specified by sweeps. 
     """
     kernel = kernel_func(config.kernel, num_params)
-    noise = config.noise * torch.ones(len(train_x))
+    num_samples = len(train_x)
+    noise_energy = 0.08
+    noise_time = 0.01
+    noise = torch.column_stack((noise_energy*torch.ones(num_samples), (noise_time)*torch.ones(num_samples)))
     likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noise)
     model = GridGP(train_x, train_y, likelihood, kernel)
     
@@ -66,9 +97,9 @@ def train(train_x, train_y, num_params, config):
         output = model(train_x)
 
         # backpropagate error
-        wandb.define_metric("train loss", summary="min")
+        # wandb.define_metric("train loss", summary="min")
         loss = -mll(output, train_y)
-        wandb.log({"train loss": loss.item()})
+        # wandb.log({"train loss": loss.item()})
         loss.backward()
 
         if i % 100 == 0: 
@@ -82,7 +113,7 @@ def train(train_x, train_y, num_params, config):
 
 def eval_mod(likelihood, model, test_x):
     """ 
-    eval_mod(likelihood, model, test_x) evaluates GP model. 
+    [eval_mod(likelihood, model, test_x)] evaluates GP model. 
     """
     model.eval(), likelihood.eval()
     with torch.no_grad(), gpytorch.settings.fast_pred_var():
@@ -93,7 +124,7 @@ def get_bounds(n): return [n for i in range(config.dim)]
 
 def unravel_acq(acq_func, obs, bounds, train_y, nshape):
     """ 
-    unravel_acq(acq_func, obs, bounds, train_y, nshape) is a helper function 
+    [unravel_acq(acq_func, obs, bounds, train_y, nshape)] is a helper function 
     for acq. 
     """
     acq = acq_func(obs, bounds, train_y).detach().numpy().reshape(nshape).T
@@ -101,7 +132,7 @@ def unravel_acq(acq_func, obs, bounds, train_y, nshape):
 
 def acq(obs, train_y, bounds):
     """ 
-    acq(obs, train_y, bounds) evaluates acquisition functions on current 
+    [acq(obs, train_y, bounds)] evaluates acquisition functions on current 
     predictions (observations) and outputs suggested points for exploration 
     on manifold. 
     """
@@ -126,7 +157,7 @@ def acq(obs, train_y, bounds):
 
 def pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid):
     """
-    pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid) outputs suggested
+    [pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid)] outputs suggested
     inputs and their respective predicted outputs to csv. 
     """    
     x_raw = lambda acq: test_grid[acq[1]]*col_sd + col_mean # undo standardization
@@ -142,14 +173,14 @@ def pred_to_csv(acqs, pred_labels, col_mean, col_sd, test_grid):
         file.write(lab + ": " + str(pred_labels[pred].item()) + "\n")
 
 def main():
-    column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x = dataset()
+    column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x = load_dataset()
     likelihood, model = train(train_x, train_y, num_params, config)
     obs = eval_mod(likelihood, model, test_x)
     bounds = get_bounds(n=30)
-    vis_pred(config.noise, column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
+    vis_pred(column_mean, column_sd, train_x, train_y, test_grid, obs, tuple(bounds))
     pred_labels, upper_surf, lower_surf, acqs = acq(obs, train_y, bounds)
     pred_to_csv(acqs, pred_labels, column_mean, column_sd, test_grid)
-    vis_acq(config.noise, column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, acqs)
+    vis_acq(column_mean, column_sd, train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, acqs)
     
 if __name__ == "__main__":
     main()
