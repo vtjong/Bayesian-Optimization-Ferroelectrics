@@ -125,7 +125,7 @@ def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ac
                                 marker={'color':'darkgreen'}))
 
     fig.add_trace(go.Scatter3d(x=[test_grid[ucb[1], 0].numpy()], 
-                                y=[test_grid[ucb[1], 1].numpy()],
+                                y=[test_grid[ucb[0], 1].numpy()],
                                 z=[pred_labels[ucb[0], ucb[1]]], mode='markers', 
                                 name='max(upper confidence bound)')) 
 
@@ -148,7 +148,7 @@ def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ac
                                 z=[pred_labels[ca[0], ca[1]]], 
                                 mode='markers', name='max(ca)'))
 
-    fig.update_layout( width=800, height=600,
+    fig.update_layout( width=1000, height=600,
                     margin=dict(r=20, l=10, b=10, t=10),
                     legend=dict(orientation="h", yanchor="bottom", 
                                 y=1.02, xanchor="right",x=1),

@@ -1,11 +1,12 @@
 import gpytorch
 import torch
 from botorch.models.gpytorch import GPyTorchModel
+from GPy.models import GPRegression
 
-class GridGP(gpytorch.models.ExactGP, GPyTorchModel):
+class GPModel(gpytorch.models.ExactGP, GPyTorchModel):
     _num_outputs = 1
     def __init__(self, train_x, train_y, likelihood, kernel):
-        super(GridGP, self).__init__(train_x, train_y, likelihood)  
+        super(GPModel, self).__init__(train_x, train_y, likelihood)  
         self.mean_module = gpytorch.means.ConstantMean()
         self.covar_module = kernel
     
