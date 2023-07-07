@@ -94,8 +94,8 @@ def vis_pred(train_x, train_y, test_grid, pred_labels):
                     legend=dict(orientation="h", yanchor="top", y=1.02, 
                     xanchor="left",x=1), margin=dict(r=20, l=10, b=10, t=10), 
                         scene=dict(
-                        xaxis_title="Energy density new cone (J/cm^2)",
-                        yaxis_title="Pulse Width (msec)",
+                        xaxis_title="Pulse Width (msec)",
+                        yaxis_title="Energy density new cone (J/cm^2)",
                         zaxis_title='2 Qsw/(U+|D|) 1e6')
                     )
     camera = dict(
@@ -153,8 +153,8 @@ def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ac
                     legend=dict(orientation="h", yanchor="bottom", 
                                 y=1.02, xanchor="right",x=1),
                     scene=dict(
-                        xaxis_title="Energy density new cone (J/cm^2)",
-                        yaxis_title="Pulse Width (msec)",
+                        xaxis_title="Pulse Width (msec)",
+                        yaxis_title="Energy density new cone (J/cm^2)",
                         zaxis_title='2 Qsw/(U+|D|) 1e6')
                     )
     dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/plots"
