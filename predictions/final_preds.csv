@@ -1,9 +1,4 @@
 Polynomial fit predictions: 
-Type 	  Time (ms) 	 Energy density(J\cm^2) 	 Voltage()
+Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
 UCB:	1170	8.85	2900.0
 NLCB:	2900	9.04	2200.0
-
-GP fit predictions: 
-Type 	 Time (ms) 	 Energy density(J\cm^2) 	 Voltage()
-UCB	: 1.17	8.85	2900.0
-NLCB	: 2.9	9.04	2300.0
