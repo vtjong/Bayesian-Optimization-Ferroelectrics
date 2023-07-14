@@ -1,66 +1,40 @@
 # Prep training data
+from copyreg import pickle
 from sklearn.preprocessing import StandardScaler
-import sys, os
+from sklearn import preprocessing
+import sys
+import gzip
 import numpy as np
 import pandas as pd
+import pickle as pk
 import torch
 import plotly.express as px
 sys.path.append('..')
 sys.path.insert(0, '../src')
 
-def make_dummy_data(dir = "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
-    src_file="KHM005_KHM006_quartz_HZO_samples.csv", 
-    output_file_name='../data/KHM005_KHM006_quartz_HZO_samples2.csv'): 
-    """
-    make_dummy_data() reads in [src_file], containing Thickness (nm) and 
-    Flash Time (msec) data, as well as fills in dummy Duty Cycle and 
-    Num Pulses data to a pandas dataframe, which is returned. 
-    A csv of this training data, with the four aforementioned input parameters, 
-    is outputted to [output_file_name].
-    """
-    # Load data
-    fe_data = pd.read_csv(dir + src_file, index_col=0)
-    fe_data_len = len(fe_data['Thickness (nm)'])
-
-    # Add duty cycle data
-    duty_cycle_list = np.array([0.45, 0.55, 0.65])
-    duty_cycles = np.random.choice(duty_cycle_list, size=fe_data_len)
-    fe_data['Duty Cycle'] = duty_cycles
-
-    # Add num pulses data
-    num_pulses_list = np.array([15, 25])
-    num_pulses = np.random.choice(num_pulses_list, size=fe_data_len)
-    fe_data['Num Pulses'] = num_pulses
-
-    # Rearrange columns
-    cols = list(fe_data.columns.values) 
-    idx = cols.index("Flash time (msec)")
-    cols = cols[:idx+1] + cols[-2:] + cols[idx+1:-2]
-    fe_data = fe_data[cols]
-
-    # Write data back to csv
-    os.makedirs('../data', exist_ok=True) 
-    fe_data.to_csv('../data/KHM005_KHM006_quartz_HZO_samples2.csv') 
-
-    # Load manipulated data
-    fe_data = pd.read_csv(output_file_name, index_col=0)
+def read_dat(dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
+            src_file = "Bolometer_readings_PulseForge.xlsx", sheet= "Combined"):
+    file = dir + src_file
+    fe_data = pd.read_excel(file, sheet_name=sheet, usecols=['Energy density new cone (J/cm^2)',
+                            'Time (ms)','2 Qsw/(U+|D|) 1e6cycles'])
+    fe_data.dropna(subset=['2 Qsw/(U+|D|) 1e6cycles'], inplace=True)
     return fe_data
 
 def display_data(fe_data):
     """
-    display_data(fe_data) creates a cross-section scatter plot of all combinations
+    [display_data(fe_data)] creates a cross-section scatter plot of all combinations
     of the four input parameters and single output parameter.
     """
     # Plot each cross-section
-    fig = px.scatter_matrix(fe_data, dimensions=["Flash voltage (kV)", 
-    "Flash time (msec)", "Duty Cycle", "Num Pulses", "Pr (uC/cm2), Pristine state"])
-    # fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
+    fig = px.scatter_matrix(fe_data, dimensions=['Energy density new cone (J/cm^2)', 
+    "Time (ms)", "2 Qsw/(U+|D|) 1e6cycles"])
+    fig.update_layout(margin=dict(r=20, l=10, b=10, t=10))
     fig.update_layout(height=1000)
     fig.show()
     
 def grid_helper(grid_size, num_params, grid_bounds):
     """
-    grid_helper(grid_size, num_params, grid_bounds) returns a grid of dimensions
+    [grid_helper(grid_size, num_params, grid_bounds)] returns a grid of dimensions
     [grid_size] by [num_params], filled in with data from array [grid_bounds].
     """
     grid = torch.zeros(grid_size, num_params)
@@ -71,24 +45,9 @@ def grid_helper(grid_size, num_params, grid_bounds):
                                     grid_bounds[i][1] + grid_diff, grid_size)
     return grid
 
-def datasetmaker(fe_data):
-    """
-    datasetmaker(fe_data) filters and transforms the data in pandas df [fe_data] 
-    into two tensors, [train_x] for input and [train_y] for output tensors. 
-    """
-    T_scaler = StandardScaler()
-    # Filter training data 
-    mask = ~np.isnan(fe_data['Pr (uC/cm2), Pristine state'])
-    train_x = torch.Tensor(np.array([fe_data['Flash voltage (kV)'][mask].values, 
-                        fe_data['Flash time (msec)'][mask].values, 
-                        fe_data['Duty Cycle'][mask].values,
-                        fe_data['Num Pulses'][mask].values])).T
-    train_y = torch.Tensor(fe_data['Pr (uC/cm2), Pristine state'][mask].values)
-    return train_x, train_y
-
 def grid_maker(train_x):
     """
-    grid_maker(train_x) creates grids to be used for gaussian process predictions.
+    [grid_maker(train_x)] creates grids to be used for gaussian process predictions.
     It outputs the dimension of the grid [num_params] and two grid utility 
     tensors [test_grid] and [test_x].
     """
@@ -107,13 +66,45 @@ def grid_maker(train_x):
     test_x.shape
     return num_params, test_grid, test_x
 
-def dataset():
+def datasetmaker(fe_data):
     """
-    dataset() serves as main, to call the other utility functions.
+    [datasetmaker(fe_data)] filters and transforms the data in pandas df [fe_data] 
+    into two tensors, [train_x] for input and [train_y] for output tensors. 
     """
-    fe_data = make_dummy_data()
-    display_data(fe_data)
-    train_x, train_y = filter(fe_data)
-    num_params, test_grid, test_x = grid_maker(train_x)
-    return train_x, train_y, num_params, test_grid, test_x
+    T_scaler = StandardScaler()
+    # Filter training data 
+    mask = ~np.isnan(fe_data['2 Qsw/(U+|D|) 1e6cycles'])
+    energy_den = fe_data['Energy density new cone (J/cm^2)'][mask].values
+    time = fe_data['Time (ms)'][mask].values
+    # print(energy_den)
+    # print(time)
+    train_x = np.array([fe_data['Energy density new cone (J/cm^2)'][mask].values, 
+                        fe_data['Time (ms)'][mask].values]).transpose()
+    column_mean = np.mean(train_x, axis=0)
+    column_sd = np.std(train_x, axis=0) 
+    train_x-= column_mean
+    train_x/= column_sd
+    train_x = torch.Tensor(train_x)
+    train_y = torch.Tensor(fe_data['2 Qsw/(U+|D|) 1e6cycles'][mask].values)
+    return column_mean, column_sd, train_x, train_y
 
+def save_dataset():
+    """
+    [save_dataset()] writes transformed data and parameters to csv.
+    """
+    dir = "quickload/"
+    fe_data = read_dat()
+    # display_data(fe_data)
+    column_mean, column_sd, train_x, train_y = datasetmaker(fe_data)
+    num_params, test_grid, test_x = grid_maker(train_x)
+    params = [column_mean, column_sd, num_params]
+
+    with gzip.open(dir + "train_x", "wb") as f: pk.dump([train_x], f)
+    with gzip.open(dir + "train_y", "wb") as f: pk.dump([train_y], f)
+    with gzip.open(dir + "test_grid", "wb") as f: pk.dump([test_grid], f)
+    with gzip.open(dir + "test_x", "wb") as f: pk.dump([test_x], f)
+    with gzip.open(dir + "params", "wb") as f: pk.dump(params, f)
+
+    # return column_mean, column_sd, train_x, train_y, num_params, test_grid, test_x
+
+save_dataset()

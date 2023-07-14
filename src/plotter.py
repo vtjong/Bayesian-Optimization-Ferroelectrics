@@ -125,29 +125,11 @@ def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ac
                                 name='training data', 
                                 marker={'color':'darkgreen'}))
 
-    fig.add_trace(go.Scatter3d(x=[test_grid[ucb[1], 0]], 
-                                y=[test_grid[ucb[0], 1]],
-                                z=[pred_labels[ucb[0], ucb[1]]], mode='markers', 
-                                name='max(upper confidence bound)')) 
-
-    fig.add_trace(go.Scatter3d(x=[test_grid[th[1], 0]], 
-                                y=[test_grid[th[0],1]],
-                                z=[pred_labels[th[0], th[1]].detach().numpy()],
-                                 mode='markers', name='max(thompson)')) 
-    fig.add_trace(go.Scatter3d(x=[test_grid[pi[1], 0]], 
-                                y=[test_grid[pi[0], 1]],
-                                z=[pred_labels[pi[0], pi[1]]], 
-                                mode='markers', name='max(pi)'))
-
-    fig.add_trace(go.Scatter3d(x=[test_grid[ei[1], 0]], 
-                            y=[test_grid[ei[0], 1]],
-                            z=[pred_labels[ei[0], ei[1]]], mode='markers', 
-                            name='max(ei)'))
-
-    fig.add_trace(go.Scatter3d(x=[test_grid[ca[1], 0]], 
-                                y=[test_grid[ca[0], 1]],
-                                z=[pred_labels[ca[0], ca[1]]], 
-                                mode='markers', name='max(ca)'))
+    for acq_name, acq_val in acqs.items():
+        fig.add_trace(go.Scatter3d(x=[test_grid[acq_val[1], 0]], 
+                                y=[test_grid[acq_val[0], 1]],
+                                z=[pred_labels[acq_val[0], acq_val[1]]], mode='markers', 
+                                name='max(' + acq_name + ')')) 
 
     fig.update_layout( width=1000, height=600,
                     margin=dict(r=20, l=10, b=10, t=10),
