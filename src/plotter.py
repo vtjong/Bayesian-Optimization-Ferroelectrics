@@ -15,6 +15,7 @@ def prettyplot():
     plt.style.use('seaborn')
     mpl.rcParams['lines.linewidth'] = 1.5
     plt.rcParams['figure.dpi'] = 200
+    plt.rcParams['font.size'] = 14
 
 def vis_pund(pund_data, iv_data, device, sheet_name):
     plt.clf()
