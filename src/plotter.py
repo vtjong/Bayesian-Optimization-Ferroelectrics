@@ -86,6 +86,7 @@ def vis_pred(train_x, train_y, test_grid, pred_labels):
     fig = go.Figure(data=[go.Surface(z=pred_labels.numpy().T, 
                                     x=test_grid[:,0],
                                     y=test_grid[:,1],
+                                    opacity = 0.8,
                                     name='GP regression')])
     fig.add_trace(go.Scatter3d(x=train_x[:,0],
                               y=train_x[:,1],
