@@ -93,8 +93,8 @@ def vis_pred(train_x, train_y, test_grid, pred_labels):
                             z=train_y.numpy(), mode='markers', 
                             marker={'color':'darkgreen'}, name='training data'))
     fig.update_layout( width=1000, height=800,
-                    legend=dict(orientation="h", yanchor="top", y=1.02, 
-                    xanchor="left",x=1), margin=dict(r=20, l=10, b=10, t=10), 
+                    # legend=dict(orientation="h", yanchor="top", y=1.02, 
+                    # xanchor="left",x=1), margin=dict(r=20, l=10, b=10, t=10), 
                         scene=dict(
                         xaxis_title="Pulse Width (msec)",
                         yaxis_title="Energy density new cone (J/cm^2)",
@@ -133,7 +133,7 @@ def vis_acq(train_x, train_y, test_grid, pred_labels, upper_surf, lower_surf, ac
                                 name='max(' + acq_name + ')')) 
 
     fig.update_layout( width=1000, height=600,
-                    margin=dict(r=20, l=10, b=10, t=10),
+                    margin=dict(r=20, l=10, b=15, t=10),
                     legend=dict(orientation="h", yanchor="bottom", 
                                 y=1.02, xanchor="right",x=1),
                     scene=dict(
