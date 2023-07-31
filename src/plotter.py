@@ -12,7 +12,7 @@ def prettyplot():
     """
     prettyplot()——some aesthetically pleasing settings. 
     """
-    plt.style.use('seaborn')
+    plt.style.use('bmh')
     mpl.rcParams['lines.linewidth'] = 1.5
     plt.rcParams['figure.dpi'] = 200
     plt.rcParams['font.size'] = 14
