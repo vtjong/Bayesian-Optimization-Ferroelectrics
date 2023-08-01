@@ -8,6 +8,8 @@ def read_joulemeter(in_file="data/MKS_Ophir_joulemeter_readings.xlsx",
     """
     [read_joulemeter(in_file, out_file)] reads in_file and out_file and writes
     energy density values from in_file to respective column in out_file. 
+    Note: new cone values were filled in manually; this function converts voltage 
+    values associated with samples flashed with the old cone to energy density.
     """
     df = pd.read_excel(in_file, sheet_name="Sheet2")
     df2 = pd.read_excel(out_file, sheet_name="Combined")

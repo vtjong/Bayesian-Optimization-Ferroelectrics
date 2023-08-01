@@ -1,32 +1,8 @@
 GP fit predictions: 
 Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
+UCB:	1.17	8.85	720.0
+NLCB:	2.9	8.85	599.0
 GP fit predictions: 
 Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.17	8.85	2800.0
-NLCB:	2.9	8.85	2300.0
-GP fit predictions: 
-Type	 Time (ms)	 Energy density(J\cm^2)	 Voltage()
-UCB:	1.5	8.85	2700.0
-NLCB:	2.9	8.85	2300.0
+UCB:	1.17	8.85	720.0
+NLCB:	2.9	8.85	599.0
