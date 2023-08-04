@@ -9,7 +9,7 @@ import gpytorch
 import wandb
 from model import GridGP
 from acq_funcs import EI, PI, cust_acq, thompson
-from plotter import vis_pred, vis_acq
+from lib.ferro_plotter import vis_pred, vis_acq
 
 ###### SWEEPS ########
 # config_defaults = {

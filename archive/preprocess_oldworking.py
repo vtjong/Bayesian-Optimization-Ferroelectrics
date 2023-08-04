@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d as gf
 from scipy.interpolate import UnivariateSpline as us
-from plotter import prettyplot, vis_iv, vis_pv, vis_pund
+from lib.ferro_plotter import prettyplot, vis_iv, vis_pv, vis_pund
 import matplotlib.pyplot as plt
 
 def get_devicelen(device): return int(device[:device.find('um')])
