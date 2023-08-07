@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Replace 'notebook1.ipynb' and 'notebook2.ipynb' with the names of your Jupyter notebooks
+# Replace 'notebook1.ipynb' and 'notebook2.ipynb' with the paths to your Jupyter notebooks
 NOTEBOOK1="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/src/ferro-gp_mle_bo_training.ipynb"
 NOTEBOOK2="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/src/ferro_gp_voltage_calibrations.ipynb"
 
