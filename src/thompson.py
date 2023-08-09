@@ -84,7 +84,7 @@ class ThompsonSampling():
             Y = torch.cat((Y, Y_next), dim=0)
 
             print(f"{len(X)}) Best value: {Y.max().item():.2e}")
-        return X, Y
+        return self.get_x_pred(X), Y
     
     def vis_thompson(self, optimum, n_cand, max_evals, Y_ciq, Y_lanczos):
         fig = plt.figure(figsize=(10, 8))
