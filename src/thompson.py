@@ -86,13 +86,13 @@ class ThompsonSampling():
             print(f"{len(X)}) Best value: {Y.max().item():.2e}")
         return self.get_x_pred(X), Y
     
-    def vis_thompson(self, optimum, n_cand, max_evals, Y_ciq, Y_lanczos):
+    def vis_thompson(self, optimum, n_cand, max_evals, Y_ciq):
         fig = plt.figure(figsize=(10, 8))
         matplotlib.rcParams.update({"font.size": 20})
 
         results = [
             (Y_ciq, f"CIQ-{n_cand}", "g", "*", 12, "-"),
-            (Y_lanczos, f"Lanczos-{n_cand}", "m", "^", 9, "-"),
+            # (Y_lanczos, f"Lanczos-{n_cand}", "m", "^", 9, "-"),
         ]
 
         # optimum = train_y.max()
