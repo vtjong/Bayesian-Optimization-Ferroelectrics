@@ -1,7 +1,5 @@
 import gpytorch
-import torch
 from botorch.models.gpytorch import GPyTorchModel
-from GPy.models import GPRegression
 
 class GPModel(gpytorch.models.ExactGP, GPyTorchModel):
     _num_outputs = 1
