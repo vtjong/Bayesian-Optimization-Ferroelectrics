@@ -1,0 +1,46 @@
+wandb_version: 1
+
+dim:
+  desc: null
+  value: 2
+epochs:
+  desc: null
+  value: 2250
+kernel:
+  desc: null
+  value: matern
+lr:
+  desc: null
+  value: 0.025
+matern_nu:
+  desc: null
+  value: 0.5
+min_ls:
+  desc: null
+  value: 0.02
+noise:
+  desc: null
+  value: 0.1
+_wandb:
+  desc: null
+  value:
+    python_version: 3.11.4
+    cli_version: 0.16.1
+    framework: torch
+    is_jupyter_run: true
+    is_kaggle_kernel: false
+    start_time: 1704125770.433665
+    t:
+      1:
+      - 1
+      - 5
+      - 53
+      - 55
+      3:
+      - 23
+      4: 3.11.4
+      5: 0.16.1
+      8:
+      - 1
+      - 5
+      13: darwin-x86_64

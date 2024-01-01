@@ -1,0 +1,44 @@
+{
+    "os": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.11.4",
+    "heartbeatAt": "2024-01-01T16:39:41.628039",
+    "startedAt": "2024-01-01T16:39:40.988333",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "<python with no main file>",
+    "codePathLocal": null,
+    "git": {
+        "remote": "https://github.com/vtjong/Bayesian-Optimization-Ferroelectrics.git",
+        "commit": "401280860e70d0d8f8960416fb032faacf3417fa"
+    },
+    "email": "vyt3@cornell.edu",
+    "root": "/Users/valenetjong/Bayesian-Optimization-Ferroelectrics",
+    "host": "Valenes-MacBook-Pro.local",
+    "username": "valenetjong",
+    "executable": "/Users/valenetjong/opt/anaconda3/envs/nlp-m/bin/python",
+    "cpu_count": 8,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 2400,
+        "min": 2400,
+        "max": 2400
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2400,
+            "min": 2400,
+            "max": 2400
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 460.4317207336426,
+            "used": 367.22143173217773
+        }
+    },
+    "memory": {
+        "total": 8.0
+    }
+}
