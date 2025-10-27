@@ -1,0 +1,46 @@
+# Ferroelectric GP Training Configuration
+
+# Model Architecture
+model:
+  kernel: "matern"  # Options: 'matern', 'rbf'
+  matern_nu: 0.5  # Options: 0.5, 1.5, 2.5 (only for Matérn kernel)
+  input_dim: 2  # Number of input dimensions
+  noise_prior: 0.1  # Initial noise level
+  lengthscale_prior: [1.0, 1.0]
+  train_lengthscale: true
+  min_lengthscale: 0.03  # Minimum lengthscale constraint
+
+# Training Parameters
+training:
+  epochs: 3000
+  learning_rate: 0.003
+  log_interval: 500  # Log every N epochs
+  train_flag: true  # Train or load pre-saved model
+
+# Grid Search / Prediction
+grid:
+  grid_dim: 30  # Number of test points per parameter
+
+# Acquisition Function
+acquisition:
+  mc_or_analytic: "mc"  # Options: 'mc' or 'analytic'
+  functions: ["qUCB", "thompson"]  # Options: 'qEI', 'qPI', 'qUCB', 'thompson'
+  num_suggestions: 4  # Number of suggested points for MC acquisition
+
+# Experiment Tracking
+wandb:
+  enabled: true
+  project: "ferroelectric-gp"  # Add your project name
+  entity: null  # Add your wandb username/team if needed
+
+# Compute
+compute:
+  seed: 1
+  gpus: 0  # Number of GPUs to use
+
+# Paths
+paths:
+  model_save_dir: "models/"
+  data_dir: "data/"
+  output_dir: "predictions/"
+

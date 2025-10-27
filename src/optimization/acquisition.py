@@ -1,283 +1,186 @@
-"""Thompson Sampling acquisition for Bayesian Optimization.
+"""Bayesian Optimization acquisition function utilities."""
 
-This module implements Thompson Sampling as an acquisition strategy for
-Bayesian Optimization. Unlike traditional acquisition functions (EI, UCB),
-Thompson Sampling draws samples from the GP posterior and optimizes those
-samples directly, providing a principled exploration-exploitation tradeoff.
+from typing import Dict, List, Tuple
 
-Adapted from: https://botorch.org/tutorials/thompson_sampling
-"""
-
-import time
-from contextlib import ExitStack
-from typing import Literal, Tuple
-
-import gpytorch.settings as gpts
-import matplotlib
-import matplotlib.pyplot as plt
+import gpytorch
 import numpy as np
 import torch
-from botorch.generation import MaxPosteriorSampling
-from torch.quasirandom import SobolEngine
+from botorch.acquisition import (
+    ExpectedImprovement,
+    ProbabilityOfImprovement,
+    UpperConfidenceBound,
+    qExpectedImprovement,
+    qProbabilityOfImprovement,
+    qUpperConfidenceBound,
+)
+from botorch.optim import optimize_acqf
+from botorch.sampling import SobolQMCNormalSampler
 
 
-class ThompsonSampler:
-    """Thompson Sampling for GP-based Bayesian Optimization.
+def optimize_acquisition_function(
+    acq_function,
+    bounds: torch.Tensor,
+    q: int = 1,
+    num_restarts: int = 20,
+    raw_samples: int = 900,
+) -> torch.Tensor:
+    """Optimize acquisition function to find next candidate points.
 
-    This class implements Thompson Sampling with multiple sampling
-    strategies for posterior draws (Cholesky, CIQ, Lanczos). It uses
-    BoTorch's MaxPosteriorSampling to find points that maximize sampled
-    functions from the GP posterior.
-
-    The sampler supports:
-    - Exact sampling (Cholesky decomposition)
-    - Contour Integral Quadrature (CIQ) for scalability
-    - Lanczos iterations for approximate sampling
-    - Sobol sequences for quasi-random candidate generation
-
-    Example:
-        sampler = ThompsonSampler(model, likelihood, scaler, seed=42)
-        X_suggested, Y_predicted = sampler.run_optimization(
-            n_cands=900,
-            n_init=1,
-            max_evals=4,
-            batch_size=1,
-            sampler="ciq"
-        )
-
-    :ivar model: Trained GP model
-    :ivar likelihood: GP likelihood function
-    :ivar scaler: Data scaler for inverse transform
-    :ivar seed: Random seed for reproducibility
-    :ivar dim: Dimensionality of the parameter space
+    :param acq_function: BoTorch acquisition function
+    :param bounds: Parameter bounds [[lower], [upper]]
+    :param q: Number of candidates to generate jointly
+    :param num_restarts: Number of optimization restarts
+    :param raw_samples: Number of raw samples for initialization
+    :return: Optimized candidate points
     """
+    candidates, _ = optimize_acqf(
+        acq_function=acq_function,
+        bounds=bounds,
+        q=q,
+        num_restarts=num_restarts,
+        raw_samples=raw_samples,
+        options={},
+    )
+    return candidates
 
-    def __init__(
-        self,
-        model,
-        likelihood,
-        scaler,
-        seed: int,
-        dim: int = 2,
-    ) -> None:
-        """Initialize Thompson Sampler.
 
-        :param model: Fitted Gaussian Process model
-        :param likelihood: GP likelihood (e.g., GaussianLikelihood)
-        :param scaler: Scaler for transforming back to original space
-        :param seed: Random seed for Sobol sequence generation
-        :param dim: Number of input dimensions
-        """
-        self.model = model
-        self.likelihood = likelihood
-        self.scaler = scaler
-        self.seed = seed
-        self.dim = dim
+def suggest_next_experiments_analytic(
+    model: gpytorch.models.ExactGP,
+    likelihood: gpytorch.likelihoods.Likelihood,
+    train_y: torch.Tensor,
+    bounds: torch.Tensor,
+    beta: float = 5.0,
+) -> Dict[str, Tuple[np.ndarray, float]]:
+    """Suggest next experiments using analytic acquisition functions.
 
-    def inverse_transform_candidates(self, candidates: torch.Tensor) -> np.ndarray:
-        """Transform scaled candidates back to original parameter space.
+    Uses Expected Improvement (EI), Probability of Improvement (PI),
+    and Upper Confidence Bound (UCB) to suggest single candidate point.
 
-        :param candidates: Scaled candidate points
-        :return: Candidates in original space, rounded to 2 decimals
-        """
-        original_space = self.scaler.inverse_transform(candidates)
-        return np.round(original_space, 2)
+    :param model: Trained GP model
+    :param likelihood: Trained likelihood
+    :param train_y: Training targets (for computing best observation)
+    :param bounds: Parameter bounds [[lower], [upper]]
+    :param beta: UCB exploration parameter
+    :return: Dict mapping acquisition function name to (candidate, predicted_value)
+    """
+    model.eval()
+    likelihood.eval()
 
-    def predict_mean(self, candidates: torch.Tensor, batch_size: int) -> np.ndarray:
-        """Predict mean values for candidate points.
+    y_best = train_y.max()
 
-        :param candidates: Input points to predict
-        :param batch_size: Number of candidates (1 for single point)
-        :return: Predicted mean values, rounded to 2 decimals
-        """
+    # Create acquisition functions
+    acq_functions = {
+        "EI": ExpectedImprovement(model, y_best),
+        "PI": ProbabilityOfImprovement(model, y_best),
+        "UCB": UpperConfidenceBound(model, beta),
+    }
+
+    suggestions = {}
+    for name, acq_func in acq_functions.items():
+        # Optimize acquisition function
+        candidate = optimize_acquisition_function(acq_func, bounds, q=1)
+
+        # Get predicted value
         with torch.no_grad():
-            posterior = self.likelihood(self.model(candidates))
-            y_pred_mean = posterior.mean.detach().numpy()
+            pred_mean = likelihood(model(candidate)).mean.item()
 
-        if batch_size == 1:
-            return np.round(y_pred_mean.item(), 2)
-        return np.round(y_pred_mean, 2)
+        suggestions[name] = (candidate.numpy(), pred_mean)
 
-    def generate_sobol_candidates(self, n_points: int) -> torch.Tensor:
-        """Generate quasi-random candidates using Sobol sequences.
-
-        Sobol sequences provide better space-filling properties than
-        pure random sampling, leading to more efficient exploration.
-
-        :param n_points: Number of candidate points to generate
-        :return: Tensor of shape (n_points, dim) in [0, 1]^dim
-        """
-        sobol = SobolEngine(dimension=self.dim, scramble=True, seed=self.seed)
-        return sobol.draw(n=n_points)
-
-    def generate_batch(
-        self,
-        n_candidates: int,
-        batch_size: int,
-        sampler: Literal["cholesky", "ciq", "lanczos", "rff"] = "ciq",
-    ) -> torch.Tensor:
-        """Generate batch of points using Thompson Sampling.
-
-        This method:
-        1. Generates candidate points via Sobol sequences
-        2. Configures GPyTorch settings for the chosen sampler
-        3. Draws posterior samples and finds their maxima
-
-        Sampler options:
-        - cholesky: Exact sampling (slow for large n)
-        - ciq: Contour Integral Quadrature (scalable)
-        - lanczos: Lanczos iterations (approximate)
-        - rff: Random Fourier Features (fast approximate)
-
-        :param n_candidates: Number of candidate points to evaluate
-        :param batch_size: Number of points to select
-        :param sampler: Sampling strategy to use
-        :return: Selected candidate points of shape (batch_size, dim)
-        """
-        # Generate candidate points
-        X_candidates = self.generate_sobol_candidates(n_candidates)
-
-        # Configure GPyTorch settings based on sampler type
-        with ExitStack() as es:
-            if sampler == "cholesky":
-                # Exact sampling via Cholesky decomposition
-                es.enter_context(gpts.max_cholesky_size(float("inf")))
-
-            elif sampler == "ciq":
-                # Contour Integral Quadrature sampling
-                es.enter_context(gpts.fast_computations(covar_root_decomposition=True))
-                es.enter_context(gpts.max_cholesky_size(0))
-                es.enter_context(gpts.ciq_samples(True))
-                es.enter_context(gpts.minres_tolerance(2e-3))
-                es.enter_context(gpts.num_contour_quadrature(15))
-
-            elif sampler == "lanczos":
-                # Lanczos iterations for approximate sampling
-                es.enter_context(
-                    gpts.fast_computations(
-                        covar_root_decomposition=True,
-                        log_prob=True,
-                        solves=True,
-                    )
-                )
-                es.enter_context(gpts.max_lanczos_quadrature_iterations(10))
-                es.enter_context(gpts.max_cholesky_size(0))
-                es.enter_context(gpts.ciq_samples(False))
-
-            elif sampler == "rff":
-                # Random Fourier Features
-                es.enter_context(gpts.fast_computations(covar_root_decomposition=True))
-
-            # Draw samples and find maxima
-            with torch.no_grad():
-                thompson_sampling = MaxPosteriorSampling(model=self.model, replacement=False)
-                X_next = thompson_sampling(X_candidates, num_samples=batch_size)
-
-        return X_next
-
-    def run_optimization(
-        self,
-        n_cands: int,
-        n_init: int,
-        max_evals: int,
-        batch_size: int,
-        sampler: Literal["cholesky", "ciq", "lanczos", "rff"] = "ciq",
-    ) -> Tuple[np.ndarray, torch.Tensor]:
-        """Run Thompson Sampling optimization loop.
-
-        Iteratively generates batches of candidate points, evaluates them
-        via the GP model, and tracks the best values found.
-
-        :param n_cands: Number of candidates to generate per iteration
-        :param n_init: Number of initial random points
-        :param max_evals: Maximum number of evaluations to perform
-        :param batch_size: Points to select per iteration
-        :param sampler: Sampling strategy (cholesky, ciq, lanczos, rff)
-        :return: Tuple of (suggested_points, predicted_values) where
-            suggested_points are in original parameter space and
-            predicted_values are GP predictions
-        """
-        # Initialize with random Sobol points
-        X = self.generate_sobol_candidates(n_init)
-        Y = torch.tensor([self.predict_mean(x.unsqueeze(0), 1) for x in X])
-        print(f"{len(X)}) Best value: {Y.max().item():.2e}")
-
-        # Iteratively generate batches
-        while len(X) < max_evals:
-            start = time.monotonic()
-            X_next = self.generate_batch(n_cands, batch_size, sampler)
-            end = time.monotonic()
-            print(f"Generated batch in {end - start:.3f} seconds")
-
-            # Evaluate new candidates
-            Y_next = torch.tensor([self.predict_mean(x.unsqueeze(0), 1) for x in X_next])
-
-            # Append to history
-            X = torch.cat((X, X_next), dim=0)
-            Y = torch.cat((Y, Y_next), dim=0)
-
-            print(f"{len(X)}) Best value: {Y.max().item():.2e}")
-
-        # Transform back to original space
-        X_original = self.inverse_transform_candidates(X)
-        return X_original, Y
-
-    def visualize_convergence(
-        self,
-        Y_values: torch.Tensor,
-        optimum: float,
-        n_candidates: int,
-        max_evals: int,
-        sampler_name: str = "CIQ",
-    ) -> None:
-        """Visualize Thompson Sampling convergence.
-
-        Plots the cumulative maximum (best value found so far) over
-        the course of optimization iterations.
-
-        :param Y_values: Predicted values at each iteration
-        :param optimum: Known global optimum (for comparison)
-        :param n_candidates: Number of candidates used per iteration
-        :param max_evals: Total number of evaluations
-        :param sampler_name: Name of sampler for legend
-        """
-        fig = plt.figure(figsize=(10, 8))
-        matplotlib.rcParams.update({"font.size": 20})
-        fig.add_subplot(1, 1, 1)
-
-        # Plot cumulative maximum
-        cumulative_max = Y_values.cummax(dim=0)[0]
-        iterations = 1 + np.arange(len(cumulative_max))
-
-        plt.plot(
-            iterations[0::2],
-            cumulative_max[0::2],
-            c="g",
-            marker="*",
-            linestyle="-",
-            markersize=12,
-            label=f"{sampler_name}-{n_candidates}",
-        )
-
-        # Plot global optimum reference line
-        plt.plot(
-            [0, max_evals],
-            [optimum, optimum],
-            "k--",
-            lw=3,
-            label="Global optimal value",
-        )
-
-        plt.xlabel("Number of evaluations", fontsize=18)
-        plt.ylabel("Best value found", fontsize=18)
-        plt.title("Thompson Sampling Convergence", fontsize=24)
-        plt.xlim([0, max_evals])
-        plt.ylim([0, 5])
-        plt.grid(True)
-        plt.tight_layout()
-        plt.legend(loc="lower right", ncol=1, fontsize=18)
-        plt.show()
+    return suggestions
 
 
-# Backward compatibility alias
-ThompsonSampling = ThompsonSampler
+def suggest_next_experiments_mc(
+    model: gpytorch.models.ExactGP,
+    likelihood: gpytorch.likelihoods.Likelihood,
+    train_y: torch.Tensor,
+    bounds: torch.Tensor,
+    q: int = 4,
+    beta: float = 5.0,
+    seed: int = 1,
+    acq_functions: List[str] = ["qEI", "qPI", "qUCB"],
+) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Suggest next experiments using Monte Carlo acquisition functions.
+
+    Uses qEI, qPI, qUCB to suggest multiple candidate points jointly.
+    MC sampling enables batch optimization of acquisition functions.
+
+    :param model: Trained GP model
+    :param likelihood: Trained likelihood
+    :param train_y: Training targets
+    :param bounds: Parameter bounds
+    :param q: Number of candidates to suggest jointly
+    :param beta: UCB exploration parameter
+    :param seed: Random seed for MC sampling
+    :param acq_functions: List of acquisition function names to use
+    :return: Dict mapping function name to (candidates, predicted_values)
+    """
+    model.eval()
+    likelihood.eval()
+
+    y_best = train_y.max()
+
+    # Setup MC sampler
+    sampler = SobolQMCNormalSampler(sample_shape=torch.Size([1024]), seed=seed)
+
+    # Create acquisition functions
+    acq_func_map = {
+        "qEI": qExpectedImprovement(model, y_best, sampler=sampler),
+        "qPI": qProbabilityOfImprovement(model, y_best, sampler=sampler),
+        "qUCB": qUpperConfidenceBound(model, beta, sampler=sampler),
+    }
+
+    suggestions = {}
+    for name in acq_functions:
+        if name not in acq_func_map:
+            continue
+
+        acq_func = acq_func_map[name]
+
+        # Optimize to find q candidates jointly
+        candidates = optimize_acquisition_function(acq_func, bounds, q=q)
+
+        # Get predicted values for each candidate
+        with torch.no_grad():
+            pred_means = likelihood(model(candidates)).mean.numpy()
+
+        suggestions[name] = (candidates.numpy(), pred_means)
+
+    return suggestions
+
+
+def format_suggestions(
+    suggestions: Dict,
+    scaler,
+    feature_names: List[str] = None,
+) -> None:
+    """Pretty-print acquisition function suggestions.
+
+    :param suggestions: Dict from suggest_next_experiments_*
+    :param scaler: Fitted scaler to inverse transform candidates
+    :param feature_names: Names of input features
+    """
+    if feature_names is None:
+        feature_names = ["Feature 1", "Feature 2"]
+
+    print("\n" + "=" * 70)
+    print("SUGGESTED NEXT EXPERIMENTS")
+    print("=" * 70)
+
+    for acq_name, (candidates, predictions) in suggestions.items():
+        print(f"\n{acq_name}:")
+
+        # Handle single vs batch candidates
+        if candidates.ndim == 1:
+            candidates = candidates.reshape(1, -1)
+            predictions = [predictions]
+
+        # Inverse transform to original scale
+        candidates_original = scaler.inverse_transform(
+            torch.from_numpy(candidates).float()
+        ).numpy()
+
+        for i, (cand, pred) in enumerate(zip(candidates_original, predictions)):
+            print(f"  Candidate {i + 1}:")
+            for fname, val in zip(feature_names, cand):
+                print(f"    {fname}: {val:.3f}")
+            print(f"    Predicted FOM: {pred:.3f}")

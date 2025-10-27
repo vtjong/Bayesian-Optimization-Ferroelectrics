@@ -152,6 +152,61 @@ We use scatter matrices to inform GP modeling decisions:
 
 ## Usage
 
+### Configuration
+
+All training hyperparameters are managed through YAML configuration files for reproducibility and version control.
+
+**Main Config File**: `config/training_config.yaml`
+
+```yaml
+# Model Architecture
+model:
+  matern_nu: 0.5
+  lengthscale_prior: [1.0, 1.0]
+  train_lengthscale: true
+  min_lengthscale: 0.03
+
+# Training Parameters
+training:
+  epochs: 3000
+  learning_rate: 0.003
+  log_interval: 500
+  
+# Acquisition Function
+acquisition:
+  mc_or_analytic: "mc"
+  functions: ["qUCB", "thompson"]
+  num_suggestions: 4
+```
+
+**Loading Configuration in Code**:
+
+```python
+from src.config_loader import load_config, config_to_args
+
+# Option 1: Use nested config (recommended)
+config = load_config('config/training_config.yaml')
+epochs = config.training.epochs
+matern_nu = config.model.matern_nu
+
+# Option 2: Flat args for backward compatibility
+args = config_to_args(config)
+epochs = args.epochs
+```
+
+**Quick Experiments with Overrides**:
+
+```python
+from src.config_loader import load_config_with_overrides
+
+# Override specific parameters without modifying config file
+config = load_config_with_overrides(
+    'config/training_config.yaml',
+    epochs=5000,
+    learning_rate=0.01
+)
+```
+
 ### Preprocessing
 To run the data preprocessing script:
 1. Update directory path in `src/preprocess.py`:
@@ -165,16 +220,45 @@ python src/preprocess.py
 3. Processed data will be saved to `data/processed/`
 
 ### Training
-To run the Gaussian Process training:
-1. Navigate to `src/main.py`
-2. Configure hyperparameter sweep in `config/sweep.yaml`
-3. Initialize Weights & Biases:
+
+**Clean Training Script** (Recommended):
+
+```bash
+cd src
+python train_clean.py
+```
+
+This follows a clean 7-step workflow:
+1. Load configuration → 2. Load data → 3. Create model → 4. Train → 5. Evaluate → 6. Suggest next experiments → 7. Export
+
+**Module Organization**:
+```python
+# Training & evaluation
+from trainer import train_gp_model, save_model_checkpoint
+from evaluator import evaluate_model
+
+# Bayesian Optimization
+from optimization.acquisition import suggest_next_experiments_mc
+from optimization.thompson_sampler import ThompsonSampler
+```
+
+**Interactive Training (Jupyter Notebook)**:
+
+1. Open `src/training.ipynb`
+2. Modify `config/training_config.yaml` to set hyperparameters
+3. Run cells sequentially - config is automatically loaded
+
+**Hyperparameter Sweeps with WandB**:
+
+1. Configure sweep parameters in `config/sweep.yaml`
+2. Initialize Weights & Biases:
 ```bash
 wandb login
 ```
-4. Run training with hyperparameter sweep:
+3. Run training with hyperparameter sweep:
 ```bash
 wandb sweep config/sweep.yaml
+wandb agent <sweep-id>
 ```
 
 **WandB Resources**:
@@ -228,23 +312,93 @@ Where:
 
 ### Kernel Design
 
-**Primary Kernel**: Matérn-5/2 with ARD
+**Kernel Choice** (`src/models/factory.py`):
+
+We support two kernel types, configured via `create_kernel()`:
+
+#### 1. RBF (Radial Basis Function)
 
 \[
-k(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \left(1 + \sqrt{5}r + \frac{5r^2}{3}\right) \exp(-\sqrt{5}r)
+k_{\text{RBF}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \exp\left(-\frac{||\mathbf{x} - \mathbf{x}'||^2}{2\ell^2}\right)
+\]
+
+**Properties**:
+- **Infinitely differentiable**: Produces very smooth predictions
+- **Good for**: Well-behaved, smooth functions
+- **Risk**: Can oversmooth and miss rapid changes
+- **Best when**: You know the underlying function is smooth
+
+#### 2. Matérn Kernel (Recommended)
+
+\[
+k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \frac{2^{1-\nu}}{\Gamma(\nu)} \left(\sqrt{2\nu}r\right)^\nu K_\nu\left(\sqrt{2\nu}r\right)
 \]
 
 Where \( r = \sqrt{\sum_{d=1}^D \frac{(x_d - x_d')^2}{\ell_d^2}} \)
 
-**Why Matérn-5/2?**
-- Twice differentiable (smooth but not infinitely smooth like RBF)
-- More robust to misspecification than RBF
-- ARD lengthscales \( \{\ell_d\} \) automatically learn input relevance
+**Matérn Smoothness Parameter (\( \nu \))**:
+
+| \( \nu \) | Differentiability | Use Case |
+|-----------|------------------|----------|
+| 0.5 | Once differentiable (exponential kernel) | Very rough functions |
+| 1.5 | Twice differentiable | Most physical systems |
+| 2.5 | Five times differentiable | Smoother processes |
+
+**Why Matérn?**
+- **Flexible smoothness**: \( \nu \) controls differentiability
+- **Robust**: More robust to misspecification than RBF
+- **Physical**: Better matches real-world phenomena (not infinitely smooth)
+- **Recommended**: Matérn-5/2 (\( \nu = 2.5 \)) balances smoothness and flexibility
 
 **Alternative Kernels Considered**:
-- RBF (too smooth, can overfit)
-- Matérn-3/2 (less smooth, better for rough functions)
-- Spectral kernels (for periodic phenomena)
+- RBF: Too smooth, assumes infinite differentiability
+- Matérn-3/2: Good for rougher functions
+- Spectral kernels: For periodic phenomena (not applicable here)
+
+### ARD (Automatic Relevance Determination)
+
+Both kernels use **ARD lengthscales** \( \{\ell_d\}_{d=1}^D \) - one per input dimension.
+
+**How ARD Works**:
+- **Small lengthscale** (\( \ell_d \approx 0 \)): GP is sensitive to that dimension
+  - Function varies rapidly with \( x_d \)
+  - **Important feature**
+- **Large lengthscale** (\( \ell_d \to \infty \)): GP is insensitive to that dimension
+  - Function barely changes with \( x_d \)
+  - **Irrelevant feature** - can be dropped
+
+**Learning Feature Importance**:
+During training (MLE), lengthscales are optimized. The GP automatically:
+1. Shortens lengthscales for predictive features
+2. Lengthens lengthscales for irrelevant features
+3. Effectively performs feature selection
+
+**Example**: If energy density is critical but pulse time doesn't matter:
+- \( \ell_{\text{energy}} \approx 0.1 \) (short, sensitive)
+- \( \ell_{\text{time}} \approx 10.0 \) (long, insensitive)
+
+### Lengthscale Constraints
+
+**Minimum Lengthscale** (`min_lengthscale: float`):
+
+We constrain \( \ell_d \geq \ell_{\text{min}} \) (typically 0.03) to prevent:
+
+**Too Small (Overfitting)**:
+- Model fits every noise wiggle
+- High variance, poor generalization
+- GP interpolates training points exactly
+- Posterior mean passes through every observation
+
+**Too Large (Underfitting)**:
+- Model ignores local structure
+- High bias, oversimplified
+- GP predicts near-constant values
+- Loses predictive power
+
+**Proper Range**:
+- After input scaling to [0,1], typical lengthscales: 0.1-1.0
+- Min constraint (0.03) allows sensitivity without overfitting
+- Max constraint usually not needed (MLE penalizes too-large values)
 
 ### Acquisition Functions
 
@@ -288,13 +442,50 @@ y = f(\mathbf{x}) + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma_n^2)
 - Multiple measurements at same \( \mathbf{x} \) may differ
 - GP noise variance \( \sigma_n^2 \) prevents overfitting to noise
 
-**Heteroscedastic Extension** (optional):
+#### Fixed vs Learned Noise
+
+Our implementation (`create_gp_model()`) uses **FixedNoiseGaussianLikelihood**:
+
+**Fixed Noise (Our Approach)**:
+```python
+likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
+    noise=noise_level * torch.ones(n_samples)
+)
+```
+
+**Advantages**:
+- **Faster optimization**: One fewer parameter to optimize
+- **More stable**: Avoids noise collapsing to zero or exploding
+- **Small datasets**: Better when you have <100 points
+- **Known noise**: Use when experimental noise is measured/estimated
+
+**Disadvantages**:
+- **Fixed assumption**: If noise estimate is wrong, calibration suffers
+- **Homoscedastic**: Assumes constant noise across parameter space
+
+**When to Use**:
+- Ferroelectric experiments: Noise is approximately known from repeated measurements
+- Small dataset regime: Learning noise can be unstable
+- Fast iteration: Fixed noise speeds up hyperparameter optimization
+
+**Alternative: Learned Noise**:
+```python
+likelihood = gpytorch.likelihoods.GaussianLikelihood()
+# Noise learned via MLE along with kernel parameters
+```
+
+Use when:
+- Large dataset (>1000 points)
+- Unknown noise level
+- Willing to trade speed for flexibility
+
+**Heteroscedastic Extension** (advanced):
 If noise varies with \( \mathbf{x} \) (e.g., higher energy → more noise):
 \[
 \epsilon \sim \mathcal{N}(0, \sigma_n^2(\mathbf{x}))
 \]
 
-Implemented via separate GP for noise variance.
+Implemented via separate GP for noise variance (see `gpytorch.mlls.FixedNoiseGaussianLikelihood` with input-dependent noise).
 
 ### Hyperparameter Optimization
 
@@ -395,30 +586,65 @@ train_y = torch.Tensor(fe_data["FOM"].values)
 ## File Structure
 
 ```
-src/
-├── preprocessing/
-│   ├── loaders.py           # Data loading and EDA
-│   │   ├── load_experimental_data()
-│   │   └── plot_input_output_scatter_matrix()
-│   ├── transforms.py        # Tensor conversion and scaling
-│   │   ├── TorchMinMaxScaler (class)
-│   │   └── prepare_gp_training_tensors()
-│   └── preprocess.py        # Full preprocessing pipeline
-├── models/
-│   └── gp_models.py         # GP model definitions
-├── optimization/
-│   ├── acquisition.py       # Acquisition functions
-│   └── bayesian_opt.py      # BO loop
-├── visualization/
-│   └── plotting.py          # Result visualization
-└── training.ipynb           # Interactive training notebook
+├── config/
+│   ├── training_config.yaml  # Main training configuration
+│   └── sweep.yaml            # WandB hyperparameter sweep config
+│
+├── src/
+│   ├── config_loader.py      # Configuration loading utilities
+│   │   ├── Config (class)
+│   │   ├── load_config()
+│   │   ├── load_config_with_overrides()
+│   │   └── config_to_args()
+│   │
+│   ├── preprocessing/
+│   │   ├── loaders.py        # Data loading and EDA
+│   │   │   ├── load_experimental_data()
+│   │   │   └── plot_input_output_scatter_matrix()
+│   │   ├── transforms.py     # Tensor conversion and scaling
+│   │   │   ├── TorchMinMaxScaler (class)
+│   │   │   └── prepare_gp_training_tensors()
+│   │   └── preprocess.py     # Full preprocessing pipeline
+│   │
+│   ├── models/
+│   │   ├── factory.py        # GP model and kernel factory functions
+│   │   │   ├── create_kernel()
+│   │   │   └── create_gp_model()
+│   │   ├── gp.py            # ExactGPModel class definition
+│   │   └── __init__.py      # Model module exports
+│   │
+│   ├── optimization/
+│   │   ├── acquisition.py    # Acquisition functions
+│   │   └── bayesian_opt.py   # BO loop
+│   │
+│   ├── visualization/
+│   │   └── plotting.py       # Result visualization
+│   │
+│   └── training.ipynb        # Interactive training notebook
+│
+├── data/                     # Experimental data
+├── models/                   # Saved model checkpoints
+└── predictions/              # BO predictions and suggestions
 ```
 
-**Design Note**: `transforms.py` contains both `TorchMinMaxScaler` and `prepare_gp_training_tensors()` in a single file because:
-- They are tightly coupled (the function uses the scaler)
-- Both handle tensor transformations for the same purpose (GP training)
-- Splitting would create unnecessary file overhead for ~200 lines
-- Follows the cohesion principle: related functionality stays together
+**Design Notes**:
+
+1. **Configuration Management**: `config_loader.py` provides a clean interface for YAML configs with dot-notation access and backward compatibility with argparse-style code.
+
+2. **Preprocessing Organization**: `transforms.py` contains both `TorchMinMaxScaler` and `prepare_gp_training_tensors()` because:
+   - They are tightly coupled (function uses the scaler)
+   - Both handle tensor transformations for GP training
+   - Follows cohesion principle: related functionality stays together
+
+3. **Model Factory Pattern**: `models/factory.py` provides factory functions for GP creation:
+   - `create_kernel()`: Constructs RBF or Matérn kernels with ARD
+   - `create_gp_model()`: Creates complete GP with likelihood and kernel
+   - Centralizes model construction logic for consistency
+   - See README Technical Deep Dive for detailed kernel design reasoning
+
+4. **Config Files**: Separate YAML files for different purposes:
+   - `training_config.yaml`: Single experiment settings
+   - `sweep.yaml`: WandB hyperparameter search space
 
 ---
 
@@ -428,13 +654,3 @@ src/
 - **BoTorch**: https://botorch.org/
 - **Gaussian Processes for ML**: Rasmussen & Williams (2006)
 - **Practical Bayesian Optimization**: Shahriari et al. (2016)
-
----
-
-## Contributing
-
-This project is under active development. For questions or collaboration, please open an issue.
-
-## License
-
-[Add license information]   
