@@ -5,7 +5,8 @@ model:
   kernel: "matern"  # Options: 'matern', 'rbf'
   matern_nu: 0.5  # Options: 0.5, 1.5, 2.5 (only for Matérn kernel)
   input_dim: 2  # Number of input dimensions
-  noise_prior: 0.1  # Initial noise level
+  noise_prior: 0.1  # Total experimental uncertainty (measurement ~0.045 + process variation)
+                    # Conservative estimate prevents overfitting. See docs/kernel_design.md
   lengthscale_prior: [1.0, 1.0]
   train_lengthscale: true
   min_lengthscale: 0.03  # Minimum lengthscale constraint

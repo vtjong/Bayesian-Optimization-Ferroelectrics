@@ -32,7 +32,7 @@ where $\mathbf{x} = [t_{\text{pulse}}, E_{\text{density}}]^\top$ represents the 
 
 **Constraints:**
 - Sample throughput: ~2–4 experiments per batch
-- Measurement precision: $\sigma_{\text{noise}} \approx 0.1$ (normalized FOM units)
+- Experimental uncertainty: $\sigma_n = 0.1$ (accounts for measurement noise $\approx$ 0.045, process variation, and model inadequacy; see `docs/kernel_design.md` Section V.C for detailed noise estimation)
 - Total budget: $N_{\text{total}} \approx n$ experiments (TODO: FILL THIS IN LATER)
 
 ---
