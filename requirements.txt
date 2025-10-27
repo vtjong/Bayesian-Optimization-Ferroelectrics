@@ -1,10 +1,13 @@
 scipy
 numpy
 torch
+gpytorch
 botorch
 matplotlib
 adjustText
 plotly
 pandas
+openpyxl
 scikit-learn
 wandb
+pyyaml

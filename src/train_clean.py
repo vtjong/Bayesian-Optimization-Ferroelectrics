@@ -46,7 +46,7 @@ def main():
     print("STEP 1: LOADING CONFIGURATION")
     print("=" * 70)
 
-    config = load_config("config/training_config.yaml")
+    config = load_config("../config/training_config.yaml")
 
     # Set random seeds
     torch.manual_seed(config.compute.seed)
@@ -196,7 +196,7 @@ def main():
             )
 
     suggestions_df = pd.DataFrame(suggestion_rows)
-    suggestions_df.to_csv("predictions/next_experiments.csv", index=False)
+    suggestions_df.to_csv("../predictions/next_experiments.csv", index=False)
     print("\nSuggestions saved to: predictions/next_experiments.csv")
     print(suggestions_df)
 
