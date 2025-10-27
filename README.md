@@ -221,16 +221,6 @@ python src/preprocess.py
 
 ### Training
 
-**Clean Training Script** (Recommended):
-
-```bash
-cd src
-python train_clean.py
-```
-
-This follows a clean 7-step workflow:
-1. Load configuration → 2. Load data → 3. Create model → 4. Train → 5. Evaluate → 6. Suggest next experiments → 7. Export
-
 **Module Organization**:
 ```python
 # Training & evaluation
