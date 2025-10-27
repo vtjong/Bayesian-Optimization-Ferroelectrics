@@ -151,7 +151,7 @@ def main():
             likelihood=likelihood,
             train_y=train_y,
             bounds=bounds,
-            beta=5.0,
+            beta=config.acquisition.beta,
         )
     else:
         suggestions = suggest_next_experiments_mc(
@@ -160,7 +160,7 @@ def main():
             train_y=train_y,
             bounds=bounds,
             q=config.acquisition.num_suggestions,
-            beta=5.0,
+            beta=config.acquisition.beta,
             seed=config.compute.seed,
             acq_functions=config.acquisition.functions,
         )

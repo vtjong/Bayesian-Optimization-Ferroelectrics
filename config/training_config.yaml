@@ -24,8 +24,10 @@ grid:
 # Acquisition Function
 acquisition:
   mc_or_analytic: "mc"  # Options: 'mc' or 'analytic'
-  functions: ["qUCB", "thompson"]  # Options: 'qEI', 'qPI', 'qUCB', 'thompson'
+  functions: ["qUCB"]  # Options: 'qEI', 'qPI', 'qUCB', 'thompson'
   num_suggestions: 4  # Number of suggested points for MC acquisition
+  beta: 5.0  # UCB exploration parameter (higher = more exploration)
+               # Recommended: 5.0 early stage, 3.0 mid-stage, 2.0 late-stage
 
 # Experiment Tracking
 wandb:

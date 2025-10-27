@@ -11,3 +11,4 @@ openpyxl
 scikit-learn
 wandb
 pyyaml
+nbformat>=4.2.0

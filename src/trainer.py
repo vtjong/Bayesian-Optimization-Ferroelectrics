@@ -76,40 +76,40 @@ def save_model_checkpoint(
     model: gpytorch.models.ExactGP,
     likelihood: gpytorch.likelihoods.Likelihood,
     loss_history: List[float],
-    save_path: str = "models/model_state.pth",
+    checkpoint_path: str = "models/model_state.pth",
 ) -> None:
     """Save trained model checkpoint.
 
     :param model: Trained GP model
     :param likelihood: Trained likelihood
     :param loss_history: Training loss history
-    :param save_path: Path to save checkpoint
+    :param checkpoint_path: Path to save checkpoint
     """
     checkpoint = {
         "model_state_dict": model.state_dict(),
         "likelihood_state_dict": likelihood.state_dict(),
         "loss": loss_history,
     }
-    torch.save(checkpoint, save_path)
-    print(f"Model saved to {save_path}")
+    torch.save(checkpoint, checkpoint_path)
+    print(f"Model saved to {checkpoint_path}")
 
 
 def load_model_checkpoint(
     model: gpytorch.models.ExactGP,
     likelihood: gpytorch.likelihoods.Likelihood,
-    load_path: str = "models/model_state.pth",
+    checkpoint_path: str = "models/model_state.pth",
 ) -> Tuple[gpytorch.models.ExactGP, gpytorch.likelihoods.Likelihood, List[float]]:
     """Load trained model checkpoint.
 
     :param model: Model instance (for architecture)
     :param likelihood: Likelihood instance
-    :param load_path: Path to checkpoint file
+    :param checkpoint_path: Path to checkpoint file
     :return: (loaded_model, loaded_likelihood, loss_history)
     """
-    checkpoint = torch.load(load_path)
+    checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["model_state_dict"])
     likelihood.load_state_dict(checkpoint["likelihood_state_dict"])
     loss_history = checkpoint["loss"]
 
-    print(f"Model loaded from {load_path}")
+    print(f"Model loaded from {checkpoint_path}")
     return model, likelihood, loss_history
