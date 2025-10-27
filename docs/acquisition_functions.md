@@ -5,25 +5,28 @@ Acquisition functions guide the selection of next experiments by balancing explo
 ## Analytic Acquisition Functions
 
 ### Expected Improvement (EI)
-\[
+
+$$
 \alpha_{\text{EI}}(\mathbf{x}) = \mathbb{E}[\max(f(\mathbf{x}) - f(\mathbf{x}^+), 0)]
-\]
+$$
 
 **Best for**: Exploitation-focused search when near optimum
 
 ### Probability of Improvement (PI)
-\[
+
+$$
 \alpha_{\text{PI}}(\mathbf{x}) = P(f(\mathbf{x}) > f(\mathbf{x}^+))
-\]
+$$
 
 **Best for**: Conservative optimization with high confidence needs
 
 ### Upper Confidence Bound (UCB)
-\[
-\alpha_{\text{UCB}}(\mathbf{x}) = \mu(\mathbf{x}) + \beta \sigma(\mathbf{x})
-\]
 
-**Best for**: Tunable exploration (via \( \beta \)) in early stages
+$$
+\alpha_{\text{UCB}}(\mathbf{x}) = \mu(\mathbf{x}) + \beta \sigma(\mathbf{x})
+$$
+
+**Best for**: Tunable exploration (via $\beta$) in early stages
 
 ## Monte Carlo Acquisition Functions
 
@@ -38,7 +41,7 @@ Batch version of PI for conservative batch selection.
 ### qUpperConfidenceBound (qUCB)
 Batch UCB with tunable exploration parameter.
 
-**Recommended**: Use \( \beta = 2-5 \) for good exploration-exploitation balance
+**Recommended**: Use $\beta = 2-5$ for good exploration-exploitation balance
 
 ## Thompson Sampling
 
@@ -49,9 +52,10 @@ Sample functions from GP posterior, optimize sampled function.
 Implementation: See `src/optimization/thompson_sampler.py`
 
 ## Knowledge Gradient (KG)
-\[
+
+$$
 \alpha_{\text{KG}}(\mathbf{x}) = \mathbb{E}[\max_{\mathbf{x}'} \mu_{n+1}(\mathbf{x}') - \max_{\mathbf{x}'} \mu_n(\mathbf{x}')]
-\]
+$$
 
 **Best for**: Finite-horizon optimization when budget is limited
 

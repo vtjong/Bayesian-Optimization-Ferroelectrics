@@ -33,9 +33,9 @@ Without scaling, features with large ranges dominate distance calculations:
 
 ### MinMax Scaling to [0,1]
 
-\[
+$$
 \tilde{x}_d = \frac{x_d - \min(x_d)}{\max(x_d) - \min(x_d)}
-\]
+$$
 
 **Benefits**:
 - All features start with equal importance
@@ -67,9 +67,10 @@ We keep figure of merit **unscaled** for:
 - **GP flexibility**: GP learns output scale via `outputscale` parameter
 
 **Exception**: If output has extreme values (>1000x range), standardize:
-\[
+
+$$
 \tilde{y} = \frac{y - \mu_y}{\sigma_y}
-\]
+$$
 
 ## For Bayesian Optimization
 
