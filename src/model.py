@@ -1,14 +1,9 @@
-import gpytorch
-from botorch.models.gpytorch import GPyTorchModel
+"""Backward compatibility shim for model imports.
 
-class GPModel(gpytorch.models.ExactGP, GPyTorchModel):
-    _num_outputs = 1
-    def __init__(self, train_x, train_y, likelihood, kernel):
-        super(GPModel, self).__init__(train_x, train_y, likelihood)  
-        self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = kernel
-    
-    def forward(self, x):
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
-        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+This module provides backward compatibility for old import paths.
+New code should use: from models import ExactGPModel
+"""
+
+from models import ExactGPModel, GPModel
+
+__all__ = ["ExactGPModel", "GPModel"]
