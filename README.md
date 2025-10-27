@@ -1,6 +1,8 @@
 # Bayesian Optimization of Pulse Annealing Parameters in Hafnium Zirconium Oxide Ferroelectric Thin Films
 
-**Supporting Code Repository for Physical Review Publication**
+**Supporting Code Repository for IEEE Publication**
+
+TODO: We should determine a publication name...
 
 ---
 
@@ -18,9 +20,9 @@ Ferroelectric HZO thin films exhibit promise for neuromorphic computing and non-
 
 **Objective Function:**
 
-$$
+```math
 \text{FOM}(\mathbf{x}) = \frac{2Q_{sw}(\mathbf{x})}{U(\mathbf{x}) + |D(\mathbf{x})|} \quad \text{at } N = 10^6 \text{ cycles}
-$$
+```
 
 where $\mathbf{x} = [t_{\text{pulse}}, E_{\text{density}}]^\top$ represents the processing parameters.
 
@@ -41,15 +43,15 @@ where $\mathbf{x} = [t_{\text{pulse}}, E_{\text{density}}]^\top$ represents the 
 
 We model the unknown objective function as a Gaussian process:
 
-$$
+```math
 f(\mathbf{x}) \sim \mathcal{GP}(m(\mathbf{x}), k(\mathbf{x}, \mathbf{x}'))
-$$
+```
 
 with constant mean prior $m(\mathbf{x}) = \mu_0$ and Matérn-$\frac{1}{2}$ covariance kernel:
 
-$$
-k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \exp\left(-\sqrt{\sum_{d=1}^{2} \frac{(x_d - x_d')^2}{\ell_d^2}}\right)
-$$
+```math
+k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \exp\!\left(-\sqrt{\sum_{d=1}^{2} \frac{(x_d - x_d')^2}{\ell_d^2}}\right)
+```
 
 The ARD lengthscales $\{\ell_d\}_{d=1}^2$ enable automatic feature relevance learning, with lengthscale constraints $\ell_d \geq 0.03$ preventing overfitting. Hyperparameters $\boldsymbol{\theta} = \{\sigma_f^2, \ell_1, \ell_2, \sigma_n^2\}$ are optimized via Type-II maximum likelihood estimation (MLE).
 
@@ -57,29 +59,31 @@ The ARD lengthscales $\{\ell_d\}_{d=1}^2$ enable automatic feature relevance lea
 
 Given observations $\mathcal{D} = \{(\mathbf{x}_i, y_i)\}_{i=1}^n$, the posterior is:
 
-$$
+```math
 f(\mathbf{x}_*) \mid \mathcal{D} \sim \mathcal{N}(\mu_*, \sigma_*^2)
-$$
+```
 
-$$
+```math
 \mu_* = \mathbf{k}_*^\top (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y}
-$$
+```
 
-$$
+```math
 \sigma_*^2 = k_{**} - \mathbf{k}_*^\top (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}_*
-$$
+```
 
 ### B. Acquisition Function Strategy
 
 We employ the upper confidence bound (UCB) acquisition function for batch sequential optimization:
 
-$$
+```math
 \alpha_{\text{qUCB}}(\mathbf{X}) = \mathbb{E}\left[\max_{\mathbf{x} \in \mathbf{X}} \mu(\mathbf{x}) + \beta \sigma(\mathbf{x})\right]
-$$
+```
 
 where $\mathbf{X} = \{\mathbf{x}_1, \ldots, \mathbf{x}_q\}$ represents a batch of $q=4$ candidate points, and $\beta=5.0$ controls exploration-exploitation tradeoff. The batch acquisition is evaluated via Monte Carlo sampling with 1024 quasi-random Sobol sequences.
 
 **Optimization Strategy:**
+
+[TODO: We need to determine how many samples we are making, so we can revisit when to tune the beta value. ]
 - **Phase I** ($n < 60$): $\beta = 5.0$ (exploration-dominated)
 - **Phase II** ($60 \leq n < 80$): $\beta = 3.0$ (balanced)
 - **Phase III** ($n \geq 80$): $\beta = 2.0$ (exploitation-focused)
@@ -103,27 +107,27 @@ where $\mathbf{X} = \{\mathbf{x}_1, \ldots, \mathbf{x}_q\}$ represents a batch o
 
 ```
 ├── config/
-│   └── training_config.yaml          # Hyperparameter configuration
+│   └── training_config.yaml
 ├── src/
-│   ├── train_clean.py                # Main optimization pipeline
+│   ├── train_clean.py
 │   ├── models/
-│   │   ├── factory.py                # GP model construction
-│   │   └── gp.py                     # ExactGP class definition
+│   │   ├── factory.py
+│   │   └── gp.py
 │   ├── preprocessing/
-│   │   ├── loaders.py                # Experimental data I/O
-│   │   └── transforms.py             # Feature scaling utilities
+│   │   ├── loaders.py
+│   │   └── transforms.py
 │   ├── optimization/
-│   │   ├── acquisition.py            # Acquisition functions (qUCB, qEI, qPI)
-│   │   └── thompson_sampler.py       # Thompson sampling implementation
-│   ├── trainer.py                    # Type-II MLE training loop
-│   ├── evaluator.py                  # Model performance metrics
-│   └── training.ipynb                # Interactive workflow notebook
-├── data/                              # Experimental observations (Excel format)
-├── docs/                              # Detailed methodology documentation
-│   ├── kernel_design.md              # Covariance function theory
-│   ├── acquisition_functions.md      # BO strategy details
-│   └── data_preprocessing.md         # Data pipeline documentation
-└── predictions/                       # Acquisition function suggestions
+│   │   ├── acquisition.py
+│   │   └── thompson_sampler.py
+│   ├── trainer.py
+│   ├── evaluator.py
+│   └── training.ipynb
+├── data/
+├── docs/
+│   ├── kernel_design.md
+│   ├── acquisition_functions.md
+│   └── data_preprocessing.md
+└── predictions/
 ```
 
 ---
@@ -148,25 +152,7 @@ source venv/bin/activate
 
 ### Running the Optimization Pipeline
 
-**Configuration:** Edit `config/training_config.yaml` to specify hyperparameters:
-
-```yaml
-model:
-  kernel: "matern"                    # Matérn-1/2 covariance
-  matern_nu: 0.5                      # Smoothness parameter
-  noise_prior: 0.1                    # Observational noise estimate
-  lengthscale_prior: [1.0, 1.0]       # Initial ARD lengthscales
-
-training:
-  epochs: 3000                        # MLE iterations
-  learning_rate: 0.003                # Adam step size
-
-acquisition:
-  mc_or_analytic: "mc"                # Monte Carlo sampling
-  functions: ["qUCB"]                 # Acquisition strategy
-  num_suggestions: 4                  # Batch size
-  beta: 5.0                           # Exploration parameter
-```
+**Configuration:** Edit `config/training_config.yaml` to specify hyperparameters.
 
 **Execution:**
 
@@ -184,8 +170,6 @@ python train_clean.py
 
 ### Interactive Exploration
 
-For visualization and exploratory analysis:
-
 ```bash
 jupyter notebook src/training.ipynb
 ```
@@ -200,39 +184,26 @@ Key visualizations:
 
 ## V. Performance Metrics
 
-The surrogate model is evaluated via leave-one-out cross-validation on the training set:
-
-- **RMSE** (root mean squared error): Prediction accuracy
-- **MAE** (mean absolute error): Robust error measure
-- **R²** (coefficient of determination): Explained variance
-- **Spearman ρ** (rank correlation): Monotonicity preservation
-
 **Typical Performance** (41 training observations):
 - RMSE: 0.13–0.15
 - R²: 0.98–0.99
-- Spearman ρ: >0.97
+- Spearman $\rho$: >0.97
 
 ---
 
 ## VI. Data Format
 
 **Input File:** Excel spreadsheet with columns:
-1. `Time (ms)`: Pulse duration
-2. `Energy density new cone (J/cm^2)`: Laser energy density
-3. `2 Qsw/(U+|D|) 1e6cycles`: Figure of merit @ $10^6$ cycles
+1. `Time (ms)`
+2. `Energy density new cone (J/cm^2)`
+3. `2 Qsw/(U+|D|) 1e6cycles`
 
 **Preprocessing:**
-- Remove NaN values (incomplete measurements)
-- Filter zero FOM entries (failed crystallization)
+- Remove NaN values
+- Filter zero FOM entries
 - MinMax normalization of inputs to $[0, 1]^2$
 
-**Output Format:** CSV with suggested experiments:
-```
-Acquisition_Function, Candidate_ID, Pulse_Time_ms, Energy_Density_J_cm2, Predicted_FOM
-qUCB, 1, 1.37, 11.14, 2.88
-qUCB, 2, 4.22, 14.06, 2.84
-...
-```
+**Output Format:** CSV with suggested experiments.
 
 ---
 
@@ -240,31 +211,19 @@ qUCB, 2, 4.22, 14.06, 2.84
 
 ### Hyperparameter Sweeps
 
-For systematic exploration of GP hyperparameters via Weights & Biases:
-
 ```bash
 wandb sweep config/sweep.yaml
 wandb agent <sweep-id>
 ```
 
-This enables grid search over:
-- Kernel choice (Matérn-$\frac{1}{2}$, Matérn-$\frac{5}{2}$, RBF)
-- Noise prior values
-- Learning rates and epoch counts
-
 ### Custom Acquisition Functions
-
-To implement alternative strategies (e.g., knowledge gradient, entropy search):
 
 ```python
 from optimization.acquisition import optimize_acquisition_function
 
-# Define custom acquisition
 def custom_acquisition(model, likelihood, train_y):
-    # Implementation here
     pass
 
-# Optimize
 candidates = optimize_acquisition_function(
     acq_function=custom_acquisition,
     bounds=torch.tensor([[0.0, 0.0], [1.0, 1.0]]),
@@ -276,12 +235,8 @@ candidates = optimize_acquisition_function(
 
 ## VIII. References
 
-### Software Libraries
-
-1. **GPyTorch:** Gardner, J. R., Pleiss, G., Bindel, D., Weinberger, K. Q., & Wilson, A. G. (2018). GPyTorch: Blackbox matrix-matrix Gaussian process inference with GPU acceleration. *Advances in Neural Information Processing Systems*, 31.
-
-2. **BoTorch:** Balandat, M., Karrer, B., Jiang, D. R., Daulton, S., Letham, B., Wilson, A. G., & Bakshy, E. (2020). BoTorch: A framework for efficient Monte-Carlo Bayesian optimization. *Advances in Neural Information Processing Systems*, 33, 21524-21538.
-
+1. Gardner, J. R., Pleiss, G., Bindel, D., Weinberger, K. Q., & Wilson, A. G. (2018). *Advances in Neural Information Processing Systems*, 31.
+2. Balandat, M., Karrer, B., Jiang, D. R., Daulton, S., Letham, B., Wilson, A. G., & Bakshy, E. (2020). *Advances in Neural Information Processing Systems*, 33.
 
 ---
 **Last Updated:** October 2025  
