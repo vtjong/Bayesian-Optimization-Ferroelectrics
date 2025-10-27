@@ -1,10 +1,4 @@
-"""Data transformation and preprocessing utilities.
-
-This module provides:
-- PyTorch-compatible scaling (TorchMinMaxScaler)
-- DataFrame to tensor conversion (datasetmaker)
-- Feature scaling with proper ML reasoning
-"""
+"""Data transformation and tensor conversion utilities for GP training."""
 
 from typing import Optional, Tuple, Union
 
@@ -15,24 +9,20 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 class TorchMinMaxScaler:
-    """Adapter for MinMaxScaler that works with PyTorch tensors.
+    """PyTorch-compatible wrapper for sklearn's MinMaxScaler.
 
-    This is a composition-based wrapper (not inheritance) that:
-    - Accepts torch.Tensor or numpy arrays as input
-    - Returns torch.Tensor outputs
-    - Preserves scikit-learn's scaling logic
-    - Maintains fitted parameters (min_, scale_, etc.)
+    Accepts torch.Tensor or numpy arrays, returns torch.Tensor outputs while
+    preserving sklearn's scaling logic and fitted parameters.
 
     Example:
         scaler = TorchMinMaxScaler()
         X_scaled = scaler.fit_transform(train_x)
-        X_new_scaled = scaler.transform(test_x)
         X_original = scaler.inverse_transform(X_scaled)
 
-    :ivar min_: Per-feature minimum values seen during fit
+    :ivar min_: Per-feature minimum adjustment values
     :ivar scale_: Per-feature scaling factors
-    :ivar data_min_: Per-feature minimum in training data
-    :ivar data_max_: Per-feature maximum in training data
+    :ivar data_min_: Per-feature minimum from training data
+    :ivar data_max_: Per-feature maximum from training data
     """
 
     def __init__(
@@ -166,58 +156,37 @@ class TorchMinMaxScaler:
             )
 
 
-def datasetmaker(
+def prepare_gp_training_tensors(
     fe_data: pd.DataFrame, scaler: TorchMinMaxScaler
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Transform DataFrame into scaled PyTorch tensors for GP training.
+    """Convert DataFrame to scaled input tensors and unscaled output tensors.
 
-    ML Reasoning:
-    -------------
-    Feature Scaling is Essential for GPs:
-    - GPs use distance-based kernels (RBF, Matern) - scale-sensitive
-    - MinMax scaling to [0,1] ensures equal feature importance initially
-    - Prevents numerical instability in covariance matrix computations
-    - ARD lengthscales learn relative importance after scaling
+    Extracts time and energy density as inputs (scaled to [0,1]) and figure
+    of merit as output (unscaled for interpretability). Input ordering is
+    [time, energy] to match physical intuition.
 
-    Input Ordering:
-    ---------------
-    We place [Time, Energy] to match physical intuition:
-    - Time affects thermal diffusion (lengthscale ~1-5 ms)
-    - Energy affects peak temperature (lengthscale ~3-15 J/cm²)
-    - ARD kernel will learn if one dimension is more important
-
-    Target Variable:
-    ----------------
-    - Figure of merit is NOT scaled - preserves interpretability
-    - GP learns output scale through kernel outputscale parameter
-    - Noise model operates in original output units
-
-    :param fe_data: Cleaned DataFrame from read_dat()
+    :param fe_data: Cleaned DataFrame from load_experimental_data()
     :type fe_data: pd.DataFrame
-    :param scaler: TorchMinMaxScaler instance
+    :param scaler: Fitted TorchMinMaxScaler for input normalization
     :type scaler: TorchMinMaxScaler
-    :return: Tuple of (train_x, train_y) where train_x is scaled input
-        tensor of shape (n_samples, 2) in [0,1]² and train_y is unscaled
-        output tensor of shape (n_samples,)
+    :return: (train_x, train_y) with train_x scaled to [0,1] and train_y
+        in original units
     :rtype: Tuple[torch.Tensor, torch.Tensor]
     """
-    # Extract input features - column order matters for lengthscales
+    # Extract input features: [time, energy]
     energy_den = fe_data["Energy density new cone (J/cm^2)"].values
     time = fe_data["Time (ms)"].values
-
-    # Stack into 2D tensor: each row is [time, energy]
     train_x = torch.Tensor(np.array([time, energy_den])).T
 
-    # Extract target variable (no scaling)
+    # Extract target variable (no scaling for interpretability)
     train_y = torch.Tensor(fe_data["2 Qsw/(U+|D|) 1e6cycles"].values)
 
-    # Scale inputs to [0, 1] range
-    # Critical: fit_transform learns min/max from ALL data
-    # In production BO, you'd fit only on observed data
+    # Scale inputs to [0, 1] for numerical stability
     train_x = scaler.fit_transform(train_x)
 
     return train_x, train_y
 
 
-# Backward compatibility alias
+# Backward compatibility aliases
 MinMaxScalerTorch = TorchMinMaxScaler
+datasetmaker = prepare_gp_training_tensors
