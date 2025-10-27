@@ -7,7 +7,7 @@ Acquisition functions guide the selection of next experiments by balancing explo
 ### Expected Improvement (EI)
 
 $$
-\alpha_{\text{EI}}(\mathbf{x}) = \mathbb{E}[\max(f(\mathbf{x}) - f(\mathbf{x}^+), 0)]
+\alpha_{\text{EI}}(\mathbf{x}) = \mathbb{E}[\max(f(\mathbf{x}) - f(\mathbf{x}^{+}), 0)]
 $$
 
 **Best for**: Exploitation-focused search when near optimum
@@ -15,7 +15,7 @@ $$
 ### Probability of Improvement (PI)
 
 $$
-\alpha_{\text{PI}}(\mathbf{x}) = P(f(\mathbf{x}) > f(\mathbf{x}^+))
+\alpha_{\text{PI}}(\mathbf{x}) = P(f(\mathbf{x}) > f(\mathbf{x}^{+}))
 $$
 
 **Best for**: Conservative optimization with high confidence needs

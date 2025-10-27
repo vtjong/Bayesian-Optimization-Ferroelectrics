@@ -15,17 +15,17 @@ Where:
 Given training data $\mathcal{D} = \{(\mathbf{x}_i, y_i)\}_{i=1}^n$:
 
 $$
-f_* | \mathcal{D}, \mathbf{x}_* \sim \mathcal{N}(\mu_*, \sigma_*^2)
+f_{*} | \mathcal{D}, \mathbf{x}_{*} \sim \mathcal{N}(\mu_{*}, \sigma_{*}^2)
 $$
 
 Where:
 
 $$
-\mu_* = \mathbf{k}_*^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y}
+\mu_{*} = \mathbf{k}_{*}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y}
 $$
 
 $$
-\sigma_*^2 = k_{**} - \mathbf{k}_*^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}_*
+\sigma_{*}^2 = k_{**} - \mathbf{k}_{*}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}_{*}
 $$
 
 ## Kernel Types
@@ -44,7 +44,7 @@ $$
 ### Matérn Kernel (Recommended)
 
 $$
-k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \frac{2^{1-\nu}}{\Gamma(\nu)} \left(\sqrt{2\nu}r\right)^\nu K_\nu\left(\sqrt{2\nu}r\right)
+k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \frac{2^{1-\nu}}{\Gamma(\nu)} \left(\sqrt{2\nu}r\right)^\nu K_{\nu}\left(\sqrt{2\nu}r\right)
 $$
 
 Where $r = \sqrt{\sum_{d=1}^D \frac{(x_d - x_d')^2}{\ell_d^2}}$
