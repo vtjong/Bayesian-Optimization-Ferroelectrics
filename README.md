@@ -29,6 +29,7 @@ where $\mathbf{x} = [t_{\text{pulse}}, E_{\text{density}}]^\top$ represents the 
 **Search Space:**
 - Pulse duration: $t_{\text{pulse}} \in [0.5, 5.0]$ ms (thermal diffusion timescale)
 - Energy density: $E_{\text{density}} \in [2.7, 15.4]$ J/cm² (peak temperature control)
+- **Note:** Search bounds are data-driven, defined by the range of initial exploratory experiments. The acquisition candidate grid extends ~4% beyond observed bounds (one grid spacing $\Delta x = (\text{max} - \text{min})/(n_{\text{grid}} - 2)$ on each side) to allow conservative extrapolation where the GP posterior remains reliable, as the optimum may lie just outside the sampled region (see `src/optimization/grid.py`).
 
 **Constraints:**
 - Sample throughput: ~2–4 experiments per batch
