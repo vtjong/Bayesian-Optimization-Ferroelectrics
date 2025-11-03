@@ -90,3 +90,6 @@ target/
 
 # results and reports data
 rundata/
+
+# brainstorming files
+*.ignoreme

@@ -12,3 +12,6 @@ scikit-learn
 wandb
 pyyaml
 nbformat>=4.2.0
+seaborn
+shap
+SALib
