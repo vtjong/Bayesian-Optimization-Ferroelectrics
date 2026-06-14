@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import gpytorch
 import numpy as np
@@ -23,17 +23,17 @@ class FeatureImportanceResult:
     """Result container for feature importance analysis outputs.
 
     :param importance_scores: Main importance scores (n_features,)
-    :param confidence_intervals: Optional uncertainty measures (n_features,)
     :param feature_names: Names of features
+    :param confidence_intervals: Optional uncertainty measures (n_features,)
     :param method_name: Name of analysis method
     :param metadata: Method-specific data (e.g., gradients, raw values)
     """
 
     importance_scores: np.ndarray
-    confidence_intervals: Optional[np.ndarray] = None
     feature_names: Tuple[str, ...]
+    confidence_intervals: Optional[np.ndarray] = None
     method_name: str = "unknown"
-    metadata: Dict[str, any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseAnalyzer(ABC):

@@ -1,0 +1,5 @@
+# Local interactive dashboard (Streamlit). Install with:
+#   pip install -r requirements-dashboard.txt
+# The dashboard also needs the core deps (requirements.txt); the Crystal Structures
+# tab additionally needs the viz extras (requirements-viz.txt) + MP_API_KEY.
+streamlit

@@ -1,6 +1,8 @@
 """Visualization utilities for analysis results.
 
-Handles all plotting and figure generation separately from computation.
+Handles all plotting and figure generation separately from computation. Styling and
+figure-saving are delegated to the shared :mod:`visualization.base` foundation
+(``PlotStyle`` + ``save_figure``) so the save/style logic lives in one place.
 """
 
 from typing import Optional
@@ -9,7 +11,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+from visualization.base import DEFAULT_STYLE, save_figure
+
 from .core import CorrelationResult, FeatureImportanceResult
+
+# Shared styling (single source of truth — see visualization.base.PlotStyle).
+STYLE = DEFAULT_STYLE
 
 
 class AnalysisVisualizer:
@@ -34,7 +41,7 @@ class AnalysisVisualizer:
             result.param_param_matrix,
             annot=True,
             fmt=".2f",
-            cmap="coolwarm",
+            cmap=STYLE.diverging_cmap,
             center=0,
             square=True,
             xticklabels=result.feature_names,
@@ -43,14 +50,11 @@ class AnalysisVisualizer:
         )
         ax.set_title(
             "Parameter-Parameter Correlation Matrix",
-            fontsize=14,
-            fontweight="bold",
+            fontsize=STYLE.title_fontsize,
+            fontweight=STYLE.title_weight,
         )
         plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-
+        save_figure(fig, save_path)
         return fig
 
     @staticmethod
@@ -68,22 +72,23 @@ class AnalysisVisualizer:
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        ax.bar(x - width / 2, result.pearson, width, label="Pearson", alpha=0.8)
-        ax.bar(x + width / 2, result.spearman, width, label="Spearman", alpha=0.8)
+        ax.bar(x - width / 2, result.pearson, width, label="Pearson", alpha=STYLE.bar_alpha)
+        ax.bar(x + width / 2, result.spearman, width, label="Spearman", alpha=STYLE.bar_alpha)
 
         ax.axhline(y=0, color="k", linestyle="--", linewidth=0.8)
-        ax.set_xlabel("Parameters", fontsize=12)
-        ax.set_ylabel("Correlation with FOM", fontsize=12)
-        ax.set_title("Parameter-FOM Correlations", fontsize=14, fontweight="bold")
+        ax.set_xlabel("Parameters", fontsize=STYLE.label_fontsize)
+        ax.set_ylabel("Correlation with FOM", fontsize=STYLE.label_fontsize)
+        ax.set_title(
+            "Parameter-FOM Correlations",
+            fontsize=STYLE.title_fontsize,
+            fontweight=STYLE.title_weight,
+        )
         ax.set_xticks(x)
         ax.set_xticklabels(result.feature_names, rotation=45, ha="right")
         ax.legend()
-        ax.grid(axis="y", alpha=0.3)
+        ax.grid(axis="y", alpha=STYLE.grid_alpha)
         plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-
+        save_figure(fig, save_path)
         return fig
 
     @staticmethod
@@ -154,18 +159,19 @@ class AnalysisVisualizer:
 
         for i, (method, imp_data) in enumerate(zip(method_names, normalized_results)):
             offset = (i - len(method_names) / 2) * width + width / 2
-            ax.bar(x + offset, imp_data, width, label=method, alpha=0.8)
+            ax.bar(x + offset, imp_data, width, label=method, alpha=STYLE.bar_alpha)
 
-        ax.set_xlabel("Parameters", fontsize=12)
-        ax.set_ylabel("Importance Score (Normalized)", fontsize=12)
-        ax.set_title("Feature Importance Comparison", fontsize=14, fontweight="bold")
+        ax.set_xlabel("Parameters", fontsize=STYLE.label_fontsize)
+        ax.set_ylabel("Importance Score (Normalized)", fontsize=STYLE.label_fontsize)
+        ax.set_title(
+            "Feature Importance Comparison",
+            fontsize=STYLE.title_fontsize,
+            fontweight=STYLE.title_weight,
+        )
         ax.set_xticks(x)
         ax.set_xticklabels(feature_names, rotation=45, ha="right")
         ax.legend()
-        ax.grid(axis="y", alpha=0.3)
+        ax.grid(axis="y", alpha=STYLE.grid_alpha)
         plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-
+        save_figure(fig, save_path)
         return fig

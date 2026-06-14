@@ -93,3 +93,17 @@ rundata/
 
 # brainstorming files
 *.ignoreme
+
+# Personal: interactive learning app + educational figure tooling (not committed)
+src/learn_ferroelectrics.py
+src/run_phase_concepts.py
+src/visualization/concepts.py
+scripts/learn.sh
+
+# Personal: working docs and slide decks
+/docs/
+*.pptx
+/ppt
+
+# Generated output artifacts (regenerable via scripts/*.sh)
+/predictions/

@@ -15,3 +15,6 @@ nbformat>=4.2.0
 seaborn
 shap
 SALib
+
+# Optional crystal-structure visualization extras (pymatgen, mp-api, ase) live in
+# requirements-viz.txt — install separately: pip install -r requirements-viz.txt

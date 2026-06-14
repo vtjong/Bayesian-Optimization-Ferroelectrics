@@ -52,6 +52,16 @@ class ParameterAnalyzer:
         self._correlation_result: Optional[CorrelationResult] = None
         self._importance_results: List[FeatureImportanceResult] = []
 
+    @property
+    def importance_results(self) -> List[FeatureImportanceResult]:
+        """Feature-importance results computed so far (e.g. ARD, Sobol)."""
+        return list(self._importance_results)
+
+    @property
+    def correlation_result(self) -> Optional[CorrelationResult]:
+        """The most recent correlation result, or None if not yet computed."""
+        return self._correlation_result
+
     def compute_correlations(self, methods: Optional[List[str]] = None) -> CorrelationResult:
         """Compute correlation coefficients.
 
