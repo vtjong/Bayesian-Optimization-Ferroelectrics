@@ -1,0 +1,9 @@
+# Optional visualization extras — crystal-structure rendering (HfO2 polymorphs).
+# Heavy materials-science deps, kept separate from the core requirements so they are
+# opt-in. Install with:  pip install -r requirements-viz.txt
+#
+# Also requires a free Materials Project API key in the MP_API_KEY env var:
+#   https://materialsproject.org
+pymatgen
+mp-api
+ase

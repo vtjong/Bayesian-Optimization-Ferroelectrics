@@ -19,12 +19,14 @@ import torch
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# Plotting constants
-DEFAULT_COLOR = "#72356c"
-DEFAULT_COLORSCALE = "Burg"
-DEFAULT_FONT_SIZE = 14
-DEFAULT_DPI = 200
-CONFIDENCE_INTERVAL_ALPHA = 0.3
+from .base import DEFAULT_STYLE
+
+# Plotting constants (styling from the shared PlotStyle; see visualization.base).
+DEFAULT_COLOR = DEFAULT_STYLE.accent_color
+DEFAULT_COLORSCALE = "Burg"  # plotly colorscale (interactive 3D)
+DEFAULT_FONT_SIZE = DEFAULT_STYLE.title_fontsize
+DEFAULT_DPI = 200  # interactive preview DPI (PNGs use save_dpi)
+CONFIDENCE_INTERVAL_ALPHA = DEFAULT_STYLE.grid_alpha
 CONFIDENCE_INTERVAL_COLOR = "grey"
 
 
