@@ -12,7 +12,6 @@ from typing import Optional
 import numpy as np
 import torch
 
-from evaluator import predict_on_grid
 from optimization.grid import create_candidate_grid
 
 from .phase_map import PhaseMapResult
@@ -75,9 +74,13 @@ def build_phase_map_result(
     flat[:, x_index] = xx.ravel()
     flat[:, y_index] = yy.ravel()
 
-    mean, std = predict_on_grid(model, likelihood, torch.from_numpy(flat).float())
-    mean = _to_numpy(mean).reshape(xx.shape)
-    std = _to_numpy(std).reshape(xx.shape)
+    # Predict via posterior() so this works for BOTH ExactGPModel and a warped
+    # SingleTaskGP (which un-standardizes in posterior(), not in forward()).
+    model.eval()
+    with torch.no_grad():
+        post = model.posterior(torch.from_numpy(flat).float())
+    mean = _to_numpy(post.mean.squeeze(-1)).reshape(xx.shape)
+    std = _to_numpy(post.variance.squeeze(-1).clamp_min(1e-12).sqrt()).reshape(xx.shape)
 
     obs = _to_numpy(scaler.inverse_transform(train_x))
     obs_value = _to_numpy(train_y) if train_y is not None else None

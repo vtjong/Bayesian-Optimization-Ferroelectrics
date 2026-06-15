@@ -24,10 +24,9 @@ import torch
 sys.path.append(str(Path(__file__).resolve().parent))
 
 from config_loader import load_config
-from models.factory import create_gp_model
+from fit import build_and_fit_gp
 from preprocessing.loaders import load_experimental_data
 from preprocessing.transforms import TorchMinMaxScaler, prepare_gp_training_tensors
-from trainer import train_gp_model
 from visualization.grid_predictor import build_phase_map_result
 from visualization.phase_map import PhaseMapPlotter
 
@@ -56,22 +55,15 @@ def main() -> int:
     train_x, train_y = prepare_gp_training_tensors(fe_data, scaler)
     print(f"  {len(train_y)} observations")
 
-    print("Training GP...")
-    likelihood, model, _ = create_gp_model(
-        train_x=train_x,
-        train_y=train_y,
+    print("Training GP on (time, voltage) + learnable warp, fit by marginal likelihood...")
+    likelihood, model = build_and_fit_gp(
+        train_x,
+        train_y,
         kernel_type=config.model.kernel,
-        lengthscale=config.model.lengthscale_prior,
-        noise=config.model.noise_prior,
-        num_dims=config.model.input_dim,
-        min_lengthscale=config.model.min_lengthscale,
         matern_nu=config.model.matern_nu,
-    )
-    model, likelihood, _ = train_gp_model(
-        model, likelihood, train_x, train_y,
-        learning_rate=config.training.learning_rate,
-        n_epochs=args.epochs,
-        log_interval=max(1, args.epochs // 2),
+        min_lengthscale=config.model.min_lengthscale,
+        learn_noise=True,
+        warp_dims=list(range(train_x.shape[-1])),  # warp all dims → recovers smoothness
     )
 
     threshold = args.threshold if args.threshold is not None else float(np.median(train_y.numpy()))
