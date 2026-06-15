@@ -215,7 +215,7 @@ def tab_run_experiments():
     table = pd.DataFrame(
         {
             "Pulse Time (ms)": physical[:, 0],
-            "Energy density (J/cm^2)": physical[:, 1],
+            "Voltage (V)": physical[:, 1],
             "Predicted FOM": [float(p) for p in preds.reshape(-1)[: len(physical)]],
         }
     )
@@ -236,7 +236,7 @@ def tab_run_experiments():
     fig = PhaseMapPlotter().plot_crystallinity_map(result)
     fig.axes[0].scatter(
         table["Pulse Time (ms)"],
-        table["Energy density (J/cm^2)"],
+        table["Voltage (V)"],
         marker="*",
         s=260,
         c="red",

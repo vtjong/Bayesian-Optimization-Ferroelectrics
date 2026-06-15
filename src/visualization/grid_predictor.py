@@ -46,7 +46,7 @@ def build_phase_map_result(
     x_index: int = 0,
     y_index: int = 1,
     x_label: str = "Pulse Time (ms)",
-    y_label: str = "Energy density (J/cm^2)",
+    y_label: str = "Voltage (V)",
     value_label: str = "FOM",
     train_y: Optional[torch.Tensor] = None,
 ) -> PhaseMapResult:

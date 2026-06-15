@@ -20,7 +20,7 @@ def load_experimental_data(
     :param dir: Directory containing experimental data
     :param src_file: Excel file with bolometer readings
     :param sheet: Worksheet name containing combined measurements
-    :return: DataFrame with 3 columns: energy density, pulse time, and FOM
+    :return: DataFrame with columns: voltage, energy density, pulse time, and FOM
     :rtype: pd.DataFrame
     """
     file = dir + src_file
@@ -29,6 +29,7 @@ def load_experimental_data(
         file,
         sheet_name=sheet,
         usecols=[
+            "Voltage (V)",
             "Energy density new cone (J/cm^2)",
             "Time (ms)",
             "2 Qsw/(U+|D|) 1e6cycles",

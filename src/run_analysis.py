@@ -41,7 +41,7 @@ def main():
 
     scaler = TorchMinMaxScaler()
     train_x, train_y = prepare_gp_training_tensors(fe_data, scaler)
-    feature_names = ["Pulse Time (ms)", "Energy Density (J/cm²)"]
+    feature_names = ["Pulse Time (ms)", "Voltage (V)"]
 
     # Initialize analyzer
     analyzer = ParameterAnalyzer(
