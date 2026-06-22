@@ -10,6 +10,13 @@ model:
   lengthscale_prior: [1.0, 1.0]
   train_lengthscale: true
   min_lengthscale: 0.03  # Minimum lengthscale constraint
+  # --- Phase 0 GP upgrades (additive; defaults preserve old behavior) ---
+  learn_noise: false  # true -> GaussianLikelihood + noise prior (centered on
+                      # measured ~0.045-0.1); false -> fixed-noise (back-compat)
+  lengthscale_prior_type: null  # "lognormal" | "gamma" | null (no prior).
+                                # Weakly-informative ARD prior for MLL fitting.
+  fitter: "adam"  # "mll" -> botorch.fit_gpytorch_mll (multi-restart L-BFGS,
+                  # principled); "adam" -> legacy hand-rolled loop (default)
 
 # Training Parameters
 training:

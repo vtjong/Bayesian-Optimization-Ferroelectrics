@@ -103,7 +103,11 @@ scripts/learn.sh
 # Personal: working docs and slide decks
 /docs/
 *.pptx
+*.key
 /ppt
+/decks/
+scripts/build_slac_deck.py
+scripts/build_update_deck.py
 
 # Generated output artifacts (regenerable via scripts/*.sh)
 /predictions/

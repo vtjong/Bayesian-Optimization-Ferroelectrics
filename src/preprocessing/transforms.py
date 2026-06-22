@@ -161,9 +161,10 @@ def prepare_gp_training_tensors(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Convert DataFrame to scaled input tensors and unscaled output tensors.
 
-    Extracts time and energy density as inputs (scaled to [0,1]) and figure
-    of merit as output (unscaled for interpretability). Input ordering is
-    [time, energy] to match physical intuition.
+    Extracts time and voltage as inputs (scaled to [0,1]) and figure of merit
+    as output (unscaled for interpretability). Input ordering is [time, voltage]
+    — the exact control knobs (V and t are set directly; energy density, which is
+    calibration-derived, stays in the DataFrame for the thermal/descriptor layer).
 
     :param fe_data: Cleaned DataFrame from load_experimental_data()
     :type fe_data: pd.DataFrame
@@ -173,10 +174,11 @@ def prepare_gp_training_tensors(
         in original units
     :rtype: Tuple[torch.Tensor, torch.Tensor]
     """
-    # Extract input features: [time, energy]
-    energy_den = fe_data["Energy density new cone (J/cm^2)"].values
+    # GP inputs = [time, voltage] — the exact, independently-set control knobs.
+    # Energy density stays in fe_data for the thermal/descriptor layer.
     time = fe_data["Time (ms)"].values
-    train_x = torch.Tensor(np.array([time, energy_den])).T
+    voltage = fe_data["Voltage (V)"].values
+    train_x = torch.Tensor(np.array([time, voltage])).T
 
     # Extract target variable (no scaling for interpretability)
     train_y = torch.Tensor(fe_data["2 Qsw/(U+|D|) 1e6cycles"].values)

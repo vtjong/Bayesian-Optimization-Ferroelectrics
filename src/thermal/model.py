@@ -4,9 +4,10 @@ Lumped-capacitance film with conductive loss to the substrate. The absorbed lamp
 scales with V^power and is delivered for the pulse duration; the film heats toward a
 steady-state during the pulse and cools (quenches) afterward with time constant tau.
 Heating is driven by the lamp, cooling only by conduction — so the heating and cooling
-rates differ (an asymmetric heat/quench profile), which is the lever for phase selection.
+rates differ (an asymmetric heat/quench profile), which is the lever for crystallization
+kinetics.
 
-PROTOTYPE (plan REVISION 1 #5): lumped + analytic. Upgrade to a 1-D transient
+PROTOTYPE: lumped + analytic. Upgrade to a 1-D transient
 through-thickness stack (film + finite quartz substrate) and VALIDATE against measured
 bolometer/pyrometer traces before any quantitative mechanism claim.
 """
