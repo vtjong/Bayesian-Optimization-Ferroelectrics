@@ -1,4 +1,4 @@
-"""Chart comparison by log marginal likelihood (boss's framework §4) — GPyTorch/BoTorch.
+"""Chart comparison by log marginal likelihood (GPyTorch/BoTorch).
 
 Fit ONE GP per chart on the SAME outcomes, holding the model specification fixed (ARD over
 the 2 chart dims) and letting each chart fit its own hyperparameters. Score each by the log
@@ -8,7 +8,7 @@ boundary is simplest = the controlling quantity.
   * continuous readout -> exact GP regression on the logit of the crystalline fraction
     (BoTorch SingleTaskGP, fit by fit_gpytorch_mll; LML from ExactMarginalLogLikelihood).
   * binary readout     -> variational GP classification (GPyTorch ApproximateGP +
-    BernoulliLikelihood); the ELBO is the LML surrogate (matches the boss's SVGP classifier).
+    BernoulliLikelihood); the ELBO is the LML surrogate (a variational sparse GP classifier).
 
 Uses the team's GPyTorch/BoTorch stack (mirrors src/fit.py), not sklearn.
 LMLs become a posterior over charts with a temperature, w ~ exp(LML / tau), tau = n/10.
@@ -56,7 +56,7 @@ def _lml_continuous(X: np.ndarray, y: np.ndarray) -> float:
 
 
 class _VarGPC(ApproximateGP):
-    """Minimal variational GP classifier (RBF-ARD over 2 dims), boss's SVGP analogue."""
+    """Minimal variational sparse GP classifier (RBF-ARD over 2 dims)."""
 
     def __init__(self, inducing: torch.Tensor):
         vdist = CholeskyVariationalDistribution(inducing.size(0))

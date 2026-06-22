@@ -1,4 +1,4 @@
-"""Extract physics descriptors from a thermal profile T(t) — the boss's thermal features.
+"""Extract physics descriptors from a thermal profile T(t).
 
 Given a temperature history, compute the scalar descriptors the kinetic mechanism models
 consume: peak temperature, heating/cooling rate, time-above-threshold (dwell), integrated

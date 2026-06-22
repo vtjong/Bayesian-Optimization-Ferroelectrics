@@ -3,9 +3,9 @@
 - model.py:       simulate_profile(V, t) -> T(t)  (lumped transient heat/quench model)
 - descriptors.py: extract_descriptors(T(t)) -> {Tmax, K, heating/cooling rate, dwell, ...}
 
-These thermal descriptors are the physics features (the boss's approach); the kinetic
-mechanism models consume them. PROTOTYPE — see plan REVISION 1 #5 for the production
-upgrade (1-D transient through-thickness stack, validated against measured traces).
+These thermal descriptors are the physics features the kinetic mechanism models consume.
+PROTOTYPE — the production upgrade is a 1-D transient through-thickness stack validated
+against measured traces.
 """
 
 from .descriptors import extract_descriptors

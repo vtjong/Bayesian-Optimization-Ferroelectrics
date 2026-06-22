@@ -1,4 +1,4 @@
-"""Candidate coordinate charts on the (V, t) manifold (boss's framework §4-5).
+"""Candidate coordinate charts on the (V, t) manifold.
 
 Each chart re-expresses the SAME shots in a different 2-D coordinate system. The chart
 comparison (compare.py) then asks which coordinates make the crystallization boundary
@@ -16,7 +16,7 @@ The last three are decorrelated from the thermal cluster (rank-corr 0.05-0.43), 
 the comparison discover dwell-/heating-rate-/fluence-controlled mechanisms instead of only
 thermal ones. (Per docs/crystallization_mechanisms_reworked.md degeneracy analysis.)
 
-Two lessons from the boss's tutorial are implemented here:
+Two numerical lessons are implemented here:
   * use log(TBac), not TBac (TBac ~ exp(-30) underflows / spans many orders of magnitude);
   * standardize the TBac family with POOLED statistics (independent per-chart standardizing
     erases the Ea-dependent shifts the comparison needs).
@@ -26,7 +26,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-from .synthetic import KB_EV, T_ROOM, _trace, tmax
+from .synthetic import KB_EV, T_ROOM, _trace
 
 # Ea grid for the TBac chart family (deg: 2.25 is deliberately ABSENT so scenario B is
 # "between grid points" and 2.5 is PRESENT so scenario A is resolvable).

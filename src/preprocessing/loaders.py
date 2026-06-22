@@ -8,7 +8,7 @@ DEFAULT_COLOR = "#72356c"
 
 
 def load_experimental_data(
-    dir="/Users/valenetjong/Bayesian-Optimization-Ferroelectrics/data/",
+    dir="data/",
     src_file="Bolometer_readings_PulseForge.xlsx",
     sheet="Combined",
 ) -> pd.DataFrame:

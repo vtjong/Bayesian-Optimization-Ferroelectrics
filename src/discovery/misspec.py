@@ -1,4 +1,4 @@
-"""Misspecification stress test (panel action item).
+"""Thermal-model misspecification stress test.
 
 The baseline power study generates data and builds charts from the SAME thermal model, so it
 only tests internal consistency. Here we generate data from a PERTURBED ("true") thermal

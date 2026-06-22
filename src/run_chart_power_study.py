@@ -1,6 +1,6 @@
 """Run the chart-comparison power study across readout types and save figures + results.
 
-Headline question: on synthetic FLA data (the boss's Tmax(V,t) model), how many shots does
+Headline question: on synthetic FLA data (the analytic Tmax(V,t) model), how many shots does
 each readout need to identify the controlling quantity? Compares binary pass/fail vs
 continuous crystalline-fraction readouts (XRD low-noise, Raman moderate, optical proxy
 higher-noise). Also runs scenarios B (off-grid Ea) and C (two-mechanism) to confirm the

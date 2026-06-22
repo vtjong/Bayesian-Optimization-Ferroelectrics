@@ -1,7 +1,6 @@
 """Synthetic FLA crystallization data for the chart-comparison power study.
 
-Reproduces the boss's documented forward model
-(fla_crystallization_framework_tutorial.docx, §4):
+Analytic forward model used for the synthetic study:
 
     Tmax(V,t) = T_room + (V - V0) * t / (a + b t^2),   V0=28.61, a=1.278, b=0.184
 
@@ -28,7 +27,7 @@ from typing import Callable, Tuple
 
 import numpy as np
 
-# --- boss's fitted constants (tutorial §4.2) -----------------------------------------
+# --- fitted constants of the peak-temperature model ----------------------------------
 T_ROOM = 25.0      # deg C
 V0 = 28.61         # V
 A_FIT = 1.278      # ms
@@ -36,13 +35,13 @@ B_FIT = 0.184      # 1/ms
 TAU_COOL = 4.0     # ms, cooling time constant
 KB_EV = 8.617e-5   # Boltzmann constant, eV/K
 
-# design box (tutorial §4.1 / Table 3)
+# design box over (voltage, pulse width)
 V_LO, V_HI = 350.0, 750.0   # volts
 T_LO, T_HI = 0.1, 10.0      # ms
 
 
 def tmax(v: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Peak temperature (deg C) for voltage v and pulse width t (boss's formula)."""
+    """Peak temperature (deg C) for voltage v and pulse width t."""
     return T_ROOM + (v - V0) * t / (A_FIT + B_FIT * t ** 2)
 
 
@@ -125,7 +124,7 @@ def sample_design(n: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndar
 def _prob_crystallize(V, t, scenario: Scenario, k_sharp: float = 40.0) -> np.ndarray:
     """P(crystallize) for each shot under the scenario's controlling quantity.
 
-    Works in QUANTILE-RANK space (tutorial §4.4): TBac spans many orders of magnitude, so a
+    Works in QUANTILE-RANK space: TBac spans many orders of magnitude, so a
     linear-space threshold collapses to "Tmax > cutoff". Ranking makes the boundary sit at
     the median rank of the controlling quantity and the transition sharpness well-defined
     (k_sharp=40 -> 5-95% transition spans ~15% of the rank range).

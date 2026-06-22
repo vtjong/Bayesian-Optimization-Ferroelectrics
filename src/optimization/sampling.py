@@ -1,8 +1,8 @@
 """Latin-hypercube initial sampling for the experimental design space.
 
 Generates space-filling seed points over a (voltage, time) box for round 0 of the
-campaign (per the boss's notes: LHS over a domain physically restricted so it brackets
-the crystallization boundary). Thin wrapper over scipy's QMC LatinHypercube.
+campaign: LHS over a domain physically restricted so it brackets the crystallization
+boundary. Thin wrapper over scipy's QMC LatinHypercube.
 """
 
 import numpy as np

@@ -174,7 +174,7 @@ def prepare_gp_training_tensors(
         in original units
     :rtype: Tuple[torch.Tensor, torch.Tensor]
     """
-    # GP inputs = [time, voltage] — the exact control knobs (boss decision).
+    # GP inputs = [time, voltage] — the exact, independently-set control knobs.
     # Energy density stays in fe_data for the thermal/descriptor layer.
     time = fe_data["Time (ms)"].values
     voltage = fe_data["Voltage (V)"].values
