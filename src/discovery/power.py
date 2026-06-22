@@ -31,33 +31,32 @@ def run_power(
         for n in n_list:
             fam = np.zeros(reps)
             ea_hit = np.zeros(reps)
-            ea_err = np.empty(reps)
-            topw = np.empty(reps)
+            ea_err = np.full(reps, np.nan)
+            margin = np.empty(reps)
             for r in range(reps):
                 # deterministic, distinct seed per (readout, n, rep)
                 rng = np.random.default_rng(seed + 100000 * ri + 1000 * n + r)
                 V, t, y = make_dataset(n, scenario, readout, rng)
                 res = compare(build_charts(V, t), y, readout)
                 fam[r] = res["tbac_family_won"]
-                topw[r] = res["top_weight"]
+                margin[r] = res["margin_over_vt"]
                 if scenario.ea_true is not None:
-                    err = abs(res["recovered_ea"] - scenario.ea_true)
+                    # CONTINUOUS (sub-grid) recovery error vs the planted truth
+                    err = abs(res["recovered_ea_refined"] - scenario.ea_true)
                     ea_err[r] = err
                     ea_hit[r] = err <= ea_tol
-                else:
-                    ea_err[r] = np.nan
             row = {
                 "readout": readout, "n": n,
                 "p_family": float(fam.mean()),
                 "p_ea": float(ea_hit.mean()) if scenario.ea_true else None,
-                "median_top_weight": float(np.median(topw)),
                 "median_ea_err": float(np.nanmedian(ea_err)),
+                "median_margin_over_vt": float(np.median(margin)),
             }
             rows.append(row)
             if verbose:
+                eae = "NA" if scenario.ea_true is None else f"{row['median_ea_err']:.2f}eV"
                 print(f"  {readout:8s} n={n:4d}  P(family)={row['p_family']:.2f}  "
-                      f"P(Ea±{ea_tol})={row['p_ea'] if row['p_ea'] is None else round(row['p_ea'],2)}  "
-                      f"med top-w={row['median_top_weight']:.2f}")
+                      f"med|Ea_err|={eae}  margin/(V,t)={row['median_margin_over_vt']:.1f}")
     return rows
 
 

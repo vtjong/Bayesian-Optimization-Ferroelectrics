@@ -72,12 +72,19 @@ class _VarGPC(ApproximateGP):
             self.mean_module(x), self.covar_module(x))
 
 
-def _lml_binary(X: np.ndarray, y: np.ndarray, epochs: int = 100) -> float:
-    """Variational GP classification; ELBO as the LML surrogate (full, un-normalized)."""
+def _lml_binary(X: np.ndarray, y: np.ndarray, epochs: int = 250) -> float:
+    """Variational GP classification; ELBO as the LML surrogate (full, un-normalized).
+
+    Note: the ELBO is a *lower bound* on the true log-evidence, so binary scores are not
+    strictly on the same footing as the exact continuous LMLs — they are only compared
+    chart-to-chart WITHIN the binary readout, never against the continuous charts.
+    """
     tx = torch.as_tensor(X, dtype=torch.double)
     ty = torch.as_tensor(y, dtype=torch.double)
     m = min(len(y), 64)
-    idx = torch.randperm(len(y))[:m]
+    # seed the inducing-point draw deterministically (reproducible binary scores)
+    g = torch.Generator().manual_seed(101 * len(y) + int(round(float(y.sum()))))
+    idx = torch.randperm(len(y), generator=g)[:m]
     model = _VarGPC(tx[idx].clone()).double()
     lik = BernoulliLikelihood().double()
     model.train()
@@ -103,8 +110,28 @@ def chart_lml(X: np.ndarray, y: np.ndarray, readout: str) -> float:
     return _lml_continuous(X, y)
 
 
+def _parabolic_ea(lml: Dict[str, float]) -> float:
+    """Sub-grid Ea: vertex of a parabola through the 3 LML points around the family peak.
+
+    Gives a CONTINUOUS estimate (not just the winning grid cell), so recovery can be
+    scored honestly against an off-grid truth. Falls back to the grid argmax at an edge.
+    """
+    fam = tbac_family_names()
+    eas = np.array([ea_of_chart(nm) for nm in fam], dtype=float)
+    L = np.array([lml[nm] for nm in fam], dtype=float)
+    i = int(np.argmax(L))
+    if 0 < i < len(L) - 1:
+        denom = L[i - 1] - 2 * L[i] + L[i + 1]
+        if denom < 0:  # concave => genuine interior maximum
+            delta = 0.5 * (L[i - 1] - L[i + 1]) / denom      # in grid-index units
+            delta = float(np.clip(delta, -1.0, 1.0))
+            return float(eas[i] + delta * (eas[i + 1] - eas[i]))
+    return float(eas[i])
+
+
 def compare(charts: Dict[str, np.ndarray], y: np.ndarray, readout: str) -> Dict:
-    """Score every chart; return LMLs, tempered weights, winner, and recovered Ea."""
+    """Score every chart; return LMLs, weights, winner, Ea estimates, and the
+    margin of the best chart over the raw (V,t) control chart."""
     lml = {name: chart_lml(X, y, readout) for name, X in charts.items()}
     n = len(y)
     tau = max(n / 10.0, 1.0)
@@ -116,11 +143,16 @@ def compare(charts: Dict[str, np.ndarray], y: np.ndarray, readout: str) -> Dict:
     winner = max(weights, key=weights.get)
     fam = tbac_family_names()
     best_fam = max(fam, key=lambda nm: lml[nm])
+    # margin of the winning chart over raw (V,t): a real order parameter beats the control
+    # chart (positive margin); a genuinely 2-coordinate boundary does not (margin ~ 0).
+    margin_over_vt = float(lml[winner] - lml.get("(V,t)", min(vals)))
     return {
         "lml": lml,
         "weights": weights,
         "winner": winner,
         "top_weight": float(weights[winner]),
-        "recovered_ea": ea_of_chart(best_fam),
+        "recovered_ea": ea_of_chart(best_fam),        # grid argmax (legacy)
+        "recovered_ea_refined": _parabolic_ea(lml),   # continuous sub-grid estimate
         "tbac_family_won": winner in fam,
+        "margin_over_vt": margin_over_vt,
     }

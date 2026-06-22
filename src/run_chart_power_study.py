@@ -76,8 +76,8 @@ def main() -> int:
            "How many shots to identify the mechanism? (by readout)",
            "power_identify.png")
     _curve(rows, OUT, "p_ea",
-           "P(recover Ea within ±0.5 eV)",
-           "How many shots to recover the activation energy? (by readout)",
+           "P(recover Ea_eff within ±0.5 eV)",
+           "How many shots to recover the (effective) activation energy? (by readout)",
            "power_ea.png")
 
     gono_fam = min_n_for_power(rows, "p_family", 0.8)
@@ -85,16 +85,19 @@ def main() -> int:
     print("\nGO/NO-GO — min shots for P>=0.8:")
     for ro in READOUT_LABEL:
         print(f"  {READOUT_LABEL[ro]:24s}  identify family: {gono_fam.get(ro)}"
-              f"   recover Ea: {gono_ea.get(ro)}")
+              f"   recover Ea_eff: {gono_ea.get(ro)}")
 
-    # honesty check: B (off-grid Ea) and C (two-mechanism) should stay diffuse
-    print("\n=== Scenario B (off-grid Ea) & C (two-mechanism): expect LOW top-weight ===")
+    # three-way diagnostic at n=300, XRD: a real order parameter beats the (V,t) control
+    # chart (margin>0); a two-mechanism boundary does not (margin~0). Ea_eff error then
+    # separates on-grid (A, low) from off-grid (B, higher).
+    print("\n=== Scenario diagnostic (n=300, XRD): margin over (V,t) + Ea_eff error ===")
     diag = {}
-    for sk in ("B", "C"):
+    for sk in ("A", "B", "C"):
         r = run_power(sk, readouts=("xrd",), n_list=(300,), reps=args.reps, verbose=False)[0]
         diag[sk] = r
-        print(f"  Scenario {sk}: median top-weight at n=300, XRD = {r['median_top_weight']:.2f}"
-              " (diffuse = method correctly refuses to over-commit)")
+        eae = "NA" if r["p_ea"] is None else f"{r['median_ea_err']:.2f}eV"
+        print(f"  Scenario {sk}: margin/(V,t)={r['median_margin_over_vt']:6.1f}   "
+              f"med|Ea_eff err|={eae}")
 
     results = {"scenario_A": rows, "gono_family": gono_fam, "gono_ea": gono_ea,
                "diagnostic_BC": diag, "reps": args.reps, "n_list": args.n}

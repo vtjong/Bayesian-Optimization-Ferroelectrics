@@ -24,7 +24,7 @@ The continuous readout's sigma encodes the metrology quality (XRD low, optical p
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Tuple
+from typing import Callable, Tuple
 
 import numpy as np
 
@@ -59,28 +59,30 @@ def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
     return s, T
 
 
-def descriptors(v: float, t: float, ea_grid=(2.0, 2.5, 3.0, 3.5)) -> Dict[str, float]:
-    """Per-shot descriptors: Tmax, TB, and TBac at each Ea in ea_grid."""
-    s, T = _trace(v, t)
-    T_K = T + 273.15
-    out = {"Tmax": float(T.max()),
-           "TB": float(np.trapezoid(np.clip(T - T_ROOM, 0, None), s))}
-    for ea in ea_grid:
-        out[f"TBac_{ea}"] = float(np.trapezoid(np.exp(-ea / (KB_EV * T_K)), s))
-    return out
-
-
 # --- controlling quantities (the planted "truth") ------------------------------------
 
 def phi_tbac(V, t, ea):
     """phi = activated thermal budget at activation energy ea (vectorized over shots)."""
-    return np.array([np.trapezoid(
-        np.exp(-ea / (KB_EV * (_trace(vi, ti)[1] + 273.15))), _trace(vi, ti)[0])
-        for vi, ti in zip(V, t)])
+    out = np.empty(len(V))
+    for i, (vi, ti) in enumerate(zip(V, t)):
+        s, T = _trace(float(vi), float(ti))
+        out[i] = np.trapezoid(np.exp(-ea / (KB_EV * (T + 273.15))), s)
+    return out
 
 
 def phi_tmax(V, t):
     return tmax(V, t)
+
+
+def phi_dwell(V, t, t_star=600.0):
+    """phi = dwell: time the trace spends above T* (deg C). Near-peak threshold (600C)
+    makes this rank-DECORRELATED from Tmax (|corr|~0.32, vs ~0.82 at 450C): it measures
+    how LONG near the peak, not how HOT. Pairing the two gives a genuine 2-coord boundary."""
+    out = np.empty(len(V))
+    for i, (vi, ti) in enumerate(zip(V, t)):
+        s, T = _trace(float(vi), float(ti))
+        out[i] = np.trapezoid((T > t_star).astype(float), s)
+    return out
 
 
 @dataclass(frozen=True)
@@ -99,8 +101,9 @@ SCENARIOS = {
     # B: single order parameter, Ea BETWEEN grid points (needs the warp for precision)
     "B": Scenario("B: single phi (Ea=2.25 off grid)",
                   lambda V, t: phi_tbac(V, t, 2.25), ea_true=2.25),
-    # C: two mechanisms -- crystallize only if hot enough AND enough budget
-    "C": Scenario("C: two-mechanism (Tmax AND TBac)", None, two_mechanism=True),
+    # C: two mechanisms -- crystallize only if hot enough (peak T) AND long enough
+    # (dwell). Tmax and dwell are rank-decorrelated, so NO single chart collapses it.
+    "C": Scenario("C: two-mechanism (Tmax AND dwell)", None, two_mechanism=True),
 }
 
 # readout noise assumptions (crystalline-fraction units; LABELLED ASSUMPTIONS, calibrate later)
@@ -128,8 +131,9 @@ def _prob_crystallize(V, t, scenario: Scenario, k_sharp: float = 40.0) -> np.nda
     (k_sharp=40 -> 5-95% transition spans ~15% of the rank range).
     """
     if scenario.two_mechanism:
-        # need BOTH high peak temperature AND high activated budget (neither alone suffices)
-        r = np.minimum(_rank(phi_tmax(V, t)), _rank(phi_tbac(V, t, 2.5)))
+        # need BOTH high peak T (nucleation) AND long dwell (growth); neither alone
+        # suffices -> the boundary needs 2 coordinates, so no 1-D chart collapses it
+        r = np.minimum(_rank(phi_tmax(V, t)), _rank(phi_dwell(V, t)))
         return 1.0 / (1.0 + np.exp(-k_sharp * (r - 0.5)))
     r = _rank(scenario.phi(V, t))
     return 1.0 / (1.0 + np.exp(-k_sharp * (r - 0.5)))
