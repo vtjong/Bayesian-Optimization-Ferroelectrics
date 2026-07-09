@@ -215,7 +215,7 @@ def propose_batch(gp, Vs, ts, ys, q, acq, Vc, tc):
     return np.array(Vb), np.array(tb)
 
 
-def run_active_batch(q=5, n_seed=10, n_rounds=5, acq="lse", seed=0) -> Dict:
+def run_active_batch(q=4, n_seed=10, n_rounds=5, acq="lse", seed=0) -> Dict:
     """Batch active learning: LHS seed, then each round propose q points (greedy qEntropy), MEASURE
     ALL q together, refit. Models beamtime, where 1-shot-per-round is infeasible. `err` is the
     boundary-map error at the start of each round plus a final value after the last batch."""
