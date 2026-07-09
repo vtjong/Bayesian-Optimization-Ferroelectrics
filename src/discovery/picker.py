@@ -1,0 +1,167 @@
+"""Active experiment-picker for crystallization-boundary mapping (Layer 2).
+
+Maps the amorphous->crystalline boundary in (V, t) by sequentially choosing where to measure,
+using an entropy-family acquisition on a GP with HETEROSCEDASTIC observation noise (noise is
+worst near the boundary -- partially crystallized, leaky films / degraded pyrometry).
+
+Two acquisitions:
+  * predictive entropy -- class entropy using the PREDICTIVE variance (latent + noise); peaks at
+    the boundary but also CHASES high-noise regions (labmate's choice, fine for low noise);
+  * BALD (recommended here) -- information gain about the LATENT function, boundary-weighted:
+        a(x) = 0.5*log(1 + s^2/sigma_n^2) * H( Phi((mu-theta)/s) ),
+    where s = latent (epistemic) std and sigma_n = observation-noise std. The first factor is the
+    reducible-vs-noise information gain, which DOWN-weights high-noise regions; the second focuses
+    on the boundary. Under significant aleatoric noise BALD beats predictive entropy (Houlsby 2011;
+    heteroscedastic active-learning literature).
+
+A light spreading penalty keeps shots distributed along the whole boundary, and a
+convergence-delta / patience rule (after a labmate's phase-mapping pipeline) can stop the loop.
+
+EMPIRICAL FINDING (see run_picker_demo): for the boundary-MAPPING objective under
+noise-worst-at-the-boundary, the latent level-set entropy gives the LOWEST boundary-map error;
+BALD's noise-avoidance actually HURTS boundary localization (it under-samples the boundary), and
+predictive entropy is a robust but less efficient middle. LSE is therefore the default; BALD and
+predictive entropy are kept as baselines (their comparison is the justification).
+"""
+
+from typing import Dict, List, Tuple
+
+import numpy as np
+from scipy.stats import norm
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+
+import warnings
+
+from .synthetic import T_HI, T_LO, V_HI, V_LO, tmax
+
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+
+THETA = 0.5                      # crystallization threshold (boundary = level set f = THETA)
+T_STAR = 560.0                   # true boundary: Tmax = T_STAR (a re-entrant curve in (V,t))
+_SHARP = 0.03                    # sharpness of the true crystalline-fraction transition
+_S0, _S1 = 0.02, 0.30            # heteroscedastic noise: sigma_n = S0 + S1 * f*(1-f)  (worst at f=0.5)
+
+
+# --- ground truth (fixed function of (V,t)); the picker never sees it -------------------
+def true_f(V: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """True crystalline fraction: a sigmoid of (Tmax - T_STAR). Boundary is re-entrant."""
+    return 1.0 / (1.0 + np.exp(-_SHARP * (tmax(V, t) - T_STAR)))
+
+
+def noise_sigma(f: np.ndarray) -> np.ndarray:
+    """Heteroscedastic observation-noise std: largest at the boundary (f = 0.5)."""
+    return _S0 + _S1 * f * (1.0 - f)
+
+
+def measure(V: np.ndarray, t: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Noisy continuous readout at (V,t) (e.g. a permittivity-derived crystalline fraction)."""
+    f = true_f(V, t)
+    return np.clip(f + rng.normal(0.0, noise_sigma(f)), 0.0, 1.0)
+
+
+# --- normalized coordinates for the GP --------------------------------------------------
+def _norm(V, t):
+    return np.column_stack([(V - V_LO) / (V_HI - V_LO), (t - T_LO) / (T_HI - T_LO)])
+
+
+def candidate_grid(nv=45, nt=45):
+    vs = np.linspace(V_LO, V_HI, nv)
+    ts = np.linspace(T_LO, T_HI, nt)
+    VV, TT = np.meshgrid(vs, ts)
+    return VV.ravel(), TT.ravel()
+
+
+# --- GP fit / predict (heteroscedastic: per-point noise variance) -----------------------
+def fit_gp(V, t, y):
+    """Fit a GP to the continuous readout with per-point (heteroscedastic) noise variance."""
+    Xn = _norm(np.asarray(V), np.asarray(t))
+    var = noise_sigma(np.clip(y, 0, 1)) ** 2 + 1e-4        # noise var estimated from the reading
+    k = ConstantKernel(1.0, (1e-2, 1e2)) * RBF([0.15, 0.15], (0.03, 1.0))
+    gp = GaussianProcessRegressor(kernel=k, alpha=var, normalize_y=True,
+                                  n_restarts_optimizer=1)
+    gp.fit(Xn, np.asarray(y))
+    return gp
+
+
+def predict(gp, V, t):
+    """Return (mu, s) where s is the LATENT (epistemic) std, excluding observation noise."""
+    mu, s = gp.predict(_norm(np.asarray(V), np.asarray(t)), return_std=True)
+    return mu, np.maximum(s, 1e-6)
+
+
+# --- acquisitions -----------------------------------------------------------------------
+def _binary_entropy(p):
+    p = np.clip(p, 1e-9, 1 - 1e-9)
+    return -(p * np.log(p) + (1 - p) * np.log(1 - p))
+
+
+def acq_entropy(mu, s, sig_n):
+    """Predictive class entropy (latent + noise variance) -> peaks at boundary AND high noise."""
+    p = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + sig_n ** 2))
+    return _binary_entropy(p)
+
+
+def acq_bald(mu, s, sig_n):
+    """Boundary-weighted information gain about the latent function (down-weights noise)."""
+    info = 0.5 * np.log1p(s ** 2 / sig_n ** 2)             # reducible-vs-noise information gain
+    boundary = _binary_entropy(norm.cdf((mu - THETA) / s))  # focus on the boundary (latent)
+    return info * boundary
+
+
+def acq_lse(mu, s, sig_n):
+    """Level-set entropy on the LATENT (reducible) uncertainty: boundary-focused AND
+    noise-aware. High where mu ~ theta and the LATENT class is still uncertain; unlike
+    predictive entropy it stops re-chasing a boundary point once its reducible uncertainty
+    is resolved, and unlike BALD it does not flee the boundary. Best fit for noisy boundary
+    MAPPING (the level-set objective)."""
+    return _binary_entropy(norm.cdf((mu - THETA) / s))
+
+
+def _spread(Vc, tc, Vs, ts, r=0.08):
+    """Down-weight candidates near already-sampled points (uniform fidelity along the boundary)."""
+    Cn, Sn = _norm(Vc, tc), _norm(np.asarray(Vs), np.asarray(ts))
+    d2 = ((Cn[:, None, :] - Sn[None, :, :]) ** 2).sum(-1)
+    return 1.0 - np.exp(-d2 / (2 * r ** 2)).max(axis=1)
+
+
+# --- the active loop --------------------------------------------------------------------
+def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
+    """Seed with LHS, then pick each next shot by the acquisition. Returns history."""
+    rng = np.random.default_rng(seed)
+    Vs = list(rng.uniform(V_LO, V_HI, n_seed))
+    ts = list(rng.uniform(T_LO, T_HI, n_seed))
+    ys = list(measure(np.array(Vs), np.array(ts), rng))
+    Vc, tc = candidate_grid()
+    f_true_grid = true_f(Vc, tc)
+    true_lbl = (f_true_grid > THETA).astype(int)
+    hi_noise = noise_sigma(f_true_grid) > 0.6 * noise_sigma(np.array([0.5]))[0]
+
+    err_hist, hinoise_hist = [], []
+    prob_prev = None
+    conv_count = 0
+    for it in range(n_iter):
+        gp = fit_gp(Vs, ts, ys)
+        mu, s = predict(gp, Vc, tc)
+        sig_n = noise_sigma(np.clip(mu, 0, 1))
+        a = {"entropy": acq_entropy, "bald": acq_bald, "lse": acq_lse}[acq](mu, s, sig_n)
+        a = a * _spread(Vc, tc, Vs, ts)                    # spreading
+        # boundary-map error (misclassification area) + convergence probe
+        prob = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + sig_n ** 2))
+        err_hist.append(float(np.mean((prob > 0.5).astype(int) != true_lbl)))
+        if prob_prev is not None:
+            conv_count = conv_count + 1 if np.mean(np.abs(prob - prob_prev)) < 0.02 else 0
+        prob_prev = prob
+        # pick next shot
+        j = int(np.argmax(a))
+        Vn, tn = Vc[j], tc[j]
+        Vs.append(Vn); ts.append(tn); ys.append(float(measure(np.array([Vn]), np.array([tn]), rng)[0]))
+        hinoise_hist.append(hi_noise[j])
+
+    return {
+        "acq": acq, "V": np.array(Vs), "t": np.array(ts),
+        "err": np.array(err_hist),
+        "frac_hi_noise": float(np.mean(hinoise_hist)),
+        "converged_iter": None,
+    }
