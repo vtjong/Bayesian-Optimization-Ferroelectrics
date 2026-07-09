@@ -4,24 +4,28 @@ Maps the amorphous->crystalline boundary in (V, t) by sequentially choosing wher
 using an entropy-family acquisition on a GP with HETEROSCEDASTIC observation noise (noise is
 worst near the boundary -- partially crystallized, leaky films / degraded pyrometry).
 
-Two acquisitions:
-  * predictive entropy -- class entropy using the PREDICTIVE variance (latent + noise); peaks at
-    the boundary but also CHASES high-noise regions (labmate's choice, fine for low noise);
-  * BALD (recommended here) -- information gain about the LATENT function, boundary-weighted:
+Three acquisitions (all entropy-family level-set utilities):
+  * predictive entropy -- class entropy from the PREDICTIVE variance (latent + noise); peaks at
+    the boundary but also chases high-noise regions;
+  * BALD -- boundary-weighted information gain about the LATENT function,
         a(x) = 0.5*log(1 + s^2/sigma_n^2) * H( Phi((mu-theta)/s) ),
-    where s = latent (epistemic) std and sigma_n = observation-noise std. The first factor is the
-    reducible-vs-noise information gain, which DOWN-weights high-noise regions; the second focuses
-    on the boundary. Under significant aleatoric noise BALD beats predictive entropy (Houlsby 2011;
-    heteroscedastic active-learning literature).
+    which down-weights high-noise regions (s = latent std, sigma_n = observation-noise std);
+  * latent level-set entropy (LSE) -- boundary class entropy on the LATENT variance only,
+        a(x) = H( Phi((mu-theta)/s) ) -- boundary-focused and noise-aware without chasing or
+    fleeing the noise band.
 
 A light spreading penalty keeps shots distributed along the whole boundary, and a
 convergence-delta / patience rule (after a labmate's phase-mapping pipeline) can stop the loop.
 
-EMPIRICAL FINDING (see run_picker_demo): for the boundary-MAPPING objective under
-noise-worst-at-the-boundary, the latent level-set entropy gives the LOWEST boundary-map error;
-BALD's noise-avoidance actually HURTS boundary localization (it under-samples the boundary), and
-predictive entropy is a robust but less efficient middle. LSE is therefore the default; BALD and
-predictive entropy are kept as baselines (their comparison is the justification).
+EMPIRICAL FINDING (see run_picker_demo; calibrated boundary, 16 seeds +/- SEM): for the
+boundary-MAPPING objective the three are COMPARABLE -- within ~1 SEM across the realistic
+(permittivity) noise regime. LSE ties predictive entropy at low noise and edges ahead at very
+high noise; BALD is competitive at moderate noise and lags only at the noise extremes. No
+acquisition robustly dominates -- seeding and boundary coverage matter more. We keep LSE as the
+DEFAULT: a principled level-set utility that is best-or-tied at the noise extremes and never worst
+by a meaningful margin. BALD and predictive entropy are retained as baselines -- the comparison
+itself is the justification. (An earlier draft's "LSE dominates / BALD hurts" claim did not survive
+calibration + more seeds and was retracted.)
 """
 
 from typing import Dict, List, Tuple
@@ -39,8 +43,10 @@ from .synthetic import T_HI, T_LO, V_HI, V_LO, tmax
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 THETA = 0.5                      # crystallization threshold (boundary = level set f = THETA)
-T_STAR = 560.0                   # true boundary: Tmax = T_STAR (a re-entrant curve in (V,t))
-_SHARP = 0.03                    # sharpness of the true crystalline-fraction transition
+T_STAR = 390.0                   # boundary Tmax = T_STAR: MEASURED flash-lamp crystallization
+                                 # onset (flash T50=388 C, RTA 357 C); see src/run_calibration.py
+_SHARP = 0.12                    # transition sharpness: ~37 C 10-90% width, matching the
+                                 # measured onset (flash ~11 C, RTA ~40 C); run_calibration.py
 _S0, _S1 = 0.02, 0.30            # heteroscedastic noise: sigma_n = S0 + S1 * f*(1-f)  (worst at f=0.5)
 
 
@@ -114,8 +120,8 @@ def acq_lse(mu, s, sig_n):
     """Level-set entropy on the LATENT (reducible) uncertainty: boundary-focused AND
     noise-aware. High where mu ~ theta and the LATENT class is still uncertain; unlike
     predictive entropy it stops re-chasing a boundary point once its reducible uncertainty
-    is resolved, and unlike BALD it does not flee the boundary. Best fit for noisy boundary
-    MAPPING (the level-set objective)."""
+    is resolved, and unlike BALD it does not flee the boundary. A principled, robust default for
+    noisy boundary mapping -- comparable to entropy/BALD in practice (see module docstring)."""
     return _binary_entropy(norm.cdf((mu - THETA) / s))
 
 

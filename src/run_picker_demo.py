@@ -1,12 +1,16 @@
 """Acquisition comparison for noisy crystallization-boundary mapping (Layer 2).
 
 Grounds the acquisition choice empirically: predictive entropy vs BALD vs the latent-variance
-level-set entropy (LSE), across observation-noise levels, on a synthetic boundary whose noise is
-worst AT the boundary (the permittivity "leaky-near-the-transition" regime). Reports final
-boundary-map error and where each acquisition spends its shots, and shows the LSE picker
-clustering shots on the boundary.
+level-set entropy (LSE), across observation-noise levels, on the calibrated boundary whose noise
+is worst AT the boundary (the permittivity "leaky-near-the-transition" regime). Reports final
+boundary-map error (mean +/- SEM over seeds) and shows the default LSE picker clustering shots on
+the boundary.
 
-Usage:  python src/run_picker_demo.py [--seeds 6]
+Finding: in the realistic (permittivity) noise regime the three are COMPARABLE -- overlapping
++/-1 SEM bands, no robust dominance. We adopt LSE as a principled default (boundary-focused,
+noise-aware; best-or-tied at the noise extremes), with BALD/entropy as baselines.
+
+Usage:  python src/run_picker_demo.py [--seeds 16]
 """
 
 import argparse
@@ -33,35 +37,40 @@ LBL = {"entropy": "predictive entropy", "bald": "BALD", "lse": "level-set entrop
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--seeds", type=int, default=6)
+    ap.add_argument("--seeds", type=int, default=16)
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
     s1_grid = [0.2, 0.4, 0.8, 1.5, 2.5]
     peaks = [pk._S0 + 0.25 * s for s in s1_grid]
     curves = {a: [] for a in ("entropy", "bald", "lse")}
-    print("peak sigma_n | entropy | bald | lse   (final boundary-map error)")
+    sems = {a: [] for a in ("entropy", "bald", "lse")}
+    print(f"peak sigma_n | entropy | bald | lse   (final boundary-map error, mean+/-SEM, "
+          f"{args.seeds} seeds)")
     for s1 in s1_grid:
         pk._S1 = s1
-        row = {}
         for a in ("entropy", "bald", "lse"):
             e = [np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s)["err"][-4:])
                  for s in range(args.seeds)]
-            curves[a].append(np.mean(e)); row[a] = np.mean(e)
-        print(f"   {pk._S0 + 0.25*s1:.2f}      |  {row['entropy']:.3f}  | {row['bald']:.3f}"
-              f"| {row['lse']:.3f}")
+            curves[a].append(np.mean(e)); sems[a].append(np.std(e) / np.sqrt(args.seeds))
+        print(f"   {pk._S0 + 0.25*s1:.2f}      | "
+              + " | ".join(f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}"
+                           for a in ("entropy", "bald", "lse")))
 
-    # spatial shot placement for the LSE picker at a representative (moderate) noise
+    # spatial shot placement for the (default) LSE picker at a representative moderate noise
     pk._S1 = 0.4
     h = pk.run_active("lse", n_seed=10, n_iter=25, seed=0)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
     for a in ("entropy", "bald", "lse"):
-        a1.plot(peaks, curves[a], "o-", color=COL[a], label=LBL[a])
+        m, e = np.array(curves[a]), np.array(sems[a])
+        a1.plot(peaks, m, "o-", color=COL[a], label=LBL[a])
+        a1.fill_between(peaks, m - e, m + e, color=COL[a], alpha=0.15)
     a1.axvspan(0.08, 0.16, color="#2e8b57", alpha=0.12, label="permittivity regime")
     a1.set_xlabel("peak observation noise  sigma_n  (worst at the boundary)")
     a1.set_ylabel("boundary-map error (misclassification area)")
-    a1.set_title("Which acquisition maps the noisy boundary best?", fontweight="bold", fontsize=11)
+    a1.set_title("Entropy-family acquisitions are comparable\n(overlapping +/-1 SEM bands)",
+                 fontweight="bold", fontsize=11)
     a1.legend(fontsize=8); a1.grid(alpha=0.3)
 
     vs = np.linspace(V_LO, V_HI, 120); ts = np.linspace(T_LO, T_HI, 120)
