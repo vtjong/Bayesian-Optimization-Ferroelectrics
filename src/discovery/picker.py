@@ -31,7 +31,7 @@ calibration + more seeds and was retracted.)
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, qmc
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel
@@ -77,6 +77,16 @@ def candidate_grid(nv=45, nt=45):
     ts = np.linspace(T_LO, T_HI, nt)
     VV, TT = np.meshgrid(vs, ts)
     return VV.ravel(), TT.ravel()
+
+
+def lhs_seed(n, rng):
+    """Latin-hypercube seed over the (V, t) design box (space-filling; low discrepancy).
+
+    Better than i.i.d. uniform: one sample per row/column stratum, so the GP sees the whole box
+    before active learning starts. Returns (V, t) arrays of length n.
+    """
+    u = qmc.LatinHypercube(d=2, seed=rng).random(n)
+    return V_LO + u[:, 0] * (V_HI - V_LO), T_LO + u[:, 1] * (T_HI - T_LO)
 
 
 # --- GP fit / predict (heteroscedastic: per-point noise variance) -----------------------
@@ -136,8 +146,8 @@ def _spread(Vc, tc, Vs, ts, r=0.08):
 def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
     """Seed with LHS, then pick each next shot by the acquisition. Returns history."""
     rng = np.random.default_rng(seed)
-    Vs = list(rng.uniform(V_LO, V_HI, n_seed))
-    ts = list(rng.uniform(T_LO, T_HI, n_seed))
+    Vseed, tseed = lhs_seed(n_seed, rng)     # space-filling LHS seed over (V, t)
+    Vs, ts = list(Vseed), list(tseed)
     ys = list(measure(np.array(Vs), np.array(ts), rng))
     Vc, tc = candidate_grid()
     f_true_grid = true_f(Vc, tc)
