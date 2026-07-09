@@ -181,3 +181,67 @@ def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
         "frac_hi_noise": float(np.mean(hinoise_hist)),
         "converged_iter": None,
     }
+
+
+# --- batch (q-per-round) proposal: greedy "qEntropy" ------------------------------------
+def _conditioned_gp(kernel, V, t, y):
+    """GP conditioned on (V,t,y) at FIXED (already-fitted) hyperparameters -- no re-optimize."""
+    Xn = _norm(np.asarray(V), np.asarray(t))
+    var = noise_sigma(np.clip(np.asarray(y), 0, 1)) ** 2 + 1e-4
+    g = GaussianProcessRegressor(kernel=kernel, alpha=var, optimizer=None, normalize_y=True)
+    g.fit(Xn, np.asarray(y))
+    return g
+
+
+def propose_batch(gp, Vs, ts, ys, q, acq, Vc, tc):
+    """Greedy batch of q points -- the entropy-family analogue of qUCB/qEI's sequential greedy.
+
+    After each pick, FANTASIZE its label at the posterior mean (Kriging believer) and re-condition
+    at fixed hyperparameters; the latent variance near that point collapses, so the next pick moves
+    away. The GP's own correlation spreads the batch along the boundary -- no measuring in between.
+    Returns q (V, t) points to run together this round.
+    """
+    acq_fn = {"entropy": acq_entropy, "bald": acq_bald, "lse": acq_lse}[acq]
+    kernel = gp.kernel_
+    Va, ta, ya = list(Vs), list(ts), list(ys)
+    Vb, tb = [], []
+    for _ in range(q):
+        g = _conditioned_gp(kernel, Va, ta, ya)
+        mu, s = predict(g, Vc, tc)
+        a = acq_fn(mu, s, noise_sigma(np.clip(mu, 0, 1))) * _spread(Vc, tc, Va, ta)
+        j = int(np.argmax(a))
+        Vb.append(Vc[j]); tb.append(tc[j])
+        Va.append(Vc[j]); ta.append(tc[j]); ya.append(float(mu[j]))   # Kriging-believer fantasy
+    return np.array(Vb), np.array(tb)
+
+
+def run_active_batch(q=5, n_seed=10, n_rounds=5, acq="lse", seed=0) -> Dict:
+    """Batch active learning: LHS seed, then each round propose q points (greedy qEntropy), MEASURE
+    ALL q together, refit. Models beamtime, where 1-shot-per-round is infeasible. `err` is the
+    boundary-map error at the start of each round plus a final value after the last batch."""
+    rng = np.random.default_rng(seed)
+    Vseed, tseed = lhs_seed(n_seed, rng)
+    Vs, ts = list(Vseed), list(tseed)
+    ys = list(measure(np.array(Vs), np.array(ts), rng))
+    Vc, tc = candidate_grid()
+    true_lbl = (true_f(Vc, tc) > THETA).astype(int)
+
+    def boundary_err(g):
+        mu, s = predict(g, Vc, tc)
+        prob = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + noise_sigma(np.clip(mu, 0, 1)) ** 2))
+        return float(np.mean((prob > 0.5).astype(int) != true_lbl))
+
+    err_hist, batches = [], []
+    for _ in range(n_rounds):
+        gp = fit_gp(Vs, ts, ys)                       # refit + re-optimize on REAL data
+        err_hist.append(boundary_err(gp))
+        Vb, tb = propose_batch(gp, Vs, ts, ys, q, acq, Vc, tc)
+        batches.append((Vb, tb))
+        yb = measure(Vb, tb, rng)                     # all q measured together
+        Vs += list(Vb); ts += list(tb); ys += list(yb)
+    err_hist.append(boundary_err(fit_gp(Vs, ts, ys)))
+
+    return {
+        "acq": acq, "q": q, "V": np.array(Vs), "t": np.array(ts),
+        "err": np.array(err_hist), "batches": batches, "n_measured": len(ys),
+    }
