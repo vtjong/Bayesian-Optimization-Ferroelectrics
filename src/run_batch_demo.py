@@ -7,9 +7,9 @@ believer), re-condition at fixed hyperparameters, repeat q times -- against pure
 the boundary, so the q points are diverse without measuring in between (the entropy analogue of
 BoTorch's qUCB/qEI sequential greedy).
 
-Reports (A) the convergence of the boundary-map error vs cumulative shots up to an 80-shot budget
-(delivered as two halves of 40), for sequential q=1 and small batches q=2-4; and (B) one greedy
-batch spread along the boundary.
+Reports (A) the convergence of the boundary-map error vs cumulative shots up to an 80-measurement
+budget, for sequential q=1 and small batches q=2-4; and (B) one greedy batch spread along the
+boundary.
 
 Usage:  python src/run_batch_demo.py [--seeds 12]
 """
@@ -77,7 +77,7 @@ def main() -> int:
         lbl = "sequential (q=1)" if q == 1 else f"batch q={q}"
         a1.plot(s, m, "-", color=COL[q], lw=1.9, label=lbl)
         a1.fill_between(s, m - e, m + e, color=COL[q], alpha=0.12)
-    for x, lab in [(40, "first half (40)"), (80, "full budget (80)")]:
+    for x, lab in [(40, "40"), (80, "budget = 80")]:
         a1.axvline(x, color="#444", ls=":", lw=1.1)
         a1.text(x - 1, 0.23, lab, rotation=90, va="top", ha="right", fontsize=8, color="#444")
     a1.set_xlabel("cumulative shots  (LHS seed + batch active rounds)")
