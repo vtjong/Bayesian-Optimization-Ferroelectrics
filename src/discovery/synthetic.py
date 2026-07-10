@@ -27,13 +27,17 @@ from typing import Callable, Tuple
 
 import numpy as np
 
-# --- fitted constants of the peak-temperature model ----------------------------------
+# --- constants of the peak-temperature model (stand-in units for the method testbed) ---
+# The REAL thermal anchor, fit to flash IR data, is Tmax-25 = 55.6 * V^2.30 * t^0.13
+# (R2=0.83, MAE=54 C; V in kV, t in ms; see src/run_calibration.py). This synthetic keeps a
+# self-consistent re-entrant stand-in so the (V,t) testbed geometry is fixed across the study.
 T_ROOM = 25.0      # deg C
 V0 = 28.61         # V
 A_FIT = 1.278      # ms
 B_FIT = 0.184      # 1/ms
 TAU_COOL = 4.0     # ms, cooling time constant
 KB_EV = 8.617e-5   # Boltzmann constant, eV/K
+T_ONSET_C = 390.0  # measured crystallization onset (flash T50=388 C, RTA 357 C); run_calibration.py
 
 # design box over (voltage, pulse width)
 V_LO, V_HI = 350.0, 750.0   # volts
@@ -111,6 +115,8 @@ READOUT_SIGMA = {
     "xrd": 0.03,           # direct structural, low noise
     "raman": 0.07,         # phase-sensitive, moderate
     "optical": 0.12,       # ellipsometry/reflectance proxy, higher / more indirect
+    "permittivity": 0.06,  # dielectric-constant proxy; ~6% within-sample repeatability
+                           # from large-signal P-V loops (see src/run_calibration.py)
 }
 
 
