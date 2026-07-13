@@ -45,17 +45,25 @@ def main() -> int:
     peaks = [pk._S0 + 0.25 * s for s in s1_grid]
     curves = {a: [] for a in ("entropy", "bald", "lse")}
     sems = {a: [] for a in ("entropy", "bald", "lse")}
-    print(f"peak sigma_n | entropy | bald | lse   (final boundary-map error, mean+/-SEM, "
-          f"{args.seeds} seeds)")
+    print(
+        f"peak sigma_n | entropy | bald | lse   (final boundary-map error, mean+/-SEM, "
+        f"{args.seeds} seeds)"
+    )
     for s1 in s1_grid:
         pk._S1 = s1
         for a in ("entropy", "bald", "lse"):
-            e = [np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s)["err"][-4:])
-                 for s in range(args.seeds)]
-            curves[a].append(np.mean(e)); sems[a].append(np.std(e) / np.sqrt(args.seeds))
-        print(f"   {pk._S0 + 0.25*s1:.2f}      | "
-              + " | ".join(f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}"
-                           for a in ("entropy", "bald", "lse")))
+            e = [
+                np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s)["err"][-4:])
+                for s in range(args.seeds)
+            ]
+            curves[a].append(np.mean(e))
+            sems[a].append(np.std(e) / np.sqrt(args.seeds))
+        print(
+            f"   {pk._S0 + 0.25 * s1:.2f}      | "
+            + " | ".join(
+                f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}" for a in ("entropy", "bald", "lse")
+            )
+        )
 
     # spatial shot placement for the (default) LSE picker at a representative moderate noise
     pk._S1 = 0.4
@@ -69,11 +77,16 @@ def main() -> int:
     a1.axvspan(0.08, 0.16, color="#2e8b57", alpha=0.12, label="permittivity regime")
     a1.set_xlabel("peak observation noise  sigma_n  (worst at the boundary)")
     a1.set_ylabel("boundary-map error (misclassification area)")
-    a1.set_title("Entropy-family acquisitions are comparable\n(overlapping +/-1 SEM bands)",
-                 fontweight="bold", fontsize=11)
-    a1.legend(fontsize=8); a1.grid(alpha=0.3)
+    a1.set_title(
+        "Entropy-family acquisitions are comparable\n(overlapping +/-1 SEM bands)",
+        fontweight="bold",
+        fontsize=11,
+    )
+    a1.legend(fontsize=8)
+    a1.grid(alpha=0.3)
 
-    vs = np.linspace(V_LO, V_HI, 120); ts = np.linspace(T_LO, T_HI, 120)
+    vs = np.linspace(V_LO, V_HI, 120)
+    ts = np.linspace(T_LO, T_HI, 120)
     VV, TT = np.meshgrid(vs, ts)
     ftrue = pk.true_f(VV.ravel(), TT.ravel()).reshape(VV.shape)
     band = pk.noise_sigma(ftrue)
@@ -81,11 +94,16 @@ def main() -> int:
     a2.contour(VV, TT, ftrue, levels=[pk.THETA], colors="k", linewidths=2)
     ns = 10
     a2.scatter(h["V"][:ns], h["t"][:ns], c="white", edgecolors="k", s=35, label="LHS seed")
-    a2.scatter(h["V"][ns:], h["t"][ns:], c="#1f6fb2", edgecolors="k", s=35,
-               label="LSE-chosen shots")
-    a2.set_xlabel("voltage V"); a2.set_ylabel("pulse time t (ms)")
-    a2.set_title("LSE picker clusters shots on the boundary\n(shaded = observation noise band)",
-                 fontweight="bold", fontsize=11)
+    a2.scatter(
+        h["V"][ns:], h["t"][ns:], c="#1f6fb2", edgecolors="k", s=35, label="LSE-chosen shots"
+    )
+    a2.set_xlabel("voltage V")
+    a2.set_ylabel("pulse time t (ms)")
+    a2.set_title(
+        "LSE picker clusters shots on the boundary\n(shaded = observation noise band)",
+        fontweight="bold",
+        fontsize=11,
+    )
     a2.legend(fontsize=8, loc="upper right")
     save_figure(fig, str(OUT / "picker_acquisition_comparison.png"))
     print(f"\nSaved -> {OUT / 'picker_acquisition_comparison.png'}")

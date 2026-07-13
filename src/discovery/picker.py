@@ -28,7 +28,8 @@ itself is the justification. (An earlier draft's "LSE dominates / BALD hurts" cl
 calibration + more seeds and was retracted.)
 """
 
-from typing import Dict, List, Tuple
+import warnings
+from typing import Dict
 
 import numpy as np
 from scipy.stats import norm, qmc
@@ -36,18 +37,16 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 
-import warnings
-
 from .synthetic import T_HI, T_LO, V_HI, V_LO, tmax
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-THETA = 0.5                      # crystallization threshold (boundary = level set f = THETA)
-T_STAR = 380.0                   # boundary Tmax = T_STAR: crystallization onset (deg C). Tmax(V,t)
-                                 # is now the measured flash-lamp table; see discovery/synthetic.py
-_SHARP = 0.12                    # transition sharpness: ~37 C 10-90% width, matching the
-                                 # measured onset (flash ~11 C, RTA ~40 C); run_calibration.py
-_S0, _S1 = 0.02, 0.30            # heteroscedastic noise: sigma_n = S0 + S1 * f*(1-f)  (worst at f=0.5)
+THETA = 0.5  # crystallization threshold (boundary = level set f = THETA)
+T_STAR = 380.0  # boundary Tmax = T_STAR: crystallization onset (deg C). Tmax(V,t)
+# is now the measured flash-lamp table; see discovery/synthetic.py
+_SHARP = 0.12  # transition sharpness: ~37 C 10-90% width, matching the
+# measured onset (flash ~11 C, RTA ~40 C); run_calibration.py
+_S0, _S1 = 0.02, 0.30  # heteroscedastic noise: sigma_n = S0 + S1 * f*(1-f)  (worst at f=0.5)
 
 
 # --- ground truth (fixed function of (V,t)); the picker never sees it -------------------
@@ -93,10 +92,9 @@ def lhs_seed(n, rng):
 def fit_gp(V, t, y):
     """Fit a GP to the continuous readout with per-point (heteroscedastic) noise variance."""
     Xn = _norm(np.asarray(V), np.asarray(t))
-    var = noise_sigma(np.clip(y, 0, 1)) ** 2 + 1e-4        # noise var estimated from the reading
+    var = noise_sigma(np.clip(y, 0, 1)) ** 2 + 1e-4  # noise var estimated from the reading
     k = ConstantKernel(1.0, (1e-2, 1e2)) * RBF([0.15, 0.15], (0.03, 1.0))
-    gp = GaussianProcessRegressor(kernel=k, alpha=var, normalize_y=True,
-                                  n_restarts_optimizer=1)
+    gp = GaussianProcessRegressor(kernel=k, alpha=var, normalize_y=True, n_restarts_optimizer=1)
     gp.fit(Xn, np.asarray(y))
     return gp
 
@@ -115,13 +113,13 @@ def _binary_entropy(p):
 
 def acq_entropy(mu, s, sig_n):
     """Predictive class entropy (latent + noise variance) -> peaks at boundary AND high noise."""
-    p = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + sig_n ** 2))
+    p = norm.cdf((mu - THETA) / np.sqrt(s**2 + sig_n**2))
     return _binary_entropy(p)
 
 
 def acq_bald(mu, s, sig_n):
     """Boundary-weighted information gain about the latent function (down-weights noise)."""
-    info = 0.5 * np.log1p(s ** 2 / sig_n ** 2)             # reducible-vs-noise information gain
+    info = 0.5 * np.log1p(s**2 / sig_n**2)  # reducible-vs-noise information gain
     boundary = _binary_entropy(norm.cdf((mu - THETA) / s))  # focus on the boundary (latent)
     return info * boundary
 
@@ -139,14 +137,14 @@ def _spread(Vc, tc, Vs, ts, r=0.08):
     """Down-weight candidates near already-sampled points (uniform fidelity along the boundary)."""
     Cn, Sn = _norm(Vc, tc), _norm(np.asarray(Vs), np.asarray(ts))
     d2 = ((Cn[:, None, :] - Sn[None, :, :]) ** 2).sum(-1)
-    return 1.0 - np.exp(-d2 / (2 * r ** 2)).max(axis=1)
+    return 1.0 - np.exp(-d2 / (2 * r**2)).max(axis=1)
 
 
 # --- the active loop --------------------------------------------------------------------
 def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
     """Seed with LHS, then pick each next shot by the acquisition. Returns history."""
     rng = np.random.default_rng(seed)
-    Vseed, tseed = lhs_seed(n_seed, rng)     # space-filling LHS seed over (V, t)
+    Vseed, tseed = lhs_seed(n_seed, rng)  # space-filling LHS seed over (V, t)
     Vs, ts = list(Vseed), list(tseed)
     ys = list(measure(np.array(Vs), np.array(ts), rng))
     Vc, tc = candidate_grid()
@@ -162,9 +160,9 @@ def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
         mu, s = predict(gp, Vc, tc)
         sig_n = noise_sigma(np.clip(mu, 0, 1))
         a = {"entropy": acq_entropy, "bald": acq_bald, "lse": acq_lse}[acq](mu, s, sig_n)
-        a = a * _spread(Vc, tc, Vs, ts)                    # spreading
+        a = a * _spread(Vc, tc, Vs, ts)  # spreading
         # boundary-map error (misclassification area) + convergence probe
-        prob = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + sig_n ** 2))
+        prob = norm.cdf((mu - THETA) / np.sqrt(s**2 + sig_n**2))
         err_hist.append(float(np.mean((prob > 0.5).astype(int) != true_lbl)))
         if prob_prev is not None:
             conv_count = conv_count + 1 if np.mean(np.abs(prob - prob_prev)) < 0.02 else 0
@@ -172,11 +170,15 @@ def run_active(acq: str = "lse", n_seed=10, n_iter=25, seed=0) -> Dict:
         # pick next shot
         j = int(np.argmax(a))
         Vn, tn = Vc[j], tc[j]
-        Vs.append(Vn); ts.append(tn); ys.append(float(measure(np.array([Vn]), np.array([tn]), rng)[0]))
+        Vs.append(Vn)
+        ts.append(tn)
+        ys.append(float(measure(np.array([Vn]), np.array([tn]), rng)[0]))
         hinoise_hist.append(hi_noise[j])
 
     return {
-        "acq": acq, "V": np.array(Vs), "t": np.array(ts),
+        "acq": acq,
+        "V": np.array(Vs),
+        "t": np.array(ts),
         "err": np.array(err_hist),
         "frac_hi_noise": float(np.mean(hinoise_hist)),
         "converged_iter": None,
@@ -210,8 +212,11 @@ def propose_batch(gp, Vs, ts, ys, q, acq, Vc, tc):
         mu, s = predict(g, Vc, tc)
         a = acq_fn(mu, s, noise_sigma(np.clip(mu, 0, 1))) * _spread(Vc, tc, Va, ta)
         j = int(np.argmax(a))
-        Vb.append(Vc[j]); tb.append(tc[j])
-        Va.append(Vc[j]); ta.append(tc[j]); ya.append(float(mu[j]))   # Kriging-believer fantasy
+        Vb.append(Vc[j])
+        tb.append(tc[j])
+        Va.append(Vc[j])
+        ta.append(tc[j])
+        ya.append(float(mu[j]))  # Kriging-believer fantasy
     return np.array(Vb), np.array(tb)
 
 
@@ -228,20 +233,27 @@ def run_active_batch(q=4, n_seed=10, n_rounds=5, acq="lse", seed=0) -> Dict:
 
     def boundary_err(g):
         mu, s = predict(g, Vc, tc)
-        prob = norm.cdf((mu - THETA) / np.sqrt(s ** 2 + noise_sigma(np.clip(mu, 0, 1)) ** 2))
+        prob = norm.cdf((mu - THETA) / np.sqrt(s**2 + noise_sigma(np.clip(mu, 0, 1)) ** 2))
         return float(np.mean((prob > 0.5).astype(int) != true_lbl))
 
     err_hist, batches = [], []
     for _ in range(n_rounds):
-        gp = fit_gp(Vs, ts, ys)                       # refit + re-optimize on REAL data
+        gp = fit_gp(Vs, ts, ys)  # refit + re-optimize on REAL data
         err_hist.append(boundary_err(gp))
         Vb, tb = propose_batch(gp, Vs, ts, ys, q, acq, Vc, tc)
         batches.append((Vb, tb))
-        yb = measure(Vb, tb, rng)                     # all q measured together
-        Vs += list(Vb); ts += list(tb); ys += list(yb)
+        yb = measure(Vb, tb, rng)  # all q measured together
+        Vs += list(Vb)
+        ts += list(tb)
+        ys += list(yb)
     err_hist.append(boundary_err(fit_gp(Vs, ts, ys)))
 
     return {
-        "acq": acq, "q": q, "V": np.array(Vs), "t": np.array(ts),
-        "err": np.array(err_hist), "batches": batches, "n_measured": len(ys),
+        "acq": acq,
+        "q": q,
+        "V": np.array(Vs),
+        "t": np.array(ts),
+        "err": np.array(err_hist),
+        "batches": batches,
+        "n_measured": len(ys),
     }

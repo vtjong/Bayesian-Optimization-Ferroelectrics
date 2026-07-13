@@ -37,8 +37,10 @@ COL = {30: "#7a7a7a", 35: "#c26a1f", 40: "#2f7bbf"}
 
 def err_for(n_seed, n_iter, seeds):
     """Mean +/- SEM boundary-map error near the end of the budget over `seeds` restarts."""
-    e = [np.mean(pk.run_active("lse", n_seed=n_seed, n_iter=n_iter, seed=s)["err"][-2:])
-         for s in range(seeds)]
+    e = [
+        np.mean(pk.run_active("lse", n_seed=n_seed, n_iter=n_iter, seed=s)["err"][-2:])
+        for s in range(seeds)
+    ]
     return float(np.mean(e)), float(np.std(e) / np.sqrt(seeds))
 
 
@@ -47,11 +49,13 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=16)
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    pk._S1 = 0.30                      # permittivity regime: peak sigma_n ~ 0.095
+    pk._S1 = 0.30  # permittivity regime: peak sigma_n ~ 0.095
 
     # (A) sweep the seed / active split at each total budget
-    print(f"peak sigma_n ~ {pk._S0 + 0.25 * pk._S1:.2f} (permittivity regime), "
-          f"{args.seeds} restarts\n")
+    print(
+        f"peak sigma_n ~ {pk._S0 + 0.25 * pk._S1:.2f} (permittivity regime), "
+        f"{args.seeds} restarts\n"
+    )
     resA, best = {}, {}
     for T in TOTALS:
         xs, ys, es = [], [], []
@@ -60,29 +64,36 @@ def main() -> int:
             if na < 3:
                 continue
             m, sem = err_for(ns, na, args.seeds)
-            xs.append(ns); ys.append(m); es.append(sem)
+            xs.append(ns)
+            ys.append(m)
+            es.append(sem)
         xs, ys, es = np.array(xs), np.array(ys), np.array(es)
         resA[T] = (xs, ys, es)
         bi = int(np.argmin(ys))
         best[T] = (int(xs[bi]), T - int(xs[bi]), ys[bi], es[bi])
         lo = ys[(xs >= 6) & (xs <= 15)]
-        print(f"total {T}: lowest-error split ~{xs[bi]} seed + {T - xs[bi]} active "
-              f"(err {ys[bi]:.3f}+/-{es[bi]:.3f}); flat over seed 6-15 "
-              f"(spread {lo.max() - lo.min():.3f})")
+        print(
+            f"total {T}: lowest-error split ~{xs[bi]} seed + {T - xs[bi]} active "
+            f"(err {ys[bi]:.3f}+/-{es[bi]:.3f}); flat over seed 6-15 "
+            f"(spread {lo.max() - lo.min():.3f})"
+        )
 
     # (B) convergence at a fixed seed count -> the KNEE (most gain), not a hard plateau
     NS, K = 10, 30
-    hist = np.array([pk.run_active("lse", n_seed=NS, n_iter=K, seed=s)["err"]
-                     for s in range(args.seeds)])
+    hist = np.array(
+        [pk.run_active("lse", n_seed=NS, n_iter=K, seed=s)["err"] for s in range(args.seeds)]
+    )
     conv, conv_sem = hist.mean(0), hist.std(0) / np.sqrt(args.seeds)
-    samples = NS + np.arange(K)                 # error recorded at NS+i fitted samples
-    cum_red = conv[0] - conv                      # cumulative error reduction from the seed fit
+    samples = NS + np.arange(K)  # error recorded at NS+i fitted samples
+    cum_red = conv[0] - conv  # cumulative error reduction from the seed fit
     total_red = conv[0] - conv.min()
-    knee = int(samples[np.argmax(cum_red >= 0.70 * total_red)])   # 70% of achievable gain
-    n90 = int(samples[np.argmax(cum_red >= 0.90 * total_red)])    # 90% of achievable gain
-    print(f"\nconvergence (seed={NS}): ~70% of the achievable gain by ~{knee} shots "
-          f"(~{knee - NS} active rounds), ~90% by ~{n90} ({n90 - NS} rounds); "
-          "error keeps falling to the budget end (no hard plateau within 40).")
+    knee = int(samples[np.argmax(cum_red >= 0.70 * total_red)])  # 70% of achievable gain
+    n90 = int(samples[np.argmax(cum_red >= 0.90 * total_red)])  # 90% of achievable gain
+    print(
+        f"\nconvergence (seed={NS}): ~70% of the achievable gain by ~{knee} shots "
+        f"(~{knee - NS} active rounds), ~90% by ~{n90} ({n90 - NS} rounds); "
+        "error keeps falling to the budget end (no hard plateau within 40)."
+    )
 
     print("\n--- RECOMMENDATION -------------------------------------------------")
     print("  * LHS seed: ~10-12 points (just enough for a stable 2-D GP, ~5*d).")
@@ -102,9 +113,13 @@ def main() -> int:
         a1.fill_between(xs, ys - es, ys + es, color=COL[T], alpha=0.13)
     a1.set_xlabel("number of LHS seed points  (active rounds = budget - seed)")
     a1.set_ylabel("boundary-map error (misclassification area)")
-    a1.set_title("A. How to split the budget\n(flat over a broad range; over-seeding hurts)",
-                 fontweight="bold", fontsize=11)
-    a1.legend(fontsize=8); a1.grid(alpha=0.3)
+    a1.set_title(
+        "A. How to split the budget\n(flat over a broad range; over-seeding hurts)",
+        fontweight="bold",
+        fontsize=11,
+    )
+    a1.legend(fontsize=8)
+    a1.grid(alpha=0.3)
 
     a2.plot(samples, conv, "o-", color="#c26a1f", label="LSE active learning")
     a2.fill_between(samples, conv - conv_sem, conv + conv_sem, color="#c26a1f", alpha=0.15)
@@ -114,9 +129,13 @@ def main() -> int:
     a2.axvspan(knee, samples[-1], color="#2e8b57", alpha=0.07)
     a2.set_xlabel("cumulative shots  (LHS seed + active rounds)")
     a2.set_ylabel("boundary-map error")
-    a2.set_title("B. Where the active-learning gains are\n(no hard plateau within 40 shots)",
-                 fontweight="bold", fontsize=11)
-    a2.legend(fontsize=9); a2.grid(alpha=0.3)
+    a2.set_title(
+        "B. Where the active-learning gains are\n(no hard plateau within 40 shots)",
+        fontweight="bold",
+        fontsize=11,
+    )
+    a2.legend(fontsize=9)
+    a2.grid(alpha=0.3)
     save_figure(fig, str(OUT / "seed_budget.png"))
     print(f"\nSaved -> {OUT / 'seed_budget.png'}")
     return 0

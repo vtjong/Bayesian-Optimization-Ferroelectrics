@@ -18,15 +18,25 @@ import numpy as np
 
 from .charts import build_charts
 from .compare import compare
-from .synthetic import (A_FIT, B_FIT, KB_EV, READOUT_SIGMA, SCENARIOS, T_ROOM,
-                        TAU_COOL, V0, _rank, sample_design)
+from .synthetic import (
+    A_FIT,
+    B_FIT,
+    KB_EV,
+    READOUT_SIGMA,
+    SCENARIOS,
+    T_ROOM,
+    TAU_COOL,
+    V0,
+    _rank,
+    sample_design,
+)
 
 
 def trace_misspec(v: float, t: float, delta: float, n: int = 240):
     """Perturbed temperature trace; delta=0 is identical to synthetic._trace."""
     a = A_FIT * (1 + 0.4 * delta)
     b = B_FIT * (1 - 0.3 * delta)
-    peak = T_ROOM + (v - V0) * t / (a + b * t ** 2)
+    peak = T_ROOM + (v - V0) * t / (a + b * t**2)
     tau = TAU_COOL / (1.0 + delta * (peak - T_ROOM) / 400.0)
     s = np.linspace(0.0, t + 6.0 * TAU_COOL, n)
     rise = s <= t / 2.0
@@ -66,8 +76,12 @@ def make_dataset_misspec(n, scenario, readout, rng, delta):
 
 
 def run_misspecification(
-    scenario_key: str = "A", readout: str = "xrd", n: int = 200,
-    deltas=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7), reps: int = 15, seed: int = 0,
+    scenario_key: str = "A",
+    readout: str = "xrd",
+    n: int = 200,
+    deltas=(0.0, 0.1, 0.2, 0.3, 0.5, 0.7),
+    reps: int = 15,
+    seed: int = 0,
 ) -> List[Dict]:
     """For each misspecification strength delta: generate from the perturbed model, analyze
     with CANONICAL charts, report P(identify family) and median Ea_eff error."""
@@ -79,10 +93,15 @@ def run_misspecification(
         for r in range(reps):
             rng = np.random.default_rng(seed + 1000 * di + r)
             V, t, y = make_dataset_misspec(n, sc, readout, rng, delta)
-            res = compare(build_charts(V, t), y, readout)   # canonical analysis
+            res = compare(build_charts(V, t), y, readout)  # canonical analysis
             fam[r] = res["tbac_family_won"]
             if sc.ea_true is not None:
                 ea_err[r] = abs(res["recovered_ea_refined"] - sc.ea_true)
-        rows.append({"delta": float(delta), "p_family": float(fam.mean()),
-                     "median_ea_err": float(np.nanmedian(ea_err))})
+        rows.append(
+            {
+                "delta": float(delta),
+                "p_family": float(fam.mean()),
+                "median_ea_err": float(np.nanmedian(ea_err)),
+            }
+        )
     return rows

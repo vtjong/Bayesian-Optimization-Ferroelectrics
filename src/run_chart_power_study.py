@@ -34,8 +34,7 @@ READOUT_LABEL = {
     "raman": "Raman (σ≈0.07)",
     "xrd": "XRD fraction (σ≈0.03)",
 }
-READOUT_COLOR = {"binary": "#7a7a7a", "optical": "#d1772b",
-                 "raman": "#2e8b57", "xrd": "#1f6fb2"}
+READOUT_COLOR = {"binary": "#7a7a7a", "optical": "#d1772b", "raman": "#2e8b57", "xrd": "#1f6fb2"}
 
 
 def _curve(rows, out, metric, ylabel, title, fname, target=0.8):
@@ -49,8 +48,13 @@ def _curve(rows, out, metric, ylabel, title, fname, target=0.8):
         ys = [r[metric] for r in sub]
         if any(y is None for y in ys):
             continue
-        ax.plot([r["n"] for r in sub], ys, "o-", color=READOUT_COLOR.get(ro),
-                label=READOUT_LABEL.get(ro, ro))
+        ax.plot(
+            [r["n"] for r in sub],
+            ys,
+            "o-",
+            color=READOUT_COLOR.get(ro),
+            label=READOUT_LABEL.get(ro, ro),
+        )
     if target is not None:
         ax.axhline(target, color="green", ls="--", lw=1, label=f"target {target}")
         ax.set_ylim(0, 1.02)
@@ -71,21 +75,31 @@ def main() -> int:
 
     print("=== Scenario A (single controlling quantity, Ea=2.5 on grid) ===")
     rows = run_power("A", n_list=tuple(args.n), reps=args.reps)
-    _curve(rows, OUT, "p_family",
-           "P(identify the controlling quantity)",
-           "How many shots to identify the mechanism? (by readout)",
-           "power_identify.png")
-    _curve(rows, OUT, "p_ea",
-           "P(recover Ea_eff within ±0.5 eV)",
-           "How many shots to recover the (effective) activation energy? (by readout)",
-           "power_ea.png")
+    _curve(
+        rows,
+        OUT,
+        "p_family",
+        "P(identify the controlling quantity)",
+        "How many shots to identify the mechanism? (by readout)",
+        "power_identify.png",
+    )
+    _curve(
+        rows,
+        OUT,
+        "p_ea",
+        "P(recover Ea_eff within ±0.5 eV)",
+        "How many shots to recover the (effective) activation energy? (by readout)",
+        "power_ea.png",
+    )
 
     gono_fam = min_n_for_power(rows, "p_family", 0.8)
     gono_ea = min_n_for_power(rows, "p_ea", 0.8)
     print("\nGO/NO-GO — min shots for P>=0.8:")
     for ro in READOUT_LABEL:
-        print(f"  {READOUT_LABEL[ro]:24s}  identify family: {gono_fam.get(ro)}"
-              f"   recover Ea_eff: {gono_ea.get(ro)}")
+        print(
+            f"  {READOUT_LABEL[ro]:24s}  identify family: {gono_fam.get(ro)}"
+            f"   recover Ea_eff: {gono_ea.get(ro)}"
+        )
 
     # three-way diagnostic at n=300, XRD: a real order parameter beats the (V,t) control
     # chart (margin>0); a two-mechanism boundary does not (margin~0). Ea_eff error then
@@ -96,11 +110,19 @@ def main() -> int:
         r = run_power(sk, readouts=("xrd",), n_list=(300,), reps=args.reps, verbose=False)[0]
         diag[sk] = r
         eae = "NA" if r["p_ea"] is None else f"{r['median_ea_err']:.2f}eV"
-        print(f"  Scenario {sk}: margin/(V,t)={r['median_margin_over_vt']:6.1f}   "
-              f"med|Ea_eff err|={eae}")
+        print(
+            f"  Scenario {sk}: margin/(V,t)={r['median_margin_over_vt']:6.1f}   "
+            f"med|Ea_eff err|={eae}"
+        )
 
-    results = {"scenario_A": rows, "gono_family": gono_fam, "gono_ea": gono_ea,
-               "diagnostic_BC": diag, "reps": args.reps, "n_list": args.n}
+    results = {
+        "scenario_A": rows,
+        "gono_family": gono_fam,
+        "gono_ea": gono_ea,
+        "diagnostic_BC": diag,
+        "reps": args.reps,
+        "n_list": args.n,
+    }
     (OUT / "results.json").write_text(json.dumps(results, indent=2))
     print(f"\nSaved figures + results.json -> {OUT}")
     return 0

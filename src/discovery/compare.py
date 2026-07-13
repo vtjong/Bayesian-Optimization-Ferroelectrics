@@ -26,8 +26,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.likelihoods import BernoulliLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood, VariationalELBO
 from gpytorch.models import ApproximateGP
-from gpytorch.variational import (CholeskyVariationalDistribution,
-                                  VariationalStrategy)
+from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
 from .charts import ea_of_chart, tbac_family_names
 
@@ -60,16 +59,13 @@ class _VarGPC(ApproximateGP):
 
     def __init__(self, inducing: torch.Tensor):
         vdist = CholeskyVariationalDistribution(inducing.size(0))
-        vstrat = VariationalStrategy(self, inducing, vdist,
-                                     learn_inducing_locations=True)
+        vstrat = VariationalStrategy(self, inducing, vdist, learn_inducing_locations=True)
         super().__init__(vstrat)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.RBFKernel(ard_num_dims=2))
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=2))
 
     def forward(self, x):
-        return gpytorch.distributions.MultivariateNormal(
-            self.mean_module(x), self.covar_module(x))
+        return gpytorch.distributions.MultivariateNormal(self.mean_module(x), self.covar_module(x))
 
 
 def _lml_binary(X: np.ndarray, y: np.ndarray, epochs: int = 250) -> float:
@@ -123,7 +119,7 @@ def _parabolic_ea(lml: Dict[str, float]) -> float:
     if 0 < i < len(L) - 1:
         denom = L[i - 1] - 2 * L[i] + L[i + 1]
         if denom < 0:  # concave => genuine interior maximum
-            delta = 0.5 * (L[i - 1] - L[i + 1]) / denom      # in grid-index units
+            delta = 0.5 * (L[i - 1] - L[i + 1]) / denom  # in grid-index units
             delta = float(np.clip(delta, -1.0, 1.0))
             return float(eas[i] + delta * (eas[i + 1] - eas[i]))
     return float(eas[i])
@@ -151,8 +147,8 @@ def compare(charts: Dict[str, np.ndarray], y: np.ndarray, readout: str) -> Dict:
         "weights": weights,
         "winner": winner,
         "top_weight": float(weights[winner]),
-        "recovered_ea": ea_of_chart(best_fam),        # grid argmax (legacy)
-        "recovered_ea_refined": _parabolic_ea(lml),   # continuous sub-grid estimate
+        "recovered_ea": ea_of_chart(best_fam),  # grid argmax (legacy)
+        "recovered_ea_refined": _parabolic_ea(lml),  # continuous sub-grid estimate
         "tbac_family_won": winner in fam,
         "margin_over_vt": margin_over_vt,
     }

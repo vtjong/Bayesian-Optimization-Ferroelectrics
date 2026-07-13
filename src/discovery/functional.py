@@ -48,8 +48,14 @@ def phi_window(V: np.ndarray, t: np.ndarray, lo: float = 500.0, hi: float = 560.
     return G[:, mask].sum(axis=1)
 
 
-def make_window_dataset(n: int, readout: str, rng: np.random.Generator,
-                        lo: float = 500.0, hi: float = 560.0, k: float = 40.0):
+def make_window_dataset(
+    n: int,
+    readout: str,
+    rng: np.random.Generator,
+    lo: float = 500.0,
+    hi: float = 560.0,
+    k: float = 40.0,
+):
     """(V, t, y) where crystallization is controlled by time-in-window [lo, hi]."""
     V, t = sample_design(n, rng)
     r = _rank(phi_window(V, t, lo, hi))
@@ -62,8 +68,9 @@ def make_window_dataset(n: int, readout: str, rng: np.random.Generator,
     return V, t, y
 
 
-def fit_weighting(G: np.ndarray, y: np.ndarray, lam: float = 50.0,
-                  eps: float = 0.02) -> Tuple[np.ndarray, np.ndarray, float]:
+def fit_weighting(
+    G: np.ndarray, y: np.ndarray, lam: float = 50.0, eps: float = 0.02
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """Smoothness-regularized regression of logit(y) on occupancy -> learned weighting.
 
     Solves (X'X + lam D'D) c = X'y_logit with D a 2nd-difference operator on the weighting
@@ -84,4 +91,4 @@ def fit_weighting(G: np.ndarray, y: np.ndarray, lam: float = 50.0,
     c = np.linalg.solve(X.T @ X + P, X.T @ yl)
     pred = X @ c
     r2 = 1.0 - np.sum((yl - pred) ** 2) / np.sum((yl - yl.mean()) ** 2)
-    return c[1:], sd, float(r2)          # standardized per-bin weights, occupancy std, fit R2
+    return c[1:], sd, float(r2)  # standardized per-bin weights, occupancy std, fit R2

@@ -175,9 +175,7 @@ def format_suggestions(
             predictions = [predictions]
 
         # Inverse transform to original scale
-        candidates_original = scaler.inverse_transform(
-            torch.from_numpy(candidates).float()
-        ).numpy()
+        candidates_original = scaler.inverse_transform(torch.from_numpy(candidates).float()).numpy()
 
         for i, (cand, pred) in enumerate(zip(candidates_original, predictions)):
             print(f"  Candidate {i + 1}:")

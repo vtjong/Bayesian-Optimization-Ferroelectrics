@@ -46,7 +46,8 @@ def run_power(
                     ea_err[r] = err
                     ea_hit[r] = err <= ea_tol
             row = {
-                "readout": readout, "n": n,
+                "readout": readout,
+                "n": n,
                 "p_family": float(fam.mean()),
                 "p_ea": float(ea_hit.mean()) if scenario.ea_true else None,
                 "median_ea_err": float(np.nanmedian(ea_err)),
@@ -55,13 +56,16 @@ def run_power(
             rows.append(row)
             if verbose:
                 eae = "NA" if scenario.ea_true is None else f"{row['median_ea_err']:.2f}eV"
-                print(f"  {readout:8s} n={n:4d}  P(family)={row['p_family']:.2f}  "
-                      f"med|Ea_err|={eae}  margin/(V,t)={row['median_margin_over_vt']:.1f}")
+                print(
+                    f"  {readout:8s} n={n:4d}  P(family)={row['p_family']:.2f}  "
+                    f"med|Ea_err|={eae}  margin/(V,t)={row['median_margin_over_vt']:.1f}"
+                )
     return rows
 
 
-def min_n_for_power(rows: List[Dict], key: str = "p_family",
-                    target: float = 0.8) -> Dict[str, object]:
+def min_n_for_power(
+    rows: List[Dict], key: str = "p_family", target: float = 0.8
+) -> Dict[str, object]:
     """Smallest n reaching target for the given metric, per readout (None if never)."""
     out: Dict[str, object] = {}
     readouts = []
@@ -69,7 +73,8 @@ def min_n_for_power(rows: List[Dict], key: str = "p_family",
         if r["readout"] not in readouts:
             readouts.append(r["readout"])
     for ro in readouts:
-        ns = sorted(r["n"] for r in rows
-                    if r["readout"] == ro and r[key] is not None and r[key] >= target)
+        ns = sorted(
+            r["n"] for r in rows if r["readout"] == ro and r[key] is not None and r[key] >= target
+        )
         out[ro] = ns[0] if ns else None
     return out

@@ -1,0 +1,12 @@
+line-length = 100
+extend-exclude = ["src/wandb", "wandb", "archive"]
+
+lint.select = ["E", "F", "W", "I"]
+
+[lint.per-file-ignores]
+# wandb run logs are vendored artifacts, not source
+"src/wandb/**" = ["E", "F", "W", "I"]
+# thin entry-point scripts bootstrap sys.path before importing the package
+"src/run_*.py" = ["E402"]
+# __init__.py deliberately re-exports package API
+"**/__init__.py" = ["F401"]

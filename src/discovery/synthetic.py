@@ -30,26 +30,29 @@ from scipy.interpolate import RectBivariateSpline
 
 # --- MEASURED flash-lamp peak-temperature table (deg C) -------------------------------
 # Rows = flash time (ms), columns = flash voltage (V). See data/flash_temp_table.csv.
-T_ROOM = 25.0        # deg C
-KB_EV = 8.617e-5     # Boltzmann constant, eV/K
-T_ONSET_C = 380.0    # crystallization onset temperature (deg C)
+T_ROOM = 25.0  # deg C
+KB_EV = 8.617e-5  # Boltzmann constant, eV/K
+T_ONSET_C = 380.0  # crystallization onset temperature (deg C)
 
-FLASH_V = np.array([506.0, 548.0, 590.0, 632.0, 674.0, 716.0])      # flash voltage (V)
-FLASH_T = np.array([0.1, 2.6, 5.1, 7.6, 10.1])                      # flash time (ms)
-FLASH_TMAX = np.array([                                             # rows = t, cols = V
-    [81.6,  97.26,  118.9,   141.2,   165.5,   189.2],
-    [286.3, 336.71, 387.6,   444.8,   504.77,  563.335],
-    [270.4, 314.5,  360.45,  411.28,  461.252, 514.998],
-    [248.4, 288.1,  328.3,   370.8,   414.97,  438.1],
-    [230.4, 267.1,  302.206, 340.835, 380.9,   421.551]])
+FLASH_V = np.array([506.0, 548.0, 590.0, 632.0, 674.0, 716.0])  # flash voltage (V)
+FLASH_T = np.array([0.1, 2.6, 5.1, 7.6, 10.1])  # flash time (ms)
+FLASH_TMAX = np.array(
+    [  # rows = t, cols = V
+        [81.6, 97.26, 118.9, 141.2, 165.5, 189.2],
+        [286.3, 336.71, 387.6, 444.8, 504.77, 563.335],
+        [270.4, 314.5, 360.45, 411.28, 461.252, 514.998],
+        [248.4, 288.1, 328.3, 370.8, 414.97, 438.1],
+        [230.4, 267.1, 302.206, 340.835, 380.9, 421.551],
+    ]
+)
 _SPLINE = RectBivariateSpline(FLASH_T, FLASH_V, FLASH_TMAX, kx=3, ky=3)
 
 # universal normalized pulse shape T(tau)/Tmax (same for all conditions): rise then exp decay
 PLATEAU, TAU_DECAY, T_RISE, TRACE_MS = 0.15, 35.0, 2.0, 250.0
 
 # design box over (flash voltage, flash time) = the measured grid extent
-V_LO, V_HI = 506.0, 716.0    # volts
-T_LO, T_HI = 0.1, 10.1       # ms
+V_LO, V_HI = 506.0, 716.0  # volts
+T_LO, T_HI = 0.1, 10.1  # ms
 
 
 def tmax(v: np.ndarray, t: np.ndarray) -> np.ndarray:
@@ -79,6 +82,7 @@ def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
 
 # --- controlling quantities (the planted "truth") ------------------------------------
 
+
 def phi_tbac(V, t, ea):
     """phi = activated thermal budget at activation energy ea (vectorized over shots)."""
     out = np.empty(len(V))
@@ -106,19 +110,20 @@ def phi_dwell(V, t, t_star=600.0):
 @dataclass(frozen=True)
 class Scenario:
     """A planted ground-truth crystallization rule."""
+
     name: str
-    phi: Callable          # phi(V, t) -> controlling-quantity array, OR None for two-mechanism
+    phi: Callable  # phi(V, t) -> controlling-quantity array, OR None for two-mechanism
     ea_true: float = None  # the planted activation energy, if applicable
     two_mechanism: bool = False
 
 
 SCENARIOS = {
     # A: single order parameter, Ea ON the chart grid
-    "A": Scenario("A: single phi (Ea=2.5 on grid)",
-                  lambda V, t: phi_tbac(V, t, 2.5), ea_true=2.5),
+    "A": Scenario("A: single phi (Ea=2.5 on grid)", lambda V, t: phi_tbac(V, t, 2.5), ea_true=2.5),
     # B: single order parameter, Ea BETWEEN grid points (needs the warp for precision)
-    "B": Scenario("B: single phi (Ea=2.25 off grid)",
-                  lambda V, t: phi_tbac(V, t, 2.25), ea_true=2.25),
+    "B": Scenario(
+        "B: single phi (Ea=2.25 off grid)", lambda V, t: phi_tbac(V, t, 2.25), ea_true=2.25
+    ),
     # C: two mechanisms -- crystallize only if hot enough (peak T) AND long enough
     # (dwell). Tmax and dwell are rank-decorrelated, so NO single chart collapses it.
     "C": Scenario("C: two-mechanism (Tmax AND dwell)", None, two_mechanism=True),
@@ -126,12 +131,12 @@ SCENARIOS = {
 
 # readout noise assumptions (crystalline-fraction units; LABELLED ASSUMPTIONS, calibrate later)
 READOUT_SIGMA = {
-    "binary": None,        # Bernoulli pass/fail, no continuous noise
-    "xrd": 0.03,           # direct structural, low noise
-    "raman": 0.07,         # phase-sensitive, moderate
-    "optical": 0.12,       # ellipsometry/reflectance proxy, higher / more indirect
+    "binary": None,  # Bernoulli pass/fail, no continuous noise
+    "xrd": 0.03,  # direct structural, low noise
+    "raman": 0.07,  # phase-sensitive, moderate
+    "optical": 0.12,  # ellipsometry/reflectance proxy, higher / more indirect
     "permittivity": 0.06,  # dielectric-constant proxy; ~6% within-sample repeatability
-                           # from large-signal P-V loops (see src/run_calibration.py)
+    # from large-signal P-V loops (see src/run_calibration.py)
 }
 
 
