@@ -33,12 +33,13 @@ OUT = Path(__file__).resolve().parent.parent / "predictions" / "seed_budget"
 TOTALS = [30, 35, 40]
 SEED_GRID = [6, 8, 10, 12, 15, 18, 22, 26, 30]
 COL = {30: "#7a7a7a", 35: "#c26a1f", 40: "#2f7bbf"}
+CFG = pk.BoundaryConfig(noise_boundary=0.30)  # permittivity noise regime (peak sigma_n ~0.095)
 
 
 def err_for(n_seed, n_iter, seeds):
     """Mean +/- SEM boundary-map error near the end of the budget over `seeds` restarts."""
     e = [
-        np.mean(pk.run_active("lse", n_seed=n_seed, n_iter=n_iter, seed=s)["err"][-2:])
+        np.mean(pk.run_active("lse", n_seed=n_seed, n_iter=n_iter, seed=s, cfg=CFG)["err"][-2:])
         for s in range(seeds)
     ]
     return float(np.mean(e)), float(np.std(e) / np.sqrt(seeds))
@@ -49,11 +50,10 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=16)
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    pk._S1 = 0.30  # permittivity regime: peak sigma_n ~ 0.095
 
     # (A) sweep the seed / active split at each total budget
     print(
-        f"peak sigma_n ~ {pk._S0 + 0.25 * pk._S1:.2f} (permittivity regime), "
+        f"peak sigma_n ~ {CFG.noise_floor + 0.25 * CFG.noise_boundary:.2f} (permittivity regime), "
         f"{args.seeds} restarts\n"
     )
     resA, best = {}, {}
@@ -81,7 +81,10 @@ def main() -> int:
     # (B) convergence at a fixed seed count -> the KNEE (most gain), not a hard plateau
     NS, K = 10, 30
     hist = np.array(
-        [pk.run_active("lse", n_seed=NS, n_iter=K, seed=s)["err"] for s in range(args.seeds)]
+        [
+            pk.run_active("lse", n_seed=NS, n_iter=K, seed=s, cfg=CFG)["err"]
+            for s in range(args.seeds)
+        ]
     )
     conv, conv_sem = hist.mean(0), hist.std(0) / np.sqrt(args.seeds)
     samples = NS + np.arange(K)  # error recorded at NS+i fitted samples

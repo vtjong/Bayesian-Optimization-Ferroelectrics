@@ -42,7 +42,7 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
 
     s1_grid = [0.2, 0.4, 0.8, 1.5, 2.5]
-    peaks = [pk._S0 + 0.25 * s for s in s1_grid]
+    peaks = [pk.DEFAULT.noise_floor + 0.25 * s for s in s1_grid]
     curves = {a: [] for a in ("entropy", "bald", "lse")}
     sems = {a: [] for a in ("entropy", "bald", "lse")}
     print(
@@ -50,24 +50,25 @@ def main() -> int:
         f"{args.seeds} seeds)"
     )
     for s1 in s1_grid:
-        pk._S1 = s1
+        cfg = pk.BoundaryConfig(noise_boundary=s1)
         for a in ("entropy", "bald", "lse"):
             e = [
-                np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s)["err"][-4:])
+                np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s, cfg=cfg)["err"][-4:])
                 for s in range(args.seeds)
             ]
             curves[a].append(np.mean(e))
             sems[a].append(np.std(e) / np.sqrt(args.seeds))
         print(
-            f"   {pk._S0 + 0.25 * s1:.2f}      | "
+            f"   {pk.DEFAULT.noise_floor + 0.25 * s1:.2f}      | "
             + " | ".join(
                 f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}" for a in ("entropy", "bald", "lse")
             )
         )
 
     # spatial shot placement for the (default) LSE picker at a representative moderate noise
-    pk._S1 = 0.4
-    h = pk.run_active("lse", n_seed=10, n_iter=25, seed=0)
+    h = pk.run_active(
+        "lse", n_seed=10, n_iter=25, seed=0, cfg=pk.BoundaryConfig(noise_boundary=0.4)
+    )
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
     for a in ("entropy", "bald", "lse"):
@@ -91,7 +92,7 @@ def main() -> int:
     ftrue = pk.true_f(VV.ravel(), TT.ravel()).reshape(VV.shape)
     band = pk.noise_sigma(ftrue)
     a2.contourf(VV, TT, band, levels=15, cmap="Purples")
-    a2.contour(VV, TT, ftrue, levels=[pk.THETA], colors="k", linewidths=2)
+    a2.contour(VV, TT, ftrue, levels=[pk.DEFAULT.theta], colors="k", linewidths=2)
     ns = 10
     a2.scatter(h["V"][:ns], h["t"][:ns], c="white", edgecolors="k", s=35, label="LHS seed")
     a2.scatter(

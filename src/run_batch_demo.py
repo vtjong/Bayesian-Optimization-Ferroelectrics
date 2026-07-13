@@ -36,13 +36,17 @@ N_SEED = 10  # LHS seed points
 TOTAL = 80  # total budget (delivered as two halves of 40)
 QS = [1, 2, 3, 4]  # sequential (q=1) + small feasible batches
 COL = {1: "#7a7a7a", 2: "#2f7bbf", 3: "#2e8b57", 4: "#c26a1f"}
+CFG = pk.BoundaryConfig(noise_boundary=0.30)  # permittivity noise regime (peak sigma_n ~0.10)
 
 
 def convergence(q, seeds):
     """Boundary-map error vs cumulative shots (to TOTAL) for batch size q."""
     nr = max(1, round((TOTAL - N_SEED) / q))
     H = np.array(
-        [pk.run_active_batch(q=q, n_seed=N_SEED, n_rounds=nr, seed=s)["err"] for s in range(seeds)]
+        [
+            pk.run_active_batch(q=q, n_seed=N_SEED, n_rounds=nr, seed=s, cfg=CFG)["err"]
+            for s in range(seeds)
+        ]
     )
     samples = N_SEED + q * np.arange(H.shape[1])
     return samples, H.mean(0), H.std(0) / np.sqrt(seeds), nr
@@ -53,7 +57,6 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=12)
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    pk._S1 = 0.30  # permittivity noise regime (peak sigma_n ~ 0.10)
 
     conv = {}
     print(f"convergence to {TOTAL} shots ({N_SEED} LHS seed), {args.seeds} seeds")
@@ -97,7 +100,7 @@ def main() -> int:
     VV, TT = np.meshgrid(vs, ts)
     ftrue = pk.true_f(VV.ravel(), TT.ravel()).reshape(VV.shape)
     a2.contourf(VV, TT, pk.noise_sigma(ftrue), levels=15, cmap="Purples")
-    a2.contour(VV, TT, ftrue, levels=[pk.THETA], colors="k", linewidths=2)
+    a2.contour(VV, TT, ftrue, levels=[pk.DEFAULT.theta], colors="k", linewidths=2)
     a2.scatter(Vseed, tseed, c="white", edgecolors="k", s=35, label="LHS seed (10)")
     a2.scatter(Vb, tb, c="#c26a1f", edgecolors="k", s=80, zorder=5, label="greedy batch (q=4)")
     for i, (v, t) in enumerate(zip(Vb, tb), 1):
