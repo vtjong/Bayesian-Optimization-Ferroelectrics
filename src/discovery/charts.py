@@ -34,7 +34,11 @@ EA_GRID = (1.5, 2.0, 2.5, 3.0, 3.5)
 
 
 def _raw_descriptors(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
-    """Compute Tmax, TB and log TBac(Ea) for every shot (one trace pass per shot)."""
+    """Compute Tmax, TB and log TBac(Ea) for every shot (one trace pass per shot).
+
+    :param V: flash voltages of the shots.
+    :param t: flash times of the shots (ms).
+    """
     n = len(V)
     Tmax = np.empty(n)
     TB = np.empty(n)
@@ -65,13 +69,24 @@ def _raw_descriptors(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
 
 
 def _std(col: np.ndarray, mean: float = None, std: float = None) -> np.ndarray:
+    """Standardize a column to ~zero mean / unit std.
+
+    :param col: values to standardize.
+    :param mean: mean to subtract; defaults to ``col.mean()``. Pass a POOLED mean to
+        standardize a family of columns on a shared scale.
+    :param std: std to divide by; defaults to ``col.std()``.
+    """
     mean = col.mean() if mean is None else mean
     std = col.std() if std is None else std
     return (col - mean) / (std + 1e-12)
 
 
 def build_charts(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
-    """Return {chart_name: standardized (n, 2) coordinate array} for all candidate charts."""
+    """Return {chart_name: standardized (n, 2) coordinate array} for all candidate charts.
+
+    :param V: flash voltages of the shots.
+    :param t: flash times of the shots (ms).
+    """
     d = _raw_descriptors(V, t)
     ts = _std(d["t"])
     charts: Dict[str, np.ndarray] = {
@@ -96,7 +111,10 @@ def tbac_family_names() -> Tuple[str, ...]:
 
 
 def ea_of_chart(name: str):
-    """Recover the Ea value from a TBac chart name, or None."""
+    """Recover the Ea value from a TBac chart name, or None.
+
+    :param name: chart name (e.g. ``"(TBac2.5,t)"``); non-TBac names return None.
+    """
     if name.startswith("(TBac"):
         return float(name[len("(TBac") : name.index(",")])
     return None

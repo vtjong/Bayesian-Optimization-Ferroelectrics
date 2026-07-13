@@ -206,10 +206,31 @@ READOUT_SIGMA = {
 
 
 def sample_design(n: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
-    """n shots uniformly over the (V, t) design box."""
+    """n shots uniformly over the (V, t) design box.
+
+    :param n: number of shots to draw.
+    :param rng: random generator.
+    """
     V = rng.uniform(V_LO, V_HI, n)
     t = rng.uniform(T_LO, T_HI, n)
     return V, t
+
+
+def sample_readout(p: np.ndarray, readout: str, rng: np.random.Generator) -> np.ndarray:
+    """Draw an observed outcome from a per-shot crystallization probability.
+
+    Single source of truth for the readout-noise model shared by every dataset builder:
+    "binary" is a Bernoulli pass/fail draw; any other readout is a continuous crystalline
+    fraction with that readout's Gaussian metrology noise (READOUT_SIGMA), clipped to [0, 1].
+
+    :param p: per-shot crystallization probability in [0, 1].
+    :param readout: metrology key into READOUT_SIGMA.
+    :param rng: random generator supplying the measurement noise.
+    """
+    sigma = READOUT_SIGMA[readout]
+    if sigma is None:
+        return (rng.uniform(size=len(p)) < p).astype(float)
+    return np.clip(p + rng.normal(0.0, sigma, len(p)), 0.0, 1.0)
 
 
 def _prob_crystallize(V, t, scenario: Scenario, k_sharp: float = 40.0) -> np.ndarray:
@@ -240,12 +261,13 @@ def make_dataset(n: int, scenario: Scenario, readout: str, rng: np.random.Genera
     """Return (V, t, y) for n shots under a scenario and readout.
 
     y is binary {0,1} for readout='binary', else a continuous crystalline fraction in [0,1].
+
+    :param n: number of shots to simulate.
+    :param scenario: the planted ground-truth crystallization rule.
+    :param readout: metrology key selecting the readout-noise model.
+    :param rng: random generator for the design draw and the readout noise.
     """
     V, t = sample_design(n, rng)
     p = _prob_crystallize(V, t, scenario)
-    sigma = READOUT_SIGMA[readout]
-    if sigma is None:
-        y = (rng.uniform(size=n) < p).astype(float)
-    else:
-        y = np.clip(p + rng.normal(0.0, sigma, n), 0.0, 1.0)
+    y = sample_readout(p, readout, rng)
     return V, t, y
