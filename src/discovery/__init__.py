@@ -1,12 +1,6 @@
-"""Crystallization-boundary coordinate-discovery framework.
-
-Given flash-anneal shots with crystallinity outcomes, determine which coordinate chart most
-simply explains the crystallization boundary (chart comparison by log marginal likelihood)
-and run a design-stage power study across measurement-readout types.
+"""Crystallization-boundary discovery: calibrated thermal model + boundary mapping.
 
 Modules:
-  synthetic.py  -- forward model: (V,t) -> trace -> descriptors -> crystallinity readout
-  charts.py     -- candidate coordinate charts on the (V,t) manifold
-  compare.py    -- fit one GP per chart, score by LML, tempered weights
-  power.py      -- Monte-Carlo power study across sample size, noise, and readout type
+  synthetic.py  -- calibrated flash-lamp thermal model: (V, t) -> peak Tmax and trace
+  picker.py     -- level-set / active-learning boundary mapping over the (V, t) design box
 """

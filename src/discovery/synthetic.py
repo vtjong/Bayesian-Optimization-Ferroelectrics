@@ -1,30 +1,18 @@
-"""Synthetic FLA crystallization data, calibrated to the measured flash-lamp thermal response.
+"""Calibrated flash-lamp thermal model for FLA HZO: (voltage, time) -> peak T and trace.
 
 Peak temperature is a MEASURED table Tmax(V, t) (flash voltage x flash time, deg C); a bicubic
 spline interpolates between the tabulated values. Every shot's temperature trace is the UNIVERSAL
-normalized pulse shape T(tau)/Tmax -- which the measurements show is the same for all flash
-conditions -- scaled by that shot's Tmax. A consequence: with a universal shape every thermal
-descriptor (dwell, thermal budget, activated budget) is a deterministic function of Tmax, so the
-single-pulse crystallization boundary is exactly the Tmax = onset level set. Temperature peaks in t
-near t ~ 2.6-3 ms, so the boundary is RE-ENTRANT in (V, t).
+normalized pulse shape T(tau)/Tmax -- which the measurements show is (approximately) the same for
+all flash conditions -- scaled by that shot's Tmax. Temperature peaks in t near t ~ 2.6-3 ms, so
+Tmax(V, t) is RE-ENTRANT in (V, t) and a Tmax level set (e.g. the crystallization onset) folds.
 
 The forward model is a ``ThermalModel`` (Protocol); ``TableThermalModel`` is the measured
 implementation and ``FLASH`` the default instance. Module-level ``tmax`` / ``_trace`` wrap it, so
 swapping in another ``ThermalModel`` does not touch the callers.
-
-The crystallization outcome is governed by a CONTROLLING quantity phi (the "truth"):
-    P(crystallize) = sigmoid(k_sharp * z(phi))
-where z(.) is the quantile rank over the design so the boundary sits at the median of phi. From
-the trace we derive the descriptor charts use: peak Tmax, thermal budget, activated budget.
-
-READOUTS (the thing the power study varies):
-  - "binary"      : y ~ Bernoulli(P)                       (pass/fail)
-  - "continuous"  : y = clip(P + Normal(0, sigma), 0, 1)   (crystalline-fraction readout)
-sigma encodes the metrology quality (permittivity / XRD / Raman / optical).
 """
 
 from dataclasses import dataclass
-from typing import Callable, Protocol, Tuple, runtime_checkable
+from typing import Protocol, Tuple, runtime_checkable
 
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
@@ -131,7 +119,7 @@ class TableThermalModel:
 
 
 # Default forward model = the measured flash-lamp table. Module-level tmax/_trace wrap it so
-# existing callers (charts, functional, picker) keep a stable import.
+# existing callers (picker, run scripts) keep a stable import.
 FLASH = TableThermalModel(FLASH_V, FLASH_T, FLASH_TMAX)
 
 
@@ -143,131 +131,3 @@ def tmax(V: np.ndarray, t: np.ndarray) -> np.ndarray:
 def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
     """Temperature trace from the default ``FLASH`` model (see ``TableThermalModel.trace``)."""
     return FLASH.trace(v, t, n)
-
-
-# --- controlling quantities (the planted "truth") ------------------------------------
-
-
-def phi_tbac(V, t, ea):
-    """phi = activated thermal budget at activation energy ea (vectorized over shots)."""
-    out = np.empty(len(V))
-    for i, (vi, ti) in enumerate(zip(V, t)):
-        s, T = _trace(float(vi), float(ti))
-        out[i] = np.trapezoid(np.exp(-ea / (KB_EV * (T + 273.15))), s)
-    return out
-
-
-def phi_tmax(V, t):
-    return tmax(V, t)
-
-
-def phi_dwell(V, t, t_star=600.0):
-    """phi = dwell: time the trace spends above T* (deg C). Near-peak threshold (600C)
-    makes this rank-DECORRELATED from Tmax (|corr|~0.32, vs ~0.82 at 450C): it measures
-    how LONG near the peak, not how HOT. Pairing the two gives a genuine 2-coord boundary."""
-    out = np.empty(len(V))
-    for i, (vi, ti) in enumerate(zip(V, t)):
-        s, T = _trace(float(vi), float(ti))
-        out[i] = np.trapezoid((T > t_star).astype(float), s)
-    return out
-
-
-@dataclass(frozen=True)
-class Scenario:
-    """A planted ground-truth crystallization rule."""
-
-    name: str
-    phi: Callable  # phi(V, t) -> controlling-quantity array, OR None for two-mechanism
-    ea_true: float = None  # the planted activation energy, if applicable
-    two_mechanism: bool = False
-
-
-SCENARIOS = {
-    # A: single order parameter, Ea ON the chart grid
-    "A": Scenario("A: single phi (Ea=2.5 on grid)", lambda V, t: phi_tbac(V, t, 2.5), ea_true=2.5),
-    # B: single order parameter, Ea BETWEEN grid points (needs the warp for precision)
-    "B": Scenario(
-        "B: single phi (Ea=2.25 off grid)", lambda V, t: phi_tbac(V, t, 2.25), ea_true=2.25
-    ),
-    # C: two mechanisms -- crystallize only if hot enough (peak T) AND long enough
-    # (dwell). Tmax and dwell are rank-decorrelated, so NO single chart collapses it.
-    "C": Scenario("C: two-mechanism (Tmax AND dwell)", None, two_mechanism=True),
-}
-
-# readout noise assumptions (crystalline-fraction units; LABELLED ASSUMPTIONS, calibrate later)
-READOUT_SIGMA = {
-    "binary": None,  # Bernoulli pass/fail, no continuous noise
-    "xrd": 0.03,  # direct structural, low noise
-    "raman": 0.07,  # phase-sensitive, moderate
-    "optical": 0.12,  # ellipsometry/reflectance proxy, higher / more indirect
-    "permittivity": 0.06,  # dielectric-constant proxy; ~6% within-sample repeatability
-    # from large-signal P-V loops (see src/run_calibration.py)
-}
-
-
-def sample_design(n: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
-    """n shots uniformly over the (V, t) design box.
-
-    :param n: number of shots to draw.
-    :param rng: random generator.
-    """
-    V = rng.uniform(V_LO, V_HI, n)
-    t = rng.uniform(T_LO, T_HI, n)
-    return V, t
-
-
-def sample_readout(p: np.ndarray, readout: str, rng: np.random.Generator) -> np.ndarray:
-    """Draw an observed outcome from a per-shot crystallization probability.
-
-    Single source of truth for the readout-noise model shared by every dataset builder:
-    "binary" is a Bernoulli pass/fail draw; any other readout is a continuous crystalline
-    fraction with that readout's Gaussian metrology noise (READOUT_SIGMA), clipped to [0, 1].
-
-    :param p: per-shot crystallization probability in [0, 1].
-    :param readout: metrology key into READOUT_SIGMA.
-    :param rng: random generator supplying the measurement noise.
-    """
-    sigma = READOUT_SIGMA[readout]
-    if sigma is None:
-        return (rng.uniform(size=len(p)) < p).astype(float)
-    return np.clip(p + rng.normal(0.0, sigma, len(p)), 0.0, 1.0)
-
-
-def _prob_crystallize(V, t, scenario: Scenario, k_sharp: float = 40.0) -> np.ndarray:
-    """P(crystallize) for each shot under the scenario's controlling quantity.
-
-    Works in QUANTILE-RANK space: TBac spans many orders of magnitude, so a
-    linear-space threshold collapses to "Tmax > cutoff". Ranking makes the boundary sit at
-    the median rank of the controlling quantity and the transition sharpness well-defined
-    (k_sharp=40 -> 5-95% transition spans ~15% of the rank range).
-    """
-    if scenario.two_mechanism:
-        # need BOTH high peak T (nucleation) AND long dwell (growth); neither alone
-        # suffices -> the boundary needs 2 coordinates, so no 1-D chart collapses it
-        r = np.minimum(_rank(phi_tmax(V, t)), _rank(phi_dwell(V, t)))
-        return 1.0 / (1.0 + np.exp(-k_sharp * (r - 0.5)))
-    r = _rank(scenario.phi(V, t))
-    return 1.0 / (1.0 + np.exp(-k_sharp * (r - 0.5)))
-
-
-def _rank(x: np.ndarray) -> np.ndarray:
-    """Quantile rank of each entry in [0, 1] (robust to the scale of x)."""
-    x = np.asarray(x, dtype=float)
-    order = np.argsort(np.argsort(x))
-    return order / (len(x) - 1 + 1e-12)
-
-
-def make_dataset(n: int, scenario: Scenario, readout: str, rng: np.random.Generator):
-    """Return (V, t, y) for n shots under a scenario and readout.
-
-    y is binary {0,1} for readout='binary', else a continuous crystalline fraction in [0,1].
-
-    :param n: number of shots to simulate.
-    :param scenario: the planted ground-truth crystallization rule.
-    :param readout: metrology key selecting the readout-noise model.
-    :param rng: random generator for the design draw and the readout noise.
-    """
-    V, t = sample_design(n, rng)
-    p = _prob_crystallize(V, t, scenario)
-    y = sample_readout(p, readout, rng)
-    return V, t, y
