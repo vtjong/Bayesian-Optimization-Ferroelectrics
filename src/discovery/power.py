@@ -24,7 +24,16 @@ def run_power(
     seed: int = 0,
     verbose: bool = True,
 ) -> List[Dict]:
-    """Return rows of {readout, n, p_family, p_ea, median_top_weight, median_ea_err}."""
+    """Return rows of {readout, n, p_family, p_ea, median_top_weight, median_ea_err}.
+
+    :param scenario_key: key into SCENARIOS for the planted ground-truth rule.
+    :param readouts: metrology keys to sweep.
+    :param n_list: sample sizes to sweep.
+    :param reps: repetitions per (readout, n) cell (Monte-Carlo average).
+    :param ea_tol: |Ea error| (eV) counted as a recovery hit.
+    :param seed: base RNG seed; each (readout, n, rep) gets a distinct derived seed.
+    :param verbose: print a per-cell progress line.
+    """
     scenario = SCENARIOS[scenario_key]
     rows: List[Dict] = []
     for ri, readout in enumerate(readouts):
@@ -46,7 +55,8 @@ def run_power(
                     ea_err[r] = err
                     ea_hit[r] = err <= ea_tol
             row = {
-                "readout": readout, "n": n,
+                "readout": readout,
+                "n": n,
                 "p_family": float(fam.mean()),
                 "p_ea": float(ea_hit.mean()) if scenario.ea_true else None,
                 "median_ea_err": float(np.nanmedian(ea_err)),
@@ -55,21 +65,30 @@ def run_power(
             rows.append(row)
             if verbose:
                 eae = "NA" if scenario.ea_true is None else f"{row['median_ea_err']:.2f}eV"
-                print(f"  {readout:8s} n={n:4d}  P(family)={row['p_family']:.2f}  "
-                      f"med|Ea_err|={eae}  margin/(V,t)={row['median_margin_over_vt']:.1f}")
+                print(
+                    f"  {readout:8s} n={n:4d}  P(family)={row['p_family']:.2f}  "
+                    f"med|Ea_err|={eae}  margin/(V,t)={row['median_margin_over_vt']:.1f}"
+                )
     return rows
 
 
-def min_n_for_power(rows: List[Dict], key: str = "p_family",
-                    target: float = 0.8) -> Dict[str, object]:
-    """Smallest n reaching target for the given metric, per readout (None if never)."""
+def min_n_for_power(
+    rows: List[Dict], key: str = "p_family", target: float = 0.8
+) -> Dict[str, object]:
+    """Smallest n reaching target for the given metric, per readout (None if never).
+
+    :param rows: rows returned by :func:`run_power`.
+    :param key: metric column to threshold (e.g. "p_family").
+    :param target: minimum value of that metric to count as reached.
+    """
     out: Dict[str, object] = {}
     readouts = []
     for r in rows:
         if r["readout"] not in readouts:
             readouts.append(r["readout"])
     for ro in readouts:
-        ns = sorted(r["n"] for r in rows
-                    if r["readout"] == ro and r[key] is not None and r[key] >= target)
+        ns = sorted(
+            r["n"] for r in rows if r["readout"] == ro and r[key] is not None and r[key] >= target
+        )
         out[ro] = ns[0] if ns else None
     return out

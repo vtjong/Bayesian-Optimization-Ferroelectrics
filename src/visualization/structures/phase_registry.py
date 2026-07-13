@@ -105,6 +105,4 @@ def get_phase(phase_key: str) -> HfO2Phase:
     try:
         return HFO2_PHASES[phase_key]
     except KeyError:
-        raise KeyError(
-            f"Unknown phase '{phase_key}'. Available: {available_phase_keys()}"
-        )
+        raise KeyError(f"Unknown phase '{phase_key}'. Available: {available_phase_keys()}")

@@ -34,7 +34,11 @@ EA_GRID = (1.5, 2.0, 2.5, 3.0, 3.5)
 
 
 def _raw_descriptors(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
-    """Compute Tmax, TB and log TBac(Ea) for every shot (one trace pass per shot)."""
+    """Compute Tmax, TB and log TBac(Ea) for every shot (one trace pass per shot).
+
+    :param V: flash voltages of the shots.
+    :param t: flash times of the shots (ms).
+    """
     n = len(V)
     Tmax = np.empty(n)
     TB = np.empty(n)
@@ -46,26 +50,43 @@ def _raw_descriptors(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
         T_K = T + 273.15
         Tmax[i] = T.max()
         TB[i] = np.trapezoid(np.clip(T - T_ROOM, 0, None), s)
-        dwell[i] = np.trapezoid((T > 600.0).astype(float), s)   # time above 600 C
-        heat_rate[i] = np.gradient(T, s).max()                  # peak dT/dt (heating)
+        dwell[i] = np.trapezoid((T > 600.0).astype(float), s)  # time above 600 C
+        heat_rate[i] = np.gradient(T, s).max()  # peak dT/dt (heating)
         for ea in EA_GRID:
             val = np.trapezoid(np.exp(-ea / (KB_EV * T_K)), s)
             logTBac[ea][i] = np.log(max(val, 1e-300))
     V = np.asarray(V, float)
-    return {"Tmax": Tmax, "TB": TB, "dwell": dwell, "heat_rate": heat_rate,
-            "fluence": V ** 2 * np.asarray(t, float),           # pure (V,t), no trace
-            "t": np.asarray(t, float), "V": V,
-            **{f"logTBac_{ea}": logTBac[ea] for ea in EA_GRID}}
+    return {
+        "Tmax": Tmax,
+        "TB": TB,
+        "dwell": dwell,
+        "heat_rate": heat_rate,
+        "fluence": V**2 * np.asarray(t, float),  # pure (V,t), no trace
+        "t": np.asarray(t, float),
+        "V": V,
+        **{f"logTBac_{ea}": logTBac[ea] for ea in EA_GRID},
+    }
 
 
 def _std(col: np.ndarray, mean: float = None, std: float = None) -> np.ndarray:
+    """Standardize a column to ~zero mean / unit std.
+
+    :param col: values to standardize.
+    :param mean: mean to subtract; defaults to ``col.mean()``. Pass a POOLED mean to
+        standardize a family of columns on a shared scale.
+    :param std: std to divide by; defaults to ``col.std()``.
+    """
     mean = col.mean() if mean is None else mean
     std = col.std() if std is None else std
     return (col - mean) / (std + 1e-12)
 
 
 def build_charts(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
-    """Return {chart_name: standardized (n, 2) coordinate array} for all candidate charts."""
+    """Return {chart_name: standardized (n, 2) coordinate array} for all candidate charts.
+
+    :param V: flash voltages of the shots.
+    :param t: flash times of the shots (ms).
+    """
     d = _raw_descriptors(V, t)
     ts = _std(d["t"])
     charts: Dict[str, np.ndarray] = {
@@ -80,8 +101,7 @@ def build_charts(V: np.ndarray, t: np.ndarray) -> Dict[str, np.ndarray]:
     pool = np.concatenate([d[f"logTBac_{ea}"] for ea in EA_GRID])
     pmean, pstd = pool.mean(), pool.std()
     for ea in EA_GRID:
-        charts[f"(TBac{ea},t)"] = np.column_stack(
-            [_std(d[f"logTBac_{ea}"], pmean, pstd), ts])
+        charts[f"(TBac{ea},t)"] = np.column_stack([_std(d[f"logTBac_{ea}"], pmean, pstd), ts])
     return charts
 
 
@@ -91,7 +111,10 @@ def tbac_family_names() -> Tuple[str, ...]:
 
 
 def ea_of_chart(name: str):
-    """Recover the Ea value from a TBac chart name, or None."""
+    """Recover the Ea value from a TBac chart name, or None.
+
+    :param name: chart name (e.g. ``"(TBac2.5,t)"``); non-TBac names return None.
+    """
     if name.startswith("(TBac"):
-        return float(name[len("(TBac"):name.index(",")])
+        return float(name[len("(TBac") : name.index(",")])
     return None

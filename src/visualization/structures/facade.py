@@ -50,9 +50,7 @@ class CrystalStructureVisualizer:
             structure, title=self._title_for(phase_key), save_path=save_path
         )
 
-    def render_all_phases(
-        self, save_dir: Optional[str] = None
-    ) -> Dict[str, plt.Figure]:
+    def render_all_phases(self, save_dir: Optional[str] = None) -> Dict[str, plt.Figure]:
         """Render every registered phase; optionally save each as ``hfo2_<key>.png``."""
         figures: Dict[str, plt.Figure] = {}
         for key in available_phase_keys():
@@ -68,7 +66,7 @@ class CrystalStructureVisualizer:
             structure = self._provider.get_structure(key)
             self._renderer.render_on_ax(structure, ax, title=self._title_for(key))
         # Hide any unused panels if fewer than 4 phases are registered.
-        for ax in axes.flat[len(keys):]:
+        for ax in axes.flat[len(keys) :]:
             ax.set_axis_off()
         fig.suptitle(
             "HfO2 polymorphs — only the polar orthorhombic phase is ferroelectric",

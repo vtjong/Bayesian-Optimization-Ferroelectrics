@@ -16,7 +16,7 @@ from typing import Tuple
 
 import numpy as np
 
-from .synthetic import READOUT_SIGMA, _rank, _trace, sample_design
+from .synthetic import _rank, _trace, sample_design, sample_readout
 
 # Temperature bins (deg C) spanning the reachable range.
 TEMP_BINS = np.linspace(25.0, 800.0, 41)
@@ -48,22 +48,33 @@ def phi_window(V: np.ndarray, t: np.ndarray, lo: float = 500.0, hi: float = 560.
     return G[:, mask].sum(axis=1)
 
 
-def make_window_dataset(n: int, readout: str, rng: np.random.Generator,
-                        lo: float = 500.0, hi: float = 560.0, k: float = 40.0):
-    """(V, t, y) where crystallization is controlled by time-in-window [lo, hi]."""
+def make_window_dataset(
+    n: int,
+    readout: str,
+    rng: np.random.Generator,
+    lo: float = 500.0,
+    hi: float = 560.0,
+    k: float = 40.0,
+):
+    """(V, t, y) where crystallization is controlled by time-in-window [lo, hi].
+
+    :param n: number of shots to simulate.
+    :param readout: metrology key selecting the readout-noise model.
+    :param rng: random generator for the design draw and the readout noise.
+    :param lo: lower edge of the controlling temperature window (deg C).
+    :param hi: upper edge of the controlling temperature window (deg C).
+    :param k: logistic sharpness of the boundary in rank space.
+    """
     V, t = sample_design(n, rng)
     r = _rank(phi_window(V, t, lo, hi))
     p = 1.0 / (1.0 + np.exp(-k * (r - 0.5)))
-    sigma = READOUT_SIGMA[readout]
-    if sigma is None:
-        y = (rng.uniform(size=n) < p).astype(float)
-    else:
-        y = np.clip(p + rng.normal(0.0, sigma, n), 0.0, 1.0)
+    y = sample_readout(p, readout, rng)
     return V, t, y
 
 
-def fit_weighting(G: np.ndarray, y: np.ndarray, lam: float = 50.0,
-                  eps: float = 0.02) -> Tuple[np.ndarray, np.ndarray, float]:
+def fit_weighting(
+    G: np.ndarray, y: np.ndarray, lam: float = 50.0, eps: float = 0.02
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """Smoothness-regularized regression of logit(y) on occupancy -> learned weighting.
 
     Solves (X'X + lam D'D) c = X'y_logit with D a 2nd-difference operator on the weighting
@@ -84,4 +95,4 @@ def fit_weighting(G: np.ndarray, y: np.ndarray, lam: float = 50.0,
     c = np.linalg.solve(X.T @ X + P, X.T @ yl)
     pred = X @ c
     r2 = 1.0 - np.sum((yl - pred) ** 2) / np.sum((yl - yl.mean()) ** 2)
-    return c[1:], sd, float(r2)          # standardized per-bin weights, occupancy std, fit R2
+    return c[1:], sd, float(r2)  # standardized per-bin weights, occupancy std, fit R2
