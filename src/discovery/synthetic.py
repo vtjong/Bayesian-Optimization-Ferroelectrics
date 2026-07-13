@@ -1,29 +1,30 @@
-"""Synthetic FLA crystallization data for the chart-comparison power study.
+"""Synthetic FLA crystallization data, calibrated to the measured flash-lamp thermal response.
 
-Analytic forward model used for the synthetic study:
+Peak temperature is a MEASURED table Tmax(V, t) (flash voltage x flash time, deg C); a bicubic
+spline interpolates between the tabulated values. Every shot's temperature trace is the UNIVERSAL
+normalized pulse shape T(tau)/Tmax -- which the measurements show is the same for all flash
+conditions -- scaled by that shot's Tmax. A consequence: with a universal shape every thermal
+descriptor (dwell, thermal budget, activated budget) is a deterministic function of Tmax, so the
+single-pulse crystallization boundary is exactly the Tmax = onset level set. Temperature peaks in t
+near t ~ 2.6-3 ms, so the boundary is RE-ENTRANT in (V, t).
 
-    Tmax(V,t) = T_room + (V - V0) * t / (a + b t^2),   V0=28.61, a=1.278, b=0.184
-
-so Tmax peaks in t at t = sqrt(a/b) ~ 2.6 ms (the boundary is RE-ENTRANT in (V,t):
-two pulse widths reach the same Tmax). Each shot's temperature trace is asymmetric:
-a half-sine rise to the peak at s = t/2, then exponential cooling with tau = 4 ms.
-
-From the trace we compute the descriptors the charts use: peak temperature Tmax, thermal
-budget TB = integral of (T - T_room) dt, and the activated thermal budget
-TBac(Ea) = integral of exp(-Ea / k T) dt.
+The forward model is a ``ThermalModel`` (Protocol); ``TableThermalModel`` is the measured
+implementation and ``FLASH`` the default instance. Module-level ``tmax`` / ``_trace`` wrap it, so
+swapping in another ``ThermalModel`` does not touch the callers.
 
 The crystallization outcome is governed by a CONTROLLING quantity phi (the "truth"):
     P(crystallize) = sigmoid(k_sharp * z(phi))
-where z(.) is the z-score over the design so the boundary sits at the median of phi.
+where z(.) is the quantile rank over the design so the boundary sits at the median of phi. From
+the trace we derive the descriptor charts use: peak Tmax, thermal budget, activated budget.
 
 READOUTS (the thing the power study varies):
   - "binary"      : y ~ Bernoulli(P)                       (pass/fail)
-  - "continuous"  : y = clip(P + Normal(0, sigma), 0, 1)   (XRD / optical crystalline fraction)
-The continuous readout's sigma encodes the metrology quality (XRD low, optical proxies higher).
+  - "continuous"  : y = clip(P + Normal(0, sigma), 0, 1)   (crystalline-fraction readout)
+sigma encodes the metrology quality (permittivity / XRD / Raman / optical).
 """
 
 from dataclasses import dataclass
-from typing import Callable, Tuple
+from typing import Callable, Protocol, Tuple, runtime_checkable
 
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
@@ -45,39 +46,103 @@ FLASH_TMAX = np.array(
         [230.4, 267.1, 302.206, 340.835, 380.9, 421.551],
     ]
 )
-_SPLINE = RectBivariateSpline(FLASH_T, FLASH_V, FLASH_TMAX, kx=3, ky=3)
-
-# universal normalized pulse shape T(tau)/Tmax (same for all conditions): rise then exp decay
-PLATEAU, TAU_DECAY, T_RISE, TRACE_MS = 0.15, 35.0, 2.0, 250.0
-
 # design box over (flash voltage, flash time) = the measured grid extent
 V_LO, V_HI = 506.0, 716.0  # volts
 T_LO, T_HI = 0.1, 10.1  # ms
 
 
-def tmax(v: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Peak temperature (deg C) at voltage v, flash time t (smooth spline over the table)."""
-    v = np.clip(np.asarray(v, float), FLASH_V[0], FLASH_V[-1])
-    t = np.clip(np.asarray(t, float), FLASH_T[0], FLASH_T[-1])
-    return np.asarray(_SPLINE.ev(t, v))
+@dataclass(frozen=True)
+class PulseShape:
+    """Universal normalized pulse shape T(tau)/Tmax: sin rise then exp decay to a warm plateau.
+
+    :param plateau: plateau level the trace settles to, as a fraction of Tmax.
+    :param tau_decay: exponential decay time constant (ms).
+    :param t_rise: rise time to the peak (ms).
+    :param duration_ms: total trace length simulated (ms).
+    """
+
+    plateau: float = 0.15
+    tau_decay: float = 35.0
+    t_rise: float = 2.0
+    duration_ms: float = 250.0
+
+    def __call__(self, tau: np.ndarray) -> np.ndarray:
+        """Normalized temperature T(tau)/Tmax at times tau (ms since the flash)."""
+        tau = np.asarray(tau, float)
+        s = np.zeros_like(tau)
+        r = (tau >= 0) & (tau < self.t_rise)
+        s[r] = np.sin(np.pi * tau[r] / (2.0 * self.t_rise))
+        d = tau >= self.t_rise
+        s[d] = self.plateau + (1.0 - self.plateau) * np.exp(
+            -(tau[d] - self.t_rise) / self.tau_decay
+        )
+        return s
 
 
-def _shape(tau: np.ndarray) -> np.ndarray:
-    """Universal normalized temperature T(tau)/Tmax: sin rise over T_RISE, exp decay to PLATEAU."""
-    tau = np.asarray(tau, float)
-    s = np.zeros_like(tau)
-    r = (tau >= 0) & (tau < T_RISE)
-    s[r] = np.sin(np.pi * tau[r] / (2.0 * T_RISE))
-    d = tau >= T_RISE
-    s[d] = PLATEAU + (1.0 - PLATEAU) * np.exp(-(tau[d] - T_RISE) / TAU_DECAY)
-    return s
+@runtime_checkable
+class ThermalModel(Protocol):
+    """Forward model: (voltage, time) -> peak temperature and the full temperature trace."""
+
+    def tmax(self, V: np.ndarray, t: np.ndarray) -> np.ndarray: ...
+
+    def trace(self, v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]: ...
+
+
+class TableThermalModel:
+    """Peak temperature from a MEASURED (voltage x time) table, scaled by a universal pulse shape.
+
+    Smoothly interpolates the tabulated peak temperatures (bicubic spline) and applies the single
+    universal trace shape to every condition -- so all thermal descriptors collapse to a function
+    of Tmax and the crystallization boundary is exactly the Tmax = onset level set.
+
+    :param voltages: measured flash voltages (grid columns).
+    :param times: measured flash times (grid rows).
+    :param tmax_table: peak temperatures (deg C), shape ``(len(times), len(voltages))``.
+    :param shape: the universal normalized pulse shape (defaults to ``PulseShape()``).
+    :param t_room: baseline (room) temperature (deg C).
+    """
+
+    def __init__(
+        self, voltages, times, tmax_table, shape: PulseShape = None, t_room: float = T_ROOM
+    ):
+        self.voltages = np.asarray(voltages, float)
+        self.times = np.asarray(times, float)
+        self.tmax_table = np.asarray(tmax_table, float)
+        self.shape = shape or PulseShape()
+        self.t_room = t_room
+        self._spline = RectBivariateSpline(self.times, self.voltages, self.tmax_table, kx=3, ky=3)
+
+    def tmax(self, V: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """Peak temperature (deg C) at voltage V, flash time t (smooth spline over the table)."""
+        V = np.clip(np.asarray(V, float), self.voltages[0], self.voltages[-1])
+        t = np.clip(np.asarray(t, float), self.times[0], self.times[-1])
+        return np.asarray(self._spline.ev(t, V))
+
+    def trace(self, v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
+        """Temperature trace ``T(tau) = t_room + (Tmax - t_room) * shape(tau)``; tau in ms.
+
+        :param v: flash voltage.
+        :param t: flash time.
+        :param n: number of trace samples.
+        """
+        peak = float(self.tmax(v, t))
+        tau = np.linspace(0.0, self.shape.duration_ms, n)
+        return tau, self.t_room + (peak - self.t_room) * self.shape(tau)
+
+
+# Default forward model = the measured flash-lamp table. Module-level tmax/_trace wrap it so
+# existing callers (charts, functional, picker) keep a stable import.
+FLASH = TableThermalModel(FLASH_V, FLASH_T, FLASH_TMAX)
+
+
+def tmax(V: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """Peak temperature (deg C) at voltage V, flash time t, from the default ``FLASH`` model."""
+    return FLASH.tmax(V, t)
 
 
 def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
-    """Trace T(tau) = T_room + (Tmax - T_room) * universal_shape(tau); tau in ms since flash."""
-    peak = float(tmax(v, t))
-    tau = np.linspace(0.0, TRACE_MS, n)
-    return tau, T_ROOM + (peak - T_ROOM) * _shape(tau)
+    """Temperature trace from the default ``FLASH`` model (see ``TableThermalModel.trace``)."""
+    return FLASH.trace(v, t, n)
 
 
 # --- controlling quantities (the planted "truth") ------------------------------------
