@@ -1,0 +1,13 @@
+index,voltage_V,time_ms,pred_Tmax_C,pred_state
+1,611,0.3,173.4,amorphous
+2,545,1.4,271.1,amorphous
+3,705,1.8,499.6,crystalline
+4,583,3.0,384.8,crystalline
+5,663,4.2,476.8,crystalline
+6,519,4.9,287.6,amorphous
+7,676,5.8,444.9,crystalline
+8,641,6.3,396.8,crystalline
+9,532,6.9,277.3,amorphous
+10,607,8.2,339.8,amorphous
+11,688,8.6,414.9,crystalline
+12,562,9.4,287.7,amorphous
