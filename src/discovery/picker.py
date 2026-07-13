@@ -43,8 +43,8 @@ from .synthetic import T_HI, T_LO, V_HI, V_LO, tmax
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 THETA = 0.5                      # crystallization threshold (boundary = level set f = THETA)
-T_STAR = 390.0                   # boundary Tmax = T_STAR: MEASURED flash-lamp crystallization
-                                 # onset (flash T50=388 C, RTA 357 C); see src/run_calibration.py
+T_STAR = 380.0                   # boundary Tmax = T_STAR: crystallization onset (deg C). Tmax(V,t)
+                                 # is now the measured flash-lamp table; see discovery/synthetic.py
 _SHARP = 0.12                    # transition sharpness: ~37 C 10-90% width, matching the
                                  # measured onset (flash ~11 C, RTA ~40 C); run_calibration.py
 _S0, _S1 = 0.02, 0.30            # heteroscedastic noise: sigma_n = S0 + S1 * f*(1-f)  (worst at f=0.5)

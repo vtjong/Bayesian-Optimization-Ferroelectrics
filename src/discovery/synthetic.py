@@ -26,40 +26,55 @@ from dataclasses import dataclass
 from typing import Callable, Tuple
 
 import numpy as np
+from scipy.interpolate import RectBivariateSpline
 
-# --- constants of the peak-temperature model (stand-in units for the method testbed) ---
-# The REAL thermal anchor, fit to flash IR data, is Tmax-25 = 55.6 * V^2.30 * t^0.13
-# (R2=0.83, MAE=54 C; V in kV, t in ms; see src/run_calibration.py). This synthetic keeps a
-# self-consistent re-entrant stand-in so the (V,t) testbed geometry is fixed across the study.
-T_ROOM = 25.0      # deg C
-V0 = 28.61         # V
-A_FIT = 1.278      # ms
-B_FIT = 0.184      # 1/ms
-TAU_COOL = 4.0     # ms, cooling time constant
-KB_EV = 8.617e-5   # Boltzmann constant, eV/K
-T_ONSET_C = 390.0  # measured crystallization onset (flash T50=388 C, RTA 357 C); run_calibration.py
+# --- MEASURED flash-lamp peak-temperature table (deg C) -------------------------------
+# Rows = flash time (ms), columns = flash voltage (V). See data/flash_temp_table.csv.
+T_ROOM = 25.0        # deg C
+KB_EV = 8.617e-5     # Boltzmann constant, eV/K
+T_ONSET_C = 380.0    # crystallization onset temperature (deg C)
 
-# design box over (voltage, pulse width)
-V_LO, V_HI = 350.0, 750.0   # volts
-T_LO, T_HI = 0.1, 10.0      # ms
+FLASH_V = np.array([506.0, 548.0, 590.0, 632.0, 674.0, 716.0])      # flash voltage (V)
+FLASH_T = np.array([0.1, 2.6, 5.1, 7.6, 10.1])                      # flash time (ms)
+FLASH_TMAX = np.array([                                             # rows = t, cols = V
+    [81.6,  97.26,  118.9,   141.2,   165.5,   189.2],
+    [286.3, 336.71, 387.6,   444.8,   504.77,  563.335],
+    [270.4, 314.5,  360.45,  411.28,  461.252, 514.998],
+    [248.4, 288.1,  328.3,   370.8,   414.97,  438.1],
+    [230.4, 267.1,  302.206, 340.835, 380.9,   421.551]])
+_SPLINE = RectBivariateSpline(FLASH_T, FLASH_V, FLASH_TMAX, kx=3, ky=3)
+
+# universal normalized pulse shape T(tau)/Tmax (same for all conditions): rise then exp decay
+PLATEAU, TAU_DECAY, T_RISE, TRACE_MS = 0.15, 35.0, 2.0, 250.0
+
+# design box over (flash voltage, flash time) = the measured grid extent
+V_LO, V_HI = 506.0, 716.0    # volts
+T_LO, T_HI = 0.1, 10.1       # ms
 
 
 def tmax(v: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Peak temperature (deg C) for voltage v and pulse width t."""
-    return T_ROOM + (v - V0) * t / (A_FIT + B_FIT * t ** 2)
+    """Peak temperature (deg C) at voltage v, flash time t (smooth spline over the table)."""
+    v = np.clip(np.asarray(v, float), FLASH_V[0], FLASH_V[-1])
+    t = np.clip(np.asarray(t, float), FLASH_T[0], FLASH_T[-1])
+    return np.asarray(_SPLINE.ev(t, v))
+
+
+def _shape(tau: np.ndarray) -> np.ndarray:
+    """Universal normalized temperature T(tau)/Tmax: sin rise over T_RISE, exp decay to PLATEAU."""
+    tau = np.asarray(tau, float)
+    s = np.zeros_like(tau)
+    r = (tau >= 0) & (tau < T_RISE)
+    s[r] = np.sin(np.pi * tau[r] / (2.0 * T_RISE))
+    d = tau >= T_RISE
+    s[d] = PLATEAU + (1.0 - PLATEAU) * np.exp(-(tau[d] - T_RISE) / TAU_DECAY)
+    return s
 
 
 def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
-    """Asymmetric trace T(s): half-sine rise to peak at s=t/2, then exp cooling."""
-    peak = tmax(np.asarray(v), np.asarray(t))
-    s = np.linspace(0.0, t + 6.0 * TAU_COOL, n)
-    rise = s <= t / 2.0
-    T = np.empty_like(s)
-    # half-sine from T_ROOM at s=0 to peak at s=t/2
-    T[rise] = T_ROOM + (peak - T_ROOM) * np.sin(np.pi * s[rise] / t)
-    # exponential cooling back toward T_ROOM after the peak
-    T[~rise] = T_ROOM + (peak - T_ROOM) * np.exp(-(s[~rise] - t / 2.0) / TAU_COOL)
-    return s, T
+    """Trace T(tau) = T_room + (Tmax - T_room) * universal_shape(tau); tau in ms since flash."""
+    peak = float(tmax(v, t))
+    tau = np.linspace(0.0, TRACE_MS, n)
+    return tau, T_ROOM + (peak - T_ROOM) * _shape(tau)
 
 
 # --- controlling quantities (the planted "truth") ------------------------------------
