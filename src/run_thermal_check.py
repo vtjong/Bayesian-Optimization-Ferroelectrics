@@ -45,8 +45,8 @@ from discovery.synthetic import (
     SHAPES,
     T_HI,
     T_LO,
-    T_ONSET_C,
     T_ROOM,
+    T_TRANSITION_REF_C,
     V_HI,
     V_LO,
     tmax,
@@ -134,13 +134,16 @@ def _report(v: dict) -> None:
         "                     the shape cannot express width dependence, so the test is blind."
     )
 
-    print(f"\n  effective dwell  : t_eff (ms) at Tmax = {T_ONSET_C:.0f} C, and the tilt it implies")
-    print(f"      theta = kB*T^2/Ea = {theta_kelvin(T_ONSET_C):.1f} K per e-fold of dwell")
+    print(
+        f"\n  effective dwell  : t_eff (ms) at Tmax = {T_TRANSITION_REF_C:.0f} C, "
+        "and the tilt it implies"
+    )
+    print(f"      theta = kB*T^2/Ea = {theta_kelvin(T_TRANSITION_REF_C):.1f} K per e-fold of dwell")
     print(f"      {'shape':10s} {'t=2.6':>9s} {'t=10.1':>9s} {'ratio':>7s} {'tilt (C)':>9s}")
     models = build_ensemble()
     for k, s in SHAPES.items():
-        lo = effective_dwell(s, T_ONSET_C, 2.6)
-        hi = effective_dwell(s, T_ONSET_C, 10.1)
+        lo = effective_dwell(s, T_TRANSITION_REF_C, 2.6)
+        hi = effective_dwell(s, T_TRANSITION_REF_C, 10.1)
         print(f"      {k:10s} {lo:9.3f} {hi:9.3f} {hi / lo:7.3f} {models[k].tilt_c():9.1f}")
 
     print("\n  measured trace   : ", end="")
@@ -165,7 +168,7 @@ def _figure(path: Path) -> None:
     vv, tt = np.meshgrid(vg, tg)
     cf = a.contourf(vv, tt, tmax(vv, tt), levels=18, cmap="inferno")
     fig.colorbar(cf, ax=a).set_label("T$_{max}$ (°C)")
-    a.contour(vv, tt, tmax(vv, tt), levels=[T_ONSET_C], colors="cyan", linewidths=2)
+    a.contour(vv, tt, tmax(vv, tt), levels=[T_TRANSITION_REF_C], colors="cyan", linewidths=2)
     a.axhspan(FLASH_T[0], FLASH_T[1], color="w", alpha=0.30, zorder=2)
     a.text(
         0.5 * (V_LO + V_HI),
@@ -182,7 +185,7 @@ def _figure(path: Path) -> None:
     a.set_xlabel("voltage V (V)")
     a.set_ylabel("flash time t (ms)")
     a.set_title(
-        f"1. Measured T$_{{max}}$(V, t)  (cyan = {T_ONSET_C:.0f} °C)",
+        f"1. Measured T$_{{max}}$(V, t)  (cyan = {T_TRANSITION_REF_C:.0f} °C)",
         fontweight="bold",
         fontsize=10,
     )
@@ -205,7 +208,7 @@ def _figure(path: Path) -> None:
         tau, temp = FLASH.trace(CUT_V, float(t))
         lab = f"{t} ms  (T$_{{max}}$={tmax(CUT_V, t):.0f})"
         a.plot(tau, temp, color=cols[j], lw=1.8, label=lab)
-    a.axhline(T_ONSET_C, color="gray", ls="--", lw=1)
+    a.axhline(T_TRANSITION_REF_C, color="gray", ls="--", lw=1)
     a.set_xlim(0, 60)
     a.set_xlabel("time since flash τ (ms)")
     a.set_ylabel("T (°C)")

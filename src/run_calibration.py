@@ -7,13 +7,29 @@ Grounds three numbers used by the synthetic testbed and the picker in real measu
      (2Pr vs directly-set anneal temperature). A logistic fit on the pooled data gives T50.
   2. Thermal anchor -- the peak-temperature model Tmax(V,t) fit to the flash IR data (R2, MAE).
   3. Permittivity readout -- an effective dielectric constant (high-field dQ/dV slope) extracted
-     from every pristine P-V loop, vs the ferroelectric response 2Pr. Reports the amorphous floor,
-     the eps_r <-> 2Pr correlation, and within-sample repeatability (the readout-noise scale).
+     from every pristine P-V loop, vs the ferroelectric response 2Pr. Reports the low-2Pr
+     plateau, the eps_r <-> 2Pr correlation, and within-sample repeatability (the noise scale).
 
-CAVEAT (printed and drawn): the loop files are LARGE-SIGNAL P-V hysteresis, not small-signal C-V,
-so the extracted eps_r is an effective value -- the amorphous floor is trustworthy but the
-crystalline end is inflated by residual switching + leakage at ~3 MV/cm. A clean crystalline
-endpoint needs a C-V sweep on the same capacitors.
+TWO CAVEATS, AND THE SECOND IS THE IMPORTANT ONE.
+
+The loop files are LARGE-SIGNAL P-V hysteresis, not small-signal C-V, so the extracted eps_r is an
+effective value. At the crystalline end it is inflated by switching: values run to ~300, which no
+HfO2 phase supports. A clean crystalline endpoint needs a C-V sweep on the same capacitors.
+
+The low-2Pr plateau is NOT an amorphous reference, and must not be called one. Every P-V sample in
+data/ carries a flash-anneal tag; there is no as-deposited capacitor anywhere in the set. The
+selection is 2Pr < 2 uC/cm2, which means NOT FERROELECTRIC, not NOT CRYSTALLIZED. Those 16 loops
+sit at eps_r 33-45, which is the range of non-ferroelectric crystalline HfO2 (tetragonal ~30-40)
+rather than amorphous (~16-20), and no loop in the whole set reads below 33.
+
+The extraction itself is sound -- verified four ways: capacitance scales with dot area across
+20/30/50/100/200 um with a median intercept of 0.84 pF (no parasitic); the measured current at high
+field matches C*dV/dt (leakage is not dominating); and for these loops dQ/dV at mid-field and
+high-field agree to 1-4%, so the slope is a genuine field-independent dielectric response.
+
+So the number is right and the LABEL is wrong. Until one as-deposited capacitor is measured, this
+plateau anchors "not ferroelectric", and the campaign has no measured amorphous reference at all.
+That measurement costs no film -- the wafer already exists.
 
 Usage:  python src/run_calibration.py
 Reads data/ (gitignored); degrades gracefully with a message if the data is absent.
@@ -168,7 +184,9 @@ def load_loops():
 def eps_stats(rows):
     eps = np.array([r["eps_r"] for r in rows])
     p2 = np.array([r["twoPr"] for r in rows])
-    floor = eps[p2 < 2.0]  # genuinely uncrystallized loops
+    # NOT "uncrystallized": 2Pr < 2 selects non-ferroelectric loops, and every sample here was
+    # annealed. See the module docstring -- there is no as-deposited reference in this dataset.
+    floor = eps[p2 < 2.0]
     # within-sample repeatability (readout-noise scale)
     from collections import defaultdict
 
@@ -211,7 +229,7 @@ def main():
     print(f"  c={c:.1f}  p={pexp:.2f}  q={qexp:.2f}   R2={r2:.2f}  MAE={mae:.0f} C")
     print("=== permittivity readout (large-signal, effective) ===")
     print(
-        f"  corr(eps_r,2Pr)={es['corr']:.2f}   amorphous floor eps_r={es['floor']:.0f}"
+        f"  corr(eps_r,2Pr)={es['corr']:.2f}   low-2Pr plateau eps_r={es['floor']:.0f}"
         f" +/-{es['floor_sd']:.0f} (n={es['n_floor']})   within-sample CV~{100 * es['rep_cv']:.0f}%"
     )
 
@@ -261,7 +279,11 @@ def main():
         es["floor"] - es["floor_sd"], es["floor"] + es["floor_sd"], color="gray", alpha=0.25
     )
     ax[2].axhline(
-        es["floor"], color="gray", lw=1.5, ls="--", label=f"amorphous floor eps_r~{es['floor']:.0f}"
+        es["floor"],
+        color="gray",
+        lw=1.5,
+        ls="--",
+        label=f"low-2P$_r$ plateau eps_r~{es['floor']:.0f}",
     )
     ax[2].set_xlabel("2Pr (uC/cm2)  ->  crystallinity")
     ax[2].set_ylabel("effective eps_r (dQ/dV)")
