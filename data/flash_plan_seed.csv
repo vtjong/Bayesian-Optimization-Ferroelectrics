@@ -1,13 +1,15 @@
-index,voltage_V,time_ms,pred_Tmax_C,pred_state
-1,611,0.3,173.4,amorphous
-2,545,1.4,271.1,amorphous
-3,705,1.8,499.6,crystalline
-4,583,3.0,384.8,crystalline
-5,663,4.2,476.8,crystalline
-6,519,4.9,287.6,amorphous
-7,676,5.8,444.9,crystalline
-8,641,6.3,396.8,crystalline
-9,532,6.9,277.3,amorphous
-10,607,8.2,339.8,amorphous
-11,688,8.6,414.9,crystalline
-12,562,9.4,287.7,amorphous
+index,block,voltage_V,time_ms,pred_Tmax_C,pred_X_isoT,pred_X_ramp,pred_X_diffusion,pred_X_rect,model_disagreement,tmax_node_supported,readout,note
+1,A,588,2.6,385.0,0.617,0.5,0.166,0.165,0.452,True,eps_r,ladder rung t=2.6 ms
+2,A,610,5.1,384.4,0.603,0.607,0.607,0.607,0.005,True,eps_r,ladder rung t=5.1 ms
+3,A,645,7.6,385.0,0.616,0.731,0.928,0.928,0.313,True,eps_r,ladder rung t=7.6 ms
+4,A,678,10.1,384.7,0.61,0.815,0.995,0.995,0.385,True,eps_r,ladder rung t=10.1 ms
+5,B,619,2.7,428.9,0.99,1.0,0.959,0.956,0.044,True,eps_r,stratified core
+6,B,544,3.2,338.5,0.02,0.026,0.011,0.011,0.015,True,eps_r,stratified core
+7,B,648,3.9,465.1,1.0,1.0,1.0,1.0,0.0,True,eps_r,stratified core
+8,B,632,5.6,399.4,0.862,0.931,0.958,0.958,0.096,True,eps_r,stratified core
+9,B,687,6.4,443.9,0.998,1.0,1.0,1.0,0.002,True,eps_r,stratified core
+10,B,611,7.8,347.2,0.043,0.087,0.174,0.174,0.131,True,eps_r,stratified core
+11,B,587,9.3,310.8,0.001,0.006,0.016,0.016,0.015,True,eps_r,stratified core
+12,D,588,2.6,385.0,0.617,0.5,0.166,0.165,0.452,True,eps_r,replicate of A1 (separate specimen)
+13,D,610,5.1,384.4,0.603,0.607,0.607,0.607,0.005,True,eps_r,replicate of A2 (separate specimen)
+14,E,506,5.1,270.4,0.0,0.0,0.0,0.0,0.0,True,eps_r,amorphous floor anchor
