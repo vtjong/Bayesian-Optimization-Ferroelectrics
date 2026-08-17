@@ -44,8 +44,19 @@ from scipy.stats import qmc
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import T_ONSET_C, T_ONSET_SIGMA_C
-from discovery.kinetics import DEFAULT_MODEL, build_ensemble, disagreement
+from discovery.constants import (
+    NOISE_BOUNDARY,
+    NOISE_FLOOR,
+    T_ONSET_C,
+    T_ONSET_SIGMA_C,
+    T_REF_MS,
+)
+from discovery.kinetics import (
+    DEFAULT_MODEL,
+    build_ensemble,
+    disagreement,
+    logistic_sharpness,
+)
 from discovery.synthetic import FLASH, FLASH_T, T_HI, T_LO, V_HI, V_LO
 from visualization.base import save_figure
 
@@ -68,22 +79,71 @@ BAND_LO_C, BAND_HI_C = 310.0, 490.0
 # it reports "no tilt" even when the tilt is large. Two levels straddling the onset prior keep the
 # estimate well-conditioned and roughly flat in precision across T_ONSET_C +/- T_ONSET_SIGMA_C.
 LADDER_TIMES = (2.6, 5.1, 10.1)  # measured table rows -> no spline extrapolation
-LADDER_MARGIN_C = 8.0  # keep levels off the reachable edge, where inversion is ill-conditioned
+LADDER_MARGIN_C = 6.0  # keep levels off the reachable edge, where inversion is ill-conditioned
+LADDER_MIN_GAP_C = 6.0  # two levels closer than this are one level
+LADDER_LEVEL_STEP_C = 2.0  # search resolution
+
+
+def _tilt_precision(levels, t0: float, sharp: float, tilt: float = 18.0) -> float:
+    """Standard error on the boundary tilt from a ladder, with sharpness left FREE.
+
+    The ladder measures a boundary of the form ``X = sigmoid(s * [Tmax - T0 + beta*ln(t/t_ref)])``.
+    Reading along one level constrains only the PRODUCT of the sharpness ``s`` and the tilt
+    ``beta``; a single level therefore cannot separate a sharp boundary that barely moves from a
+    broad one that moves a lot. Two levels break that degeneracy, but only if they are placed well.
+    This returns sqrt of the (beta, beta) entry of the inverse Fisher information, i.e. the
+    uncertainty on the quantity the first batch exists to measure.
+
+    :param levels: candidate peak-temperature levels (deg C).
+    :param t0: assumed onset temperature (deg C).
+    :param sharp: assumed transition sharpness (per deg C).
+    :param tilt: assumed tilt, at which the information is evaluated (K per e-fold of dwell).
+    """
+    times = np.asarray(LADDER_TIMES, float)
+    temp = np.repeat(np.asarray(levels, float), times.size)
+    t = np.tile(times, len(levels))
+    u = np.log(t / T_REF_MS)
+    arg = temp - t0 + tilt * u
+    mu = 1.0 / (1.0 + np.exp(-sharp * arg))
+    grad_z = mu * (1.0 - mu)
+    sd = NOISE_FLOOR + NOISE_BOUNDARY * mu * (1.0 - mu)
+    jac = np.column_stack([grad_z * -sharp, grad_z * arg, grad_z * sharp * u])
+    jac = jac / sd[:, None]
+    fisher = jac.T @ jac
+    try:
+        cov = np.linalg.inv(fisher)
+    except np.linalg.LinAlgError:
+        return np.inf
+    return float(np.sqrt(cov[2, 2])) if cov[2, 2] > 0 else np.inf
 
 
 def ladder_levels() -> tuple:
-    """Two iso-Tmax levels straddling the onset prior, clamped to what the box can actually reach.
+    """Two iso-Tmax levels chosen to measure the tilt as precisely as possible, MINIMAX over the
+    onset prior.
 
-    The nominal levels are ``T_ONSET_C +/- T_ONSET_SIGMA_C``, but a level is only usable if EVERY
-    ladder time can reach it: the reachable ceiling falls with dwell (421.6 C at 10.1 ms against
-    563.3 C at 2.6 ms), so the long-pulse arm sets the upper limit. Clamping here rather than
-    hardcoding keeps the design valid when the onset prior moves.
+    Placing the levels at ``T_ONSET_C +/- T_ONSET_SIGMA_C`` is intuitive and wrong: with a wide
+    onset prior it puts one level in the amorphous floor and the other near saturation, where the
+    response is flat under every hypothesis. Instead the pair is chosen to minimise the WORST-CASE
+    uncertainty on the tilt as the true onset ranges over its prior, which keeps the ladder useful
+    whether the onset sits at the centre or the edge of what we believe.
+
+    Levels are additionally constrained to be reachable at EVERY ladder time -- the reachable
+    ceiling falls with dwell, so the long-pulse arm sets the upper limit.
     """
-    lo_env = max(FLASH.tmax_range(t)[0] for t in LADDER_TIMES) + LADDER_MARGIN_C
-    hi_env = min(FLASH.tmax_range(t)[1] for t in LADDER_TIMES) - LADDER_MARGIN_C
-    lo = float(np.clip(T_ONSET_C - T_ONSET_SIGMA_C, lo_env, hi_env))
-    hi = float(np.clip(T_ONSET_C + T_ONSET_SIGMA_C, lo_env, hi_env))
-    return lo, hi
+    sharp = logistic_sharpness(T_ONSET_C)
+    lo = max(FLASH.tmax_range(t)[0] for t in LADDER_TIMES) + LADDER_MARGIN_C
+    hi = min(FLASH.tmax_range(t)[1] for t in LADDER_TIMES) - LADDER_MARGIN_C
+    grid = np.arange(np.ceil(lo), np.floor(hi) + 1, LADDER_LEVEL_STEP_C)
+    onsets = np.linspace(T_ONSET_C - T_ONSET_SIGMA_C, T_ONSET_C + T_ONSET_SIGMA_C, 9)
+    best, best_score = None, np.inf
+    for i, a in enumerate(grid):
+        for b in grid[i + int(LADDER_MIN_GAP_C / LADDER_LEVEL_STEP_C) :]:
+            score = max(_tilt_precision((a, b), t0, sharp) for t0 in onsets)
+            if score < best_score:
+                best, best_score = (float(a), float(b)), score
+    if best is None:
+        raise RuntimeError("no feasible ladder levels")
+    return best
 
 
 LADDER_TMAX_LEVELS = ladder_levels()
