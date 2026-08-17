@@ -91,6 +91,14 @@ target/
 # results and reports data
 rundata/
 
+# Retired FOM-optimization track: wandb run logs and archived experiments
+wandb/
+archive/
+
+# Collaborator's pipeline, unpacked locally for cross-checking; not ours to commit
+fla_ml_al_pipeline*/
+fla_ml_al_pipeline*.zip
+
 # brainstorming files
 *.ignoreme
 
@@ -98,6 +106,7 @@ rundata/
 src/learn_ferroelectrics.py
 src/run_phase_concepts.py
 src/visualization/concepts.py
+src/visualization/structures/
 scripts/learn.sh
 
 # Personal: working docs and slide decks

@@ -1,20 +1,11 @@
 scipy
 numpy
-torch
-gpytorch
-botorch
 matplotlib
-adjustText
-plotly
 pandas
-openpyxl
 scikit-learn
-wandb
-pyyaml
-nbformat>=4.2.0
-seaborn
-shap
-SALib
+# pandas Excel backend: run_calibration reads the archival PUND/joulemeter workbooks
+openpyxl
 
 # Optional crystal-structure visualization extras (pymatgen, mp-api, ase) live in
-# requirements-viz.txt — install separately: pip install -r requirements-viz.txt
+# requirements-viz.txt - install separately: pip install -r requirements-viz.txt
+# Test-only dependencies live in requirements-dev.txt.

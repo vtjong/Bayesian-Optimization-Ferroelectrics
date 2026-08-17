@@ -1,12 +1,21 @@
 line-length = 100
-extend-exclude = ["src/wandb", "wandb", "archive"]
+extend-exclude = [
+    "venv",
+    "data",
+    "fla_ml_al_pipeline*",
+    # personal tooling, not committed (see .gitignore)
+    "src/learn_ferroelectrics.py",
+    "src/run_phase_concepts.py",
+    "src/visualization/concepts.py",
+    "src/visualization/structures",
+]
 
 lint.select = ["E", "F", "W", "I"]
 
 [lint.per-file-ignores]
-# wandb run logs are vendored artifacts, not source
-"src/wandb/**" = ["E", "F", "W", "I"]
 # thin entry-point scripts bootstrap sys.path before importing the package
 "src/run_*.py" = ["E402"]
+# tests import from src/ after conftest puts it on the path
+"tests/*.py" = ["E402"]
 # __init__.py deliberately re-exports package API
 "**/__init__.py" = ["F401"]
