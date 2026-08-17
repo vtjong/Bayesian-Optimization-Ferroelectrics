@@ -72,7 +72,24 @@ class TestAnchoring:
 
 class TestTilt:
     def test_iso_tmax_has_exactly_zero_tilt(self, ensemble):
-        assert ensemble["isoT"].tilt_c(LADDER_LO_MS, LADDER_HI_MS) == 0.0
+        """Measure the tilt from the MODEL, not from a hardcoded return value.
+
+        ``tilt_c`` used to return a literal 0.0, so this assertion could not fail; mutating the
+        model to carry a real 30 C tilt left it green. Bisecting X = 1/2 out of ``fraction`` at
+        both pulse widths tests the claim rather than the constant.
+        """
+        model = ensemble["isoT"]
+
+        def boundary(t):
+            lo, hi = 100.0, 1200.0
+            for _ in range(200):
+                mid = 0.5 * (lo + hi)
+                v = model.thermal.voltage_for_tmax(mid, t)
+                inside = np.isfinite(v) and float(model.fraction(v, t)[0]) >= 0.5
+                lo, hi = (lo, mid) if inside else (mid, hi)
+            return 0.5 * (lo + hi)
+
+        assert abs(boundary(LADDER_LO_MS) - boundary(LADDER_HI_MS)) < 1e-6
 
     def test_diffusion_matches_the_closed_form(self, ensemble):
         """t_eff proportional to t implies tilt = theta * ln(t2 / t1) with no free parameters."""

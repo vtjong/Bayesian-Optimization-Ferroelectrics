@@ -39,7 +39,9 @@ CFG = pk.BoundaryConfig(noise_boundary=0.30)  # permittivity noise regime (peak 
 def err_for(n_seed, n_iter, seeds):
     """Mean +/- SEM boundary-map error near the end of the budget over `seeds` restarts."""
     e = [
-        np.mean(pk.run_active("lse", n_seed=n_seed, n_iter=n_iter, seed=s, cfg=CFG)["err"][-2:])
+        np.mean(
+            pk.run_active(pk.DEFAULT_ACQ, n_seed=n_seed, n_iter=n_iter, seed=s, cfg=CFG)["err"][-2:]
+        )
         for s in range(seeds)
     ]
     return float(np.mean(e)), float(np.std(e) / np.sqrt(seeds))
@@ -82,7 +84,7 @@ def main() -> int:
     NS, K = 10, 30
     hist = np.array(
         [
-            pk.run_active("lse", n_seed=NS, n_iter=K, seed=s, cfg=CFG)["err"]
+            pk.run_active(pk.DEFAULT_ACQ, n_seed=NS, n_iter=K, seed=s, cfg=CFG)["err"]
             for s in range(args.seeds)
         ]
     )

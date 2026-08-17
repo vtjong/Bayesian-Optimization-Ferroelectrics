@@ -39,7 +39,8 @@ OUT = ROOT / "predictions" / "seed_power"
 
 # Hypotheses that imply the same experiment-facing conclusion ("the dwell matters"), grouped so the
 # headline verdict is not penalized for failing to split two models that are 1 C apart.
-COARSE = {"isoT": "no tilt", "ramp": "tilt", "diffusion": "tilt", "rect": "tilt"}
+COARSE = {"isoT": "no tilt", "ramp": "tilt", "lamp": "tilt",
+          "diffusion": "tilt", "rect": "tilt"}
 
 
 def ladder_conditions(plan: dict) -> tuple:
@@ -77,7 +78,7 @@ def run(trials: int, seed: int, plan: dict = None) -> dict:
     :param seed: RNG seed.
     :param plan: seed plan to score; generated with the shipped defaults when omitted.
     """
-    plan = make_plan(n_core=7, seed=7) if plan is None else plan
+    plan = make_plan(n_core=5, seed=7) if plan is None else plan
     v, t = ladder_conditions(plan)
     models = build_ensemble()
     keys = list(models)

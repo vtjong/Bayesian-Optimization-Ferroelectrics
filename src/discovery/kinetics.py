@@ -95,10 +95,13 @@ def _trace_times(t_pulse: float, duration_ms: float) -> np.ndarray:
     :param t_pulse: commanded pulse width (ms).
     :param duration_ms: total trace length (ms).
     """
-    window = QUAD_NEAR_WINDOW_PULSES * t_pulse
-    near = np.linspace(0.0, min(window, duration_ms), QUAD_NEAR_POINTS)
-    far = np.geomspace(max(window, QUAD_TAU_MIN_MS), duration_ms, QUAD_FAR_POINTS)
-    return np.unique(np.concatenate([near, far]))
+    window = min(QUAD_NEAR_WINDOW_PULSES * t_pulse, duration_ms)
+    near = np.linspace(0.0, window, QUAD_NEAR_POINTS)
+    far = np.geomspace(max(min(window, duration_ms), QUAD_TAU_MIN_MS), duration_ms, QUAD_FAR_POINTS)
+    # Pin the pulse edge: the rectangular shape is discontinuous there and the diffusion shape has
+    # a square-root cusp, so a grid that straddles it incurs a half-cell error that flips sign
+    # with the pulse width.
+    return np.unique(np.concatenate([near, far, [min(t_pulse, duration_ms)]]))
 
 
 @dataclass
@@ -230,9 +233,15 @@ class IsoTmaxBoundary:
     def fraction(self, V: np.ndarray, t: np.ndarray) -> np.ndarray:
         """Crystalline fraction: a logistic of ``(Tmax - t_star)``; re-entrant in (V, t).
 
+        Inputs are normalized exactly as in ``KineticBoundary.fraction`` so both implementations
+        of the Protocol return the same rank -- otherwise ``disagreement`` cannot stack them.
+
         :param V: flash voltages.
         :param t: flash times (ms).
         """
+        V, t = np.broadcast_arrays(
+            np.atleast_1d(np.asarray(V, float)), np.atleast_1d(np.asarray(t, float))
+        )
         return 1.0 / (1.0 + np.exp(-self.sharp * (self.thermal.tmax(V, t) - self.t_star)))
 
     def fraction_grid(self, v_grid: np.ndarray, t_grid: np.ndarray) -> np.ndarray:
@@ -245,12 +254,30 @@ class IsoTmaxBoundary:
         return self.fraction(vv, tt)
 
     def boundary_tmax(self, t: float) -> float:
-        """Peak temperature at which X = 1/2 -- by construction ``t_star``, for any ``t``."""
-        return self.t_star
+        """Peak temperature at which X = 1/2, found by bisection on ``fraction``.
+
+        Analytically this is ``t_star`` for any ``t``, but it is MEASURED from the model rather
+        than returned as a literal: a hardcoded zero would make any test of the zero-tilt claim
+        vacuous, and the point of this member is to be a falsifiable hypothesis.
+
+        :param t: flash time (ms).
+        """
+        lo, hi = BISECT_TMAX_LO_C, BISECT_TMAX_HI_C
+        for _ in range(BISECT_ITERS):
+            mid = 0.5 * (lo + hi)
+            if 1.0 / (1.0 + np.exp(-self.sharp * (mid - self.t_star))) < 0.5:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi)
 
     def tilt_c(self, t_lo: float = FLASH_T[1], t_hi: float = FLASH_T[-1]) -> float:
-        """Boundary tilt, identically zero for this model."""
-        return 0.0
+        """Boundary tilt, measured from the model (analytically zero for this member).
+
+        :param t_lo: short flash time (ms).
+        :param t_hi: long flash time (ms).
+        """
+        return self.boundary_tmax(t_lo) - self.boundary_tmax(t_hi)
 
     def sharpness(self) -> float:
         """Logistic transition sharpness (per deg C)."""
@@ -276,14 +303,14 @@ def build_ensemble(
     models: Dict[str, BoundaryModel] = {
         "isoT": IsoTmaxBoundary(iso, name="isoT", t_star=t_star, ea_ev=ea_ev, n=n)
     }
-    for key in ("ramp", "diffusion", "rect"):
+    for key in ("ramp", "lamp", "diffusion", "rect"):
         models[key] = KineticBoundary(
             thermal_model(SHAPES[key]), name=key, ea_ev=ea_ev, n=n, t_star=t_star
         )
     return models
 
 
-DEFAULT_MODEL = "diffusion"  # the only cooling law that is derived rather than fitted
+DEFAULT_MODEL = "lamp"  # conduction driven by the MEASURED lamp envelope
 
 
 def disagreement(models: Dict[str, BoundaryModel], V: np.ndarray, t: np.ndarray) -> np.ndarray:

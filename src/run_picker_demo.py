@@ -31,8 +31,10 @@ from discovery.synthetic import T_HI, T_LO, V_HI, V_LO
 from visualization.base import save_figure
 
 OUT = Path(__file__).resolve().parent.parent / "predictions" / "picker_demo"
-COL = {"entropy": "#7a7a7a", "bald": "#d1772b", "lse": "#1f6fb2"}
-LBL = {"entropy": "predictive entropy", "bald": "BALD", "lse": "level-set entropy (latent)"}
+COL = {"predictive_entropy": "#7a7a7a", "noise_weighted": "#d1772b",
+       "latent_entropy": "#1f6fb2", "straddle": "#4daf4a"}
+LBL = {"predictive_entropy": "predictive entropy", "noise_weighted": "noise-weighted boundary",
+       "latent_entropy": "latent class entropy", "straddle": "straddle (Bryan 2005)"}
 
 
 def main() -> int:
@@ -43,15 +45,15 @@ def main() -> int:
 
     s1_grid = [0.2, 0.4, 0.8, 1.5, 2.5]
     peaks = [pk.DEFAULT.noise_floor + 0.25 * s for s in s1_grid]
-    curves = {a: [] for a in ("entropy", "bald", "lse")}
-    sems = {a: [] for a in ("entropy", "bald", "lse")}
+    curves = {a: [] for a in tuple(pk.ACQUISITIONS)}
+    sems = {a: [] for a in tuple(pk.ACQUISITIONS)}
     print(
         f"peak sigma_n | entropy | bald | lse   (final boundary-map error, mean+/-SEM, "
         f"{args.seeds} seeds)"
     )
     for s1 in s1_grid:
         cfg = pk.BoundaryConfig(noise_boundary=s1)
-        for a in ("entropy", "bald", "lse"):
+        for a in tuple(pk.ACQUISITIONS):
             e = [
                 np.mean(pk.run_active(a, n_seed=10, n_iter=22, seed=s, cfg=cfg)["err"][-4:])
                 for s in range(args.seeds)
@@ -61,17 +63,17 @@ def main() -> int:
         print(
             f"   {pk.DEFAULT.noise_floor + 0.25 * s1:.2f}      | "
             + " | ".join(
-                f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}" for a in ("entropy", "bald", "lse")
+                f"{curves[a][-1]:.3f}+/-{sems[a][-1]:.3f}" for a in tuple(pk.ACQUISITIONS)
             )
         )
 
     # spatial shot placement for the (default) LSE picker at a representative moderate noise
     h = pk.run_active(
-        "lse", n_seed=10, n_iter=25, seed=0, cfg=pk.BoundaryConfig(noise_boundary=0.4)
+        pk.DEFAULT_ACQ, n_seed=10, n_iter=25, seed=0, cfg=pk.BoundaryConfig(noise_boundary=0.4)
     )
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
-    for a in ("entropy", "bald", "lse"):
+    for a in tuple(pk.ACQUISITIONS):
         m, e = np.array(curves[a]), np.array(sems[a])
         a1.plot(peaks, m, "o-", color=COL[a], label=LBL[a])
         a1.fill_between(peaks, m - e, m + e, color=COL[a], alpha=0.15)

@@ -14,6 +14,7 @@ All numeric parameters come from ``constants``.
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, Protocol, Tuple, runtime_checkable
 
 import numpy as np
@@ -23,6 +24,10 @@ from .constants import (
     BISECT_ITERS,
     FLASH_TABLE_CSV,
     KB_EV,
+    LAMP_A,
+    LAMP_QUAD_NODES,
+    LAMP_TAU_FAST_MS,
+    LAMP_TAU_SLOW_MS,
     LEGACY_DURATION_MS,
     LEGACY_PLATEAU_FRAC,
     LEGACY_RISE_MS,
@@ -35,6 +40,7 @@ from .constants import (
     T_ONSET_C,
     T_ROOM_C,
     TRACE_DURATION_MS,
+    V_SCAN_POINTS,
 )
 
 T_ROOM = T_ROOM_C  # backwards-compatible alias for existing callers
@@ -47,6 +53,7 @@ __all__ = [
     "FLASH_V",
     "SHAPES",
     "DiffusionPulse",
+    "LampDrivenPulse",
     "FrozenPulse",
     "PulseShape",
     "RampPulse",
@@ -77,8 +84,8 @@ def load_flash_table(path=FLASH_TABLE_CSV) -> Tuple[np.ndarray, np.ndarray, np.n
     if not path.exists():
         raise FileNotFoundError(f"measured flash table not found at {path}")
     rows = [line.split(",") for line in path.read_text().strip().splitlines() if line.strip()]
-    voltages = np.array([float(c.strip().lstrip("V=")) for c in rows[0][1:]], float)
-    times = np.array([float(r[0].strip().lstrip("t=")) for r in rows[1:]], float)
+    voltages = np.array([float(c.strip().removeprefix("V=")) for c in rows[0][1:]], float)
+    times = np.array([float(r[0].strip().removeprefix("t=")) for r in rows[1:]], float)
     table = np.array([[float(c) for c in r[1:]] for r in rows[1:]], float)
     if table.shape != (times.size, voltages.size):
         raise ValueError(f"table shape {table.shape} does not match axes in {path}")
@@ -225,6 +232,93 @@ class DiffusionPulse:
 
 
 @dataclass(frozen=True)
+class LampDrivenPulse:
+    """PHYSICS DEFAULT: measured lamp irradiance driving semi-infinite substrate conduction.
+
+    Same conduction physics as ``DiffusionPulse``, but the source term is the MEASURED lamp
+    envelope rather than a top hat. Surface temperature follows Duhamel's integral,
+
+        T(tau) - T_room  ~  INT_0^min(tau, t) q(s) / sqrt(tau - s) ds
+
+    with q(s) a two-exponential fit to the delivered-fluence data. The sqrt singularity is removed
+    by substituting u = sqrt(tau - s), giving 2 * INT q(tau - u^2) du over u in
+    [sqrt(tau - min(tau,t)), sqrt(tau)].
+
+    WHY THIS AND NOT ``DiffusionPulse``: conduction alone has no intrinsic timescale, so a top-hat
+    drive makes the whole transient self-similar in tau/t and the effective dwell exactly
+    proportional to pulse width -- which is what predicts ~50 C of boundary tilt. But the lamp is
+    not a top hat. Measured fluence rises only sublinearly with commanded width
+    (d lnE/d lnt = 0.505 across the campaign box), i.e. the irradiance droops with a ~2 ms time
+    constant that sits squarely inside the 2.6-10.1 ms design range. That intrinsic timescale
+    breaks the self-similarity and cuts the predicted tilt to ~12 C. The top-hat idealization, not
+    any of the conduction idealizations, was doing all the work.
+
+    :param a_fast: weight of the fast decay component of the lamp envelope.
+    :param tau_fast: fast decay constant of the lamp envelope (ms).
+    :param tau_slow: slow decay constant of the lamp envelope (ms).
+    :param nodes: quadrature nodes for the Duhamel integral.
+    :param duration_ms: total trace length simulated (ms).
+    """
+
+    a_fast: float = LAMP_A
+    tau_fast: float = LAMP_TAU_FAST_MS
+    tau_slow: float = LAMP_TAU_SLOW_MS
+    nodes: int = LAMP_QUAD_NODES
+    duration_ms: float = TRACE_DURATION_MS
+
+    def irradiance(self, s: np.ndarray) -> np.ndarray:
+        """Lamp irradiance envelope at time ``s`` (ms) after firing, normalized to 1 at s = 0."""
+        s = np.asarray(s, float)
+        return self.a_fast * np.exp(-s / self.tau_fast) + (1.0 - self.a_fast) * np.exp(
+            -s / self.tau_slow
+        )
+
+    def _duhamel(self, tau: np.ndarray, t_pulse: float) -> np.ndarray:
+        """Unnormalized surface temperature rise: 2 * INT q(tau - u^2) du."""
+        tau = np.asarray(tau, float)
+        lo = np.sqrt(np.clip(tau - np.minimum(tau, t_pulse), 0.0, None))
+        hi = np.sqrt(np.clip(tau, 0.0, None))
+        w = np.linspace(0.0, 1.0, self.nodes)
+        u = lo[..., None] + (hi - lo)[..., None] * w
+        return 2.0 * np.trapezoid(self.irradiance(tau[..., None] - u**2), u, axis=-1)
+
+    def peak_time(self, t_pulse: float) -> float:
+        """Time of maximum surface temperature (ms).
+
+        NOT ``t_pulse``. Because the lamp irradiance droops with a ~2 ms constant, the surface
+        stops gaining once the remaining flux no longer offsets conduction into the substrate, so
+        for pulses longer than a few ms the peak sits near 2.3 ms no matter how long the pulse is
+        commanded. That saturation is exactly why the measured Tmax table is re-entrant in t.
+        """
+        return float(_lamp_peak(self, float(t_pulse))[0])
+
+    def __call__(self, tau: np.ndarray, t_pulse: float) -> np.ndarray:
+        """Normalized temperature at times tau (ms) for a pulse of width ``t_pulse``."""
+        tau = np.asarray(tau, float)
+        out = np.where(tau >= 0.0, self._duhamel(np.clip(tau, 0.0, None), float(t_pulse)), 0.0)
+        peak = _lamp_peak(self, float(t_pulse))[1]
+        return out / peak if peak > 0 else out
+
+
+@lru_cache(maxsize=4096)
+def _lamp_peak(shape: "LampDrivenPulse", t_pulse: float) -> Tuple[float, float]:
+    """``(peak_time, peak_value)`` of the unnormalized lamp-driven rise, by dense scan + refine.
+
+    Cached because normalizing every call would otherwise rescan; the shape is frozen and hashable
+    so the cache key is well defined.
+    """
+    coarse = np.linspace(0.0, min(4.0 * max(t_pulse, shape.tau_fast), shape.duration_ms), 2000)
+    d = shape._duhamel(coarse, t_pulse)
+    i = int(np.argmax(d))
+    lo = coarse[max(i - 1, 0)]
+    hi = coarse[min(i + 1, coarse.size - 1)]
+    fine = np.linspace(lo, hi, 2000)
+    df = shape._duhamel(fine, t_pulse)
+    j = int(np.argmax(df))
+    return float(fine[j]), float(df[j])
+
+
+@dataclass(frozen=True)
 class RectangularPulse:
     """Bounding case: held at Tmax for the pulse width, then instantly cold.
 
@@ -286,10 +380,12 @@ class TableThermalModel:
     def voltages_for_tmax(self, targets_c: np.ndarray, t: np.ndarray) -> np.ndarray:
         """Flash voltages reaching each peak temperature in ``targets_c``; NaN where unreachable.
 
-        Tmax is monotone in V at fixed t (every table row increases left to right), so bisection on
-        the spline inverts it exactly. The whole batch is bisected at once -- inverting points one
-        at a time dominates the runtime of the seed-design search, which evaluates many candidate
-        designs.
+        Every measured table row increases left to right, but the bicubic spline through them is
+        NOT monotone in V everywhere: it overshoots near the hot end for flash times around 8-9 ms.
+        The reachable ceiling is therefore taken from a dense scan rather than from the endpoint,
+        and the bisection bracket stops at that maximum so the inverse is single-valued. The whole
+        batch is bisected at once -- inverting points one at a time dominates the runtime of the
+        seed-design search, which evaluates many candidate designs.
 
         :param targets_c: desired peak temperatures (deg C).
         :param t: flash times (ms), broadcast against ``targets_c``.
@@ -297,9 +393,20 @@ class TableThermalModel:
         targets_c, t = np.broadcast_arrays(
             np.atleast_1d(np.asarray(targets_c, float)), np.atleast_1d(np.asarray(t, float))
         )
+        # The TABLE rows increase left to right, but the bicubic spline through them does not:
+        # it overshoots near the top of the voltage axis for some flash times, so tmax(V_HI, t) is
+        # not the reachable ceiling there. Locate the true maximum on a dense scan and bisect only
+        # on the rising branch below it.
+        scan_v = np.linspace(self.voltages[0], self.voltages[-1], V_SCAN_POINTS)
+        scan_t = np.broadcast_to(t[..., None], t.shape + scan_v.shape)
+        scan_tmax = self.tmax(np.broadcast_to(scan_v, scan_t.shape), scan_t)
+        peak_idx = np.argmax(scan_tmax, axis=-1)
+        ceiling = np.take_along_axis(scan_tmax, peak_idx[..., None], axis=-1)[..., 0]
+        floor = scan_tmax[..., 0]
+        reachable = (floor <= targets_c) & (targets_c <= ceiling)
+
         lo = np.full(targets_c.shape, float(self.voltages[0]))
-        hi = np.full(targets_c.shape, float(self.voltages[-1]))
-        reachable = (self.tmax(lo, t) <= targets_c) & (targets_c <= self.tmax(hi, t))
+        hi = scan_v[peak_idx]  # bracket ends at the true maximum, not at the axis endpoint
         for _ in range(BISECT_ITERS):
             mid = 0.5 * (lo + hi)
             below = self.tmax(mid, t) < targets_c
@@ -332,15 +439,17 @@ class TableThermalModel:
         """
         peak = float(self.tmax(v, t))
         t = float(t)
-        tau = np.unique(
-            np.concatenate(
-                [
-                    np.linspace(0.0, self.shape.duration_ms, n),
-                    np.linspace(max(0.0, 0.8 * t), min(1.2 * t, self.shape.duration_ms), n // 4),
-                    [t],
-                ]
-            )
+        base = np.linspace(0.0, self.shape.duration_ms, n)
+        # Refine around wherever THIS shape actually peaks. It is not always the pulse edge: the
+        # lamp-driven shape peaks where the drooping irradiance stops outrunning conduction, which
+        # for long pulses is well before t_pulse. A grid that straddles the peak under-reports it.
+        coarse = np.linspace(0.0, min(4.0 * max(t, 1.0), self.shape.duration_ms), 4000)
+        tpk = float(coarse[np.argmax(self.shape(coarse, t))])
+        span = max(0.05 * max(t, 1.0), 2.0 * (coarse[1] - coarse[0]))
+        fine = np.linspace(
+            max(0.0, tpk - span), min(tpk + span, self.shape.duration_ms), max(n // 2, 64)
         )
+        tau = np.unique(np.concatenate([base, fine, [t, tpk]]))
         return tau, self.t_room + (peak - self.t_room) * self.shape(tau, t)
 
 
@@ -352,15 +461,16 @@ def thermal_model(shape: PulseShape) -> TableThermalModel:
 # Named ensemble members. They share the MEASURED Tmax table and differ only in the trace shape,
 # so comparing them isolates the one thing we have never measured: the cooling law.
 SHAPES: Dict[str, PulseShape] = {
-    "isoT": FrozenPulse(),  # legacy: width-independent -> zero tilt
-    "ramp": RampPulse(),  # collaborator's eyeball-fit decay -> ~15 C tilt
-    "diffusion": DiffusionPulse(),  # derived substrate conduction -> ~51 C tilt (DEFAULT)
-    "rect": RectangularPulse(),  # bounding case -> ~51 C tilt
+    "isoT": FrozenPulse(),  # width-independent -> zero tilt (the null hypothesis)
+    "ramp": RampPulse(),  # empirical two-exponential transient -> ~13 C tilt
+    "lamp": LampDrivenPulse(),  # MEASURED lamp + conduction -> ~12 C tilt (DEFAULT)
+    "diffusion": DiffusionPulse(),  # conduction under a TOP-HAT lamp -> ~50 C tilt
+    "rect": RectangularPulse(),  # bounding case; degenerate with diffusion by construction
 }
 
-# Default forward model = the measured flash-lamp table with the PHYSICS-default cooling law.
+# Default forward model = the measured Tmax table driven by the MEASURED lamp envelope.
 # Module-level tmax/_trace wrap it so existing callers keep a stable import.
-FLASH = thermal_model(SHAPES["diffusion"])
+FLASH = thermal_model(SHAPES["lamp"])
 
 # The historical model, kept so the earlier iso-Tmax campaign numbers stay reproducible.
 FLASH_ISOT = thermal_model(SHAPES["isoT"])

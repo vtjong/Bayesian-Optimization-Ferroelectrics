@@ -44,6 +44,23 @@ T_REF_MS = 5.1  # flash time at which the onset is quoted (a measured table row)
 EA_EV = 1.0  # activation energy (eV)
 AVRAMI_N = 2.5  # Avrami exponent
 
+# --- MEASURED ------------------------------------------------------------------------------
+# Lamp irradiance envelope q(s) = LAMP_A*exp(-s/LAMP_TAU_FAST) + (1-LAMP_A)*exp(-s/LAMP_TAU_SLOW),
+# truncated at the commanded pulse width. Obtained by jointly inverting two independent integral
+# measurements we already own: the delivered fluence E(V,t) in
+# data/Bolometer_readings_PulseForge.xlsx, and the peak-temperature table (which measures
+# INT q(s)/sqrt(t-s) ds). Reproduce with: python src/run_lamp_check.py
+#
+# These numbers matter more than any other in the model. The lamp does NOT deliver fixed energy
+# per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width
+# (measured d lnE/d lnt = 0.505 over the campaign box), which is an intrinsic ~2 ms timescale
+# sitting inside the 2.6-10.1 ms design range. That timescale is what breaks the self-similarity
+# of pure conduction and cuts the predicted boundary tilt from ~50 C to ~12 C.
+LAMP_A = 0.88
+LAMP_TAU_FAST_MS = 2.06
+LAMP_TAU_SLOW_MS = 54.6
+LAMP_QUAD_NODES = 600  # nodes for the Duhamel integral after the sqrt substitution
+
 # --- SHAPE ---------------------------------------------------------------------------------
 TRACE_DURATION_MS = 320.0  # window over which the Arrhenius budget is integrated
 
@@ -80,5 +97,6 @@ QUAD_NEAR_WINDOW_PULSES = 3.0  # near-peak window, in multiples of the pulse wid
 QUAD_TAU_MIN_MS = 1e-3  # lower bound of the log-spaced tail grid
 
 BISECT_ITERS = 80  # bisection steps; 80 halvings is exact to machine precision here
+V_SCAN_POINTS = 1024  # dense scan locating the spline's true max in V (it is not monotone there)
 BISECT_TMAX_LO_C = 100.0  # bracket for inverting a fraction to a peak temperature
 BISECT_TMAX_HI_C = 1200.0

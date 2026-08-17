@@ -30,7 +30,7 @@ def ensemble() -> dict:
 @pytest.fixture(scope="session")
 def seed_plan() -> dict:
     """The committed seed design, generated with the defaults the script ships with."""
-    return make_plan(n_core=7, seed=7)
+    return make_plan(n_core=5, seed=7)
 
 
 @pytest.fixture(scope="session")

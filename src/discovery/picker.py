@@ -53,7 +53,10 @@ from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 
 from .constants import NOISE_BOUNDARY, NOISE_FLOOR
 from .kinetics import DEFAULT_MODEL, BoundaryModel, build_ensemble
-from .synthetic import T_HI, T_LO, V_HI, V_LO
+from .synthetic import FLASH_T, T_HI, V_HI, V_LO
+
+# Boundary search is restricted to flash times the measured table actually supports.
+T_SEARCH_LO = float(FLASH_T[1])
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
@@ -122,26 +125,55 @@ def measure(
     return np.clip(f + rng.normal(0.0, noise_sigma(f, cfg)), 0.0, 1.0)
 
 
+def _scaled_alpha(var: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Convert a noise variance in READING units to the units sklearn's ``alpha`` expects.
+
+    With ``normalize_y=True`` sklearn standardizes the target before adding ``alpha`` to the Gram
+    diagonal, so ``alpha`` is a variance in STANDARDIZED units. Passing a raw-units variance makes
+    the assumed noise wrong by a factor of ``var(y)`` -- for this readout that understated it by
+    about 2.5x in sd, i.e. the GP was substantially overconfident exactly where the boundary is.
+
+    :param var: noise variance in reading units.
+    :param y: training targets, whose spread sets the standardization.
+    """
+    scale = float(np.var(np.asarray(y, float)))
+    return np.asarray(var, float) / (scale if scale > 1e-12 else 1.0)
+
+
 # --- normalized coordinates + candidate grid --------------------------------------------
 def _norm(V: np.ndarray, t: np.ndarray) -> np.ndarray:
-    return np.column_stack([(V - V_LO) / (V_HI - V_LO), (t - T_LO) / (T_HI - T_LO)])
+    """Unit-box coordinates, with time on a LOG axis.
+
+    Matches the coordinates the seed design is built in. The boundary is closer to isotropic in
+    (V, log t) than in (V, t), and using two different geometries for the design and the learner
+    would mean the sizing studies do not describe the campaign that actually runs.
+    """
+    x = (np.asarray(V, float) - V_LO) / (V_HI - V_LO)
+    lo, hi = np.log10(T_SEARCH_LO), np.log10(T_HI)
+    return np.column_stack([x, (np.log10(np.asarray(t, float)) - lo) / (hi - lo)])
 
 
 def candidate_grid(nv: int = 45, nt: int = 45) -> Tuple[np.ndarray, np.ndarray]:
+    """Candidate conditions, restricted to flash times the measured table supports.
+
+    The table has no node below ``T_SEARCH_LO``, so peak temperatures quoted there are an artifact
+    of the spline; proposing shots in that gap would be proposing conditions the campaign forbids.
+    """
     vs = np.linspace(V_LO, V_HI, nv)
-    ts = np.linspace(T_LO, T_HI, nt)
+    ts = np.geomspace(T_SEARCH_LO, T_HI, nt)
     VV, TT = np.meshgrid(vs, ts)
     return VV.ravel(), TT.ravel()
 
 
 def lhs_seed(n: int, rng: Generator) -> Tuple[np.ndarray, np.ndarray]:
-    """Latin-hypercube seed over the (V, t) design box (space-filling; low discrepancy).
+    """Latin-hypercube seed over the SUPPORTED design box, stratified in (V, log t).
 
     Better than i.i.d. uniform: one sample per row/column stratum, so the GP sees the whole box
     before active learning starts. Returns (V, t) arrays of length n.
     """
     u = qmc.LatinHypercube(d=2, seed=rng).random(n)
-    return V_LO + u[:, 0] * (V_HI - V_LO), T_LO + u[:, 1] * (T_HI - T_LO)
+    lo, hi = np.log10(T_SEARCH_LO), np.log10(T_HI)
+    return V_LO + u[:, 0] * (V_HI - V_LO), 10.0 ** (lo + u[:, 1] * (hi - lo))
 
 
 # --- GP fit / predict (heteroscedastic: per-point noise variance) -----------------------
@@ -154,14 +186,34 @@ def fit_gp(V: np.ndarray, t: np.ndarray, y: np.ndarray, cfg: BoundaryConfig = DE
     :param cfg: boundary/noise parameters (sets the per-point noise variance).
     """
     Xn = _norm(np.asarray(V), np.asarray(t))
-    var = noise_sigma(np.clip(y, 0, 1), cfg) ** 2 + JITTER  # noise var estimated from the reading
-    k = ConstantKernel(1.0, KERNEL_AMPLITUDE_BOUNDS) * Matern(
-        list(KERNEL_LENGTHSCALE0), KERNEL_LENGTHSCALE_BOUNDS, nu=KERNEL_NU
-    )
+    y = np.asarray(y, float)
+
+    def _kernel():
+        return ConstantKernel(1.0, KERNEL_AMPLITUDE_BOUNDS) * Matern(
+            list(KERNEL_LENGTHSCALE0), KERNEL_LENGTHSCALE_BOUNDS, nu=KERNEL_NU
+        )
+
+    # Pass 1: a homoscedastic fit whose only job is to produce a smoothed mean. The per-point
+    # noise must NOT be read off the observation itself -- sigma_n(f) peaks at f = 1/2, so a
+    # reading that strays far from the truth is assigned a SMALLER variance and the GP then trusts
+    # the outlier more (corr(|y - f|, sigma_n(y)) = -0.94 at mid-transition). Taking sigma from a
+    # smoothed mean instead breaks that feedback; this is the standard plug-in step for
+    # heteroscedastic GP regression.
+    flat = float(np.mean(noise_sigma(np.clip(y, 0, 1), cfg))) ** 2 + JITTER
+    warm = GaussianProcessRegressor(
+        kernel=_kernel(), alpha=_scaled_alpha(flat, y), normalize_y=True, n_restarts_optimizer=1
+    ).fit(Xn, y)
+    mu = np.clip(warm.predict(Xn), 0.0, 1.0)
+
+    # Pass 2: per-point noise from the smoothed mean.
+    var = noise_sigma(mu, cfg) ** 2 + JITTER
     gp = GaussianProcessRegressor(
-        kernel=k, alpha=var, normalize_y=True, n_restarts_optimizer=GP_RESTARTS
+        kernel=_kernel(),
+        alpha=_scaled_alpha(var, y),
+        normalize_y=True,
+        n_restarts_optimizer=GP_RESTARTS,
     )
-    gp.fit(Xn, np.asarray(y))
+    gp.fit(Xn, y)
     return gp
 
 
@@ -182,30 +234,63 @@ def acq_entropy(mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float =
     return _binary_entropy(norm.cdf((mu - theta) / np.sqrt(s**2 + sig_n**2)))
 
 
-def acq_bald(mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5) -> np.ndarray:
-    """Boundary-weighted information gain about the latent function (down-weights noise)."""
+def noise_weighted_boundary_entropy(
+    mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5
+) -> np.ndarray:
+    """Boundary entropy weighted by the latent-vs-noise information ratio.
+
+    NAMING: this is NOT BALD (Houlsby et al. 2011). BALD is the single quantity
+    I(y; f) = H[E p] - E[H p]; this is a PRODUCT of the regression information gain
+    0.5*log(1 + s^2/sigma_n^2) with a separate boundary entropy, which carries no
+    information-theoretic interpretation. It was previously misnamed ``bald``. Kept as an
+    empirical baseline only.
+    """
     info = 0.5 * np.log1p(s**2 / sig_n**2)  # reducible-vs-noise information gain
     boundary = _binary_entropy(norm.cdf((mu - theta) / s))  # focus on the boundary (latent)
     return info * boundary
 
 
-def acq_lse(mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5) -> np.ndarray:
-    """Level-set entropy on the LATENT (reducible) uncertainty: boundary-focused AND noise-aware.
+def latent_class_entropy(
+    mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5
+) -> np.ndarray:
+    """Binary class entropy from the LATENT (reducible) uncertainty only. The default.
 
-    High where mu ~ theta and the LATENT class is still uncertain; unlike predictive entropy it
-    stops re-chasing a boundary point once its reducible uncertainty is resolved, and unlike BALD
-    it does not flee the boundary. A principled, robust default for noisy boundary mapping --
-    comparable to entropy/BALD in practice (see module docstring).
+    High where mu ~ theta and the latent class is still uncertain. It scores by reducible
+    uncertainty rather than total predictive spread, so unlike predictive entropy it does not
+    chase the irreducible-noise band.
+
+    NAMING: this is NOT the LSE algorithm of Gotovos et al. (IJCAI 2013), which classifies points
+    by whether their GP confidence interval clears h +/- eps and then samples the most ambiguous
+    unclassified point. This is a plain latent class entropy; it was previously misnamed ``lse``.
+
+    LIMITATION, recorded because this docstring used to claim the opposite: the utility does NOT
+    self-suppress at an already-measured point. At mu = theta the argument is 0 for ANY s, so
+    a(x) = ln 2 -- its global maximum -- even as the latent sd collapses to zero. Re-visiting is
+    prevented by the separate spreading penalty, not by this term. Use ``straddle`` if you want an
+    acquisition with the self-suppression property.
     """
     return _binary_entropy(norm.cdf((mu - theta) / s))
 
 
+def straddle(
+    mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5, beta: float = 1.96
+) -> np.ndarray:
+    """Straddle utility ``beta*s - |mu - theta|`` (Bryan et al., NIPS 2005).
+
+    Unlike the entropy family this decays to zero as the latent sd collapses, so it genuinely
+    stops re-measuring a boundary point once that point is resolved.
+    """
+    return beta * s - np.abs(mu - theta)
+
+
 # Strategy registry: acquisition name -> a(mu, s, sig_n, theta) scoring callable.
 ACQUISITIONS: Dict[str, Callable[..., np.ndarray]] = {
-    "entropy": acq_entropy,
-    "bald": acq_bald,
-    "lse": acq_lse,
+    "predictive_entropy": acq_entropy,
+    "noise_weighted": noise_weighted_boundary_entropy,
+    "latent_entropy": latent_class_entropy,
+    "straddle": straddle,
 }
+DEFAULT_ACQ = "latent_entropy"
 
 
 def _spread(Vc: np.ndarray, tc: np.ndarray, Vs, ts, r: float = 0.08) -> np.ndarray:
@@ -217,7 +302,7 @@ def _spread(Vc: np.ndarray, tc: np.ndarray, Vs, ts, r: float = 0.08) -> np.ndarr
 
 # --- the active loop --------------------------------------------------------------------
 def run_active(
-    acq: str = "lse",
+    acq: str = DEFAULT_ACQ,
     n_seed: int = 10,
     n_iter: int = 25,
     seed: int = 0,
@@ -225,7 +310,7 @@ def run_active(
 ) -> Dict:
     """Seed with LHS, then pick each next shot by the acquisition. Returns the run history.
 
-    :param acq: acquisition name (key of ``ACQUISITIONS``): ``"lse"``, ``"entropy"``, or ``"bald"``.
+    :param acq: acquisition name (key of ``ACQUISITIONS``).
     :param n_seed: number of space-filling LHS seed points.
     :param n_iter: number of sequential active-learning picks.
     :param seed: RNG seed for reproducibility.
@@ -269,9 +354,12 @@ def run_active(
 def _conditioned_gp(kernel, V, t, y, cfg: BoundaryConfig = DEFAULT):
     """GP conditioned on (V,t,y) at FIXED (already-fitted) hyperparameters -- no re-optimize."""
     Xn = _norm(np.asarray(V), np.asarray(t))
-    var = noise_sigma(np.clip(np.asarray(y), 0, 1), cfg) ** 2 + JITTER
-    g = GaussianProcessRegressor(kernel=kernel, alpha=var, optimizer=None, normalize_y=True)
-    g.fit(Xn, np.asarray(y))
+    y = np.asarray(y, float)
+    var = noise_sigma(np.clip(y, 0, 1), cfg) ** 2 + JITTER
+    g = GaussianProcessRegressor(
+        kernel=kernel, alpha=_scaled_alpha(var, y), optimizer=None, normalize_y=True
+    )
+    g.fit(Xn, y)
     return g
 
 
@@ -314,7 +402,7 @@ def run_active_batch(
     q: int = 4,
     n_seed: int = 10,
     n_rounds: int = 5,
-    acq: str = "lse",
+    acq: str = DEFAULT_ACQ,
     seed: int = 0,
     cfg: BoundaryConfig = DEFAULT,
 ) -> Dict:

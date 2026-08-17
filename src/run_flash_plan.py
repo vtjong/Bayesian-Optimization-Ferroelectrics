@@ -44,6 +44,7 @@ from scipy.stats import qmc
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
+from discovery.constants import T_ONSET_C, T_ONSET_SIGMA_C
 from discovery.kinetics import DEFAULT_MODEL, build_ensemble, disagreement
 from discovery.synthetic import FLASH, FLASH_T, T_HI, T_LO, V_HI, V_LO
 from visualization.base import save_figure
@@ -61,8 +62,13 @@ T_SEARCH_LO, T_SEARCH_HI = float(FLASH_T[1]), float(FLASH_T[-1])  # 2.6 .. 10.1 
 # Outside [310, 490] every hypothesis in the ensemble agrees, so a shot there settles nothing.
 BAND_LO_C, BAND_HI_C = 310.0, 490.0
 
-LADDER_TMAX_C = 385.0  # rung temperature for block A
-LADDER_TIMES = (2.6, 5.1, 7.6, 10.1)  # measured table rows -> no spline extrapolation
+# Block A uses TWO peak-temperature levels, not one. A single-level ladder is rank-deficient: it
+# identifies only the product of transition sharpness and tilt, and it slides bodily into the
+# saturated floor or ceiling if the true onset differs from the prior by ~1 sigma, at which point
+# it reports "no tilt" even when the tilt is large. Two levels straddling the onset prior keep the
+# estimate well-conditioned and roughly flat in precision across T_ONSET_C +/- T_ONSET_SIGMA_C.
+LADDER_TMAX_LEVELS = (T_ONSET_C - T_ONSET_SIGMA_C, T_ONSET_C + T_ONSET_SIGMA_C)
+LADDER_TIMES = (2.6, 5.1, 10.1)  # measured table rows -> no spline extrapolation
 FLOOR_CONDITION = (V_LO, 5.1)  # coldest reachable column at a supported time
 N_REPLICATES = 2
 
@@ -89,23 +95,52 @@ def _min_separation(v: np.ndarray, t: np.ndarray) -> float:
 
 
 def ladder_block() -> tuple:
-    """Block A: one peak temperature, four pulse widths.
+    """Block A: two peak-temperature levels crossed with three pulse widths.
 
-    Voltage is found by inverting the measured Tmax table at each flash time, so all four
-    conditions sit on the same iso-Tmax contour to within the snapping resolution.
+    Voltage is inverted from the measured Tmax table at each (level, time), so each level is an
+    iso-Tmax contour to within the snapping resolution. Reading along a level measures the tilt;
+    reading across the two levels measures the transition sharpness, which is what makes the two
+    separable instead of confounded.
     """
-    vs, ts = [], []
-    for t in LADDER_TIMES:
-        v = FLASH.voltage_for_tmax(LADDER_TMAX_C, t)
-        if not np.isfinite(v):
-            raise ValueError(f"{LADDER_TMAX_C} C unreachable at t = {t} ms")
-        v, t = _snap(v, t)
-        vs.append(v)
-        ts.append(t)
-    return np.array(vs), np.array(ts)
+    vs, ts, levels = [], [], []
+    for level in LADDER_TMAX_LEVELS:
+        for t in LADDER_TIMES:
+            v = FLASH.voltage_for_tmax(level, t)
+            if not np.isfinite(v):
+                raise ValueError(f"{level} C unreachable at t = {t} ms")
+            v, t = _snap(v, t)
+            vs.append(v)
+            ts.append(t)
+            levels.append(level)
+    return np.array(vs), np.array(ts), np.array(levels)
 
 
-def core_block(n: int, seed: int, avoid_v: np.ndarray, avoid_t: np.ndarray, n_tries: int = 400):
+def _transition_band(models: dict, t: float, lo_x: float = 0.03, hi_x: float = 0.97) -> tuple:
+    """Peak-temperature range over which the ENSEMBLE MEAN fraction runs from ``lo_x`` to ``hi_x``.
+
+    Uses the mean across all hypotheses rather than any single one, so the stratification hedges
+    the same way the rest of the design does.
+
+    :param models: the boundary-model ensemble.
+    :param t: flash time (ms).
+    :param lo_x: lower fraction defining the informative range.
+    :param hi_x: upper fraction defining the informative range.
+    """
+    grid = np.linspace(BAND_LO_C, BAND_HI_C, 400)
+    v = FLASH.voltages_for_tmax(grid, np.full_like(grid, t))
+    ok = np.isfinite(v)
+    if ok.sum() < 2:
+        return BAND_LO_C, BAND_HI_C
+    x = np.mean([m.fraction(v[ok], np.full(ok.sum(), t)) for m in models.values()], axis=0)
+    inside = grid[ok][(x >= lo_x) & (x <= hi_x)]
+    if inside.size < 2:
+        return BAND_LO_C, BAND_HI_C
+    return float(inside.min()), float(inside.max())
+
+
+def core_block(
+    n: int, seed: int, avoid_v: np.ndarray, avoid_t: np.ndarray, models: dict, n_tries: int = 400
+):
     """Block B: Latin hypercube over (Tmax, log t), inverted to (V, t).
 
     Draws a stratified flash time and a stratified peak-temperature quantile within the band that
@@ -126,13 +161,22 @@ def core_block(n: int, seed: int, avoid_v: np.ndarray, avoid_t: np.ndarray, n_tr
     """
     best, best_sep = None, -np.inf
     log_lo, log_hi = np.log10(T_SEARCH_LO), np.log10(T_SEARCH_HI)
+    # Precompute the transition band once on a coarse time grid and interpolate: recomputing it
+    # per candidate design would dominate the search cost.
+    band_t = np.geomspace(T_SEARCH_LO, T_SEARCH_HI, 24)
+    _edges = np.array([_transition_band(models, x) for x in band_t])
+    band_lo_v, band_hi_v = _edges[:, 0], _edges[:, 1]
     for k in range(n_tries):
         u = qmc.LatinHypercube(d=2, seed=seed + k).random(n)
         t = np.round(10.0 ** (log_lo + u[:, 0] * (log_hi - log_lo)) * 10.0) / 10.0
         reach_lo = np.array([FLASH.tmax_range(x)[0] for x in t])
         reach_hi = np.array([FLASH.tmax_range(x)[1] for x in t])
-        band_lo = np.maximum(reach_lo, BAND_LO_C)
-        band_hi = np.minimum(reach_hi, BAND_HI_C)
+        # Stratify across the range where the ensemble actually transitions, not uniformly over the
+        # full prior band: the band is ~180 C wide while the transition is ~47 C, so uniform
+        # stratification spends most shots where every hypothesis already agrees.
+        edges = np.column_stack([np.interp(t, band_t, band_lo_v), np.interp(t, band_t, band_hi_v)])
+        band_lo = np.maximum(np.maximum(reach_lo, BAND_LO_C), edges[:, 0])
+        band_hi = np.minimum(np.minimum(reach_hi, BAND_HI_C), edges[:, 1])
         if np.any(band_hi <= band_lo):
             continue
         target = band_lo + u[:, 1] * (band_hi - band_lo)
@@ -155,10 +199,12 @@ def make_plan(n_core: int, seed: int) -> dict:
     :param seed: RNG seed for the core Latin hypercube.
     """
     models = build_ensemble()
-    v_a, t_a = ladder_block()
+    v_a, t_a, lvl_a = ladder_block()
     v_e, t_e = _snap(*FLOOR_CONDITION)
     v_e, t_e = np.array([v_e]), np.array([t_e])
-    v_b, t_b = core_block(n_core, seed, np.concatenate([v_a, v_e]), np.concatenate([t_a, t_e]))
+    v_b, t_b = core_block(
+        n_core, seed, np.concatenate([v_a, v_e]), np.concatenate([t_a, t_e]), models
+    )
 
     # Replicates go where a hidden variable would do the most damage, which is two different
     # places: the rung sitting mid-transition under EVERY hypothesis (largest readout noise, so
@@ -172,7 +218,7 @@ def make_plan(n_core: int, seed: int) -> dict:
     t = np.concatenate([t_a, t_b, t_e, t_a[rep_idx]])
     block = ["A"] * len(v_a) + ["B"] * len(v_b) + ["E"] * len(v_e) + ["D"] * len(rep_idx)
     note = (
-        [f"ladder rung t={x} ms" for x in t_a]
+[f"ladder {lv:.0f} C @ t={x} ms" for lv, x in zip(lvl_a, t_a)]
         + ["stratified core"] * len(v_b)
         + ["amorphous floor anchor"]
         + [f"replicate of A{i + 1} (separate specimen)" for i in rep_idx]
@@ -187,7 +233,7 @@ def make_plan(n_core: int, seed: int) -> dict:
         "preds": {k: m.fraction(v[order], t[order]) for k, m in models.items()},
         "disagree": disagreement(models, v[order], t[order]),
         "models": models,
-        "ladder": (v_a, t_a),
+        "ladder": (v_a, t_a, lvl_a),
     }
 
 
@@ -197,8 +243,11 @@ def _check(plan: dict) -> None:
     assert np.all(t >= T_SEARCH_LO - 1e-9), "a condition lands in the un-noded 0.1-2.6 ms gap"
     assert np.all(t <= T_SEARCH_HI + 1e-9), "a condition exceeds the measured time range"
     assert np.all(v == np.round(v)) and np.allclose(t, np.round(t * 10) / 10), "not snapped"
-    lad = np.array([tm[i] for i in range(len(tm)) if block[i] in ("A", "D")])
-    assert lad.max() - lad.min() < 2.0, f"ladder not iso-Tmax: spread {lad.max() - lad.min():.2f} C"
+    lad_tm = np.array([tm[i] for i in range(len(tm)) if block[i] in ("A", "D")])
+    for level in LADDER_TMAX_LEVELS:
+        on = lad_tm[np.abs(lad_tm - level) < 15.0]
+        assert on.size >= len(LADDER_TIMES), f"ladder level {level:.0f} C under-populated"
+        assert on.max() - on.min() < 2.0, f"ladder level {level:.0f} C not iso-Tmax"
     core = np.array([tm[i] for i in range(len(tm)) if block[i] != "E"])
     assert core.min() >= BAND_LO_C - 1.0, f"a non-anchor point is too cold: {core.min():.0f} C"
     assert core.max() <= BAND_HI_C + 1.0, f"a non-anchor point is too hot: {core.max():.0f} C"
@@ -253,7 +302,7 @@ def _figure(plan: dict, path: Path) -> None:
     a = axes[0]
     cf = a.contourf(vv, tt, FLASH.tmax(vv, tt), levels=18, cmap="inferno")
     fig.colorbar(cf, ax=a).set_label("measured T$_{max}$ (°C)")
-    styles = {"isoT": ":", "ramp": "--", "diffusion": "-", "rect": "-."}
+    styles = {"isoT": ":", "ramp": "--", "lamp": "-", "diffusion": "-.", "rect": "-."}
     for key, m in models.items():
         a.contour(
             vv,
@@ -314,25 +363,29 @@ def _figure(plan: dict, path: Path) -> None:
     )
 
     a = axes[2]
-    v_a, t_a = plan["ladder"]
-    order = np.argsort(t_a)
-    for key, m in models.items():
-        a.plot(
-            t_a[order],
-            m.fraction(v_a, t_a)[order],
-            marker="o",
-            lw=2.4 if key == DEFAULT_MODEL else 1.5,
-            ls=styles[key],
-            label=f"{key}  (tilt {m.tilt_c():.0f} °C)",
-        )
+    v_a, t_a, lvl_a = plan["ladder"]
+    for li, level in enumerate(LADDER_TMAX_LEVELS):
+        on = np.isclose(lvl_a, level)
+        order = np.argsort(t_a[on])
+        for key, m in models.items():
+            a.plot(
+                t_a[on][order],
+                m.fraction(v_a[on], t_a[on])[order],
+                marker="o" if li == 0 else "s",
+                lw=2.4 if key == DEFAULT_MODEL else 1.4,
+                ls=styles[key],
+                alpha=1.0 if li == 0 else 0.55,
+                label=f"{key} (tilt {m.tilt_c():.0f} °C)" if li == 0 else None,
+            )
     a.axhline(0.5, color="gray", lw=1, ls=":")
     a.set_xscale("log")
     a.set_xlabel("flash time t (ms)   [same T$_{max}$ at every point]")
     a.set_ylabel("predicted crystalline fraction X")
     a.set_ylim(-0.05, 1.05)
     a.set_title(
-        f"Block A: the tilt test at T$_{{max}}$ = {LADDER_TMAX_C:.0f} °C\n"
-        "flat line = boundary is a pure temperature threshold",
+        "Block A: the tilt test, two T$_{max}$ levels\n"
+        f"({LADDER_TMAX_LEVELS[0]:.0f} / {LADDER_TMAX_LEVELS[1]:.0f} °C) — "
+        "flat lines = pure temperature threshold",
         fontweight="bold",
         fontsize=10,
     )
@@ -344,7 +397,7 @@ def _figure(plan: dict, path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--n-core", type=int, default=7, help="size of the stratified core block")
+    ap.add_argument("--n-core", type=int, default=5, help="size of the stratified core block")
     ap.add_argument("--seed", type=int, default=7, help="base RNG seed for the core LHS")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -367,12 +420,17 @@ def main() -> int:
         row += f"   {plan['disagree'][i]:6.3f}"
         print(row)
 
-    v_a, t_a = plan["ladder"]
-    print("\n  Block A tilt test -- swing in X from the shortest to the longest rung:")
+    v_a, t_a, lvl_a = plan["ladder"]
+    print("\n  Block A tilt test -- swing in X along each level, shortest to longest pulse:")
+    hdr = "    " + f"{'model':10s}" + "".join(f"{lv:>12.0f} C" for lv in LADDER_TMAX_LEVELS)
+    print(hdr + f"{'tilt':>10s}")
     for k, m in plan["models"].items():
-        x = m.fraction(v_a, t_a)
-        dx = x[np.argmax(t_a)] - x[np.argmin(t_a)]
-        print(f"    {k:10s} dX = {dx:+.3f}   (tilt {m.tilt_c():4.0f} C)")
+        row = f"    {k:10s}"
+        for level in LADDER_TMAX_LEVELS:
+            on = np.isclose(lvl_a, level)
+            x = m.fraction(v_a[on], t_a[on])
+            row += f"{x[np.argmax(t_a[on])] - x[np.argmin(t_a[on])]:+14.3f}"
+        print(row + f"{m.tilt_c():9.0f} C")
 
     _write_csv(plan, ROOT / "data" / "flash_plan_seed.csv")
     _figure(plan, OUT / "flash_plan.png")

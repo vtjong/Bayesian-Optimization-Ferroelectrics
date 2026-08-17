@@ -72,7 +72,7 @@ def main() -> int:
     ys = list(pk.measure(np.array(Vseed), np.array(tseed), rng))
     gp = pk.fit_gp(list(Vseed), list(tseed), ys)
     Vc, tc = pk.candidate_grid()
-    Vb, tb = pk.propose_batch(gp, list(Vseed), list(tseed), ys, 4, "lse", Vc, tc)
+    Vb, tb = pk.propose_batch(gp, list(Vseed), list(tseed), ys, 4, pk.DEFAULT_ACQ, Vc, tc)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(14, 5))
     # panel A: convergence to 80 shots for q = 1..4

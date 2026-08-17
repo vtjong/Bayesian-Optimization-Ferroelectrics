@@ -34,6 +34,29 @@ class TestMeasuredTable:
         np.testing.assert_array_equal(times, FLASH_T)
         np.testing.assert_array_equal(table, FLASH_TMAX)
 
+    def test_parsed_values_match_the_file_literally(self):
+        """Anchor the parse to known literals.
+
+        Comparing the parser's output to arrays the parser itself produced only catches
+        non-determinism: mutating the parser to return ``table * 1.15`` leaves every other table
+        test green. These literals are read off data/flash_temp_table.csv by eye.
+        """
+        assert FLASH_TMAX.shape == (5, 6)
+        assert FLASH_V[0] == 506.0 and FLASH_V[-1] == 716.0
+        assert FLASH_T[0] == 0.1 and FLASH_T[-1] == 10.1
+        assert FLASH_TMAX[0, 0] == 81.6
+        assert FLASH_TMAX[1, -1] == 563.335
+        assert FLASH_TMAX[-1, -1] == 421.551
+
+    def test_parser_round_trips_a_synthetic_table(self, tmp_path):
+        """A file with known contents parses back to exactly those numbers."""
+        f = tmp_path / "tiny.csv"
+        f.write_text(",V=100,V=200\nt=1.0,10.5,20.5\nt=2.0,30.5,40.5\n")
+        voltages, times, table = load_flash_table(f)
+        np.testing.assert_array_equal(voltages, [100.0, 200.0])
+        np.testing.assert_array_equal(times, [1.0, 2.0])
+        np.testing.assert_array_equal(table, [[10.5, 20.5], [30.5, 40.5]])
+
     def test_missing_table_raises_clearly(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             load_flash_table(tmp_path / "absent.csv")

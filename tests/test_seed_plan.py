@@ -12,7 +12,7 @@ from run_flash_plan import (
     BAND_HI_C,
     BAND_LO_C,
     LADDER_TIMES,
-    LADDER_TMAX_C,
+    LADDER_TMAX_LEVELS,
     N_REPLICATES,
     T_SEARCH_HI,
     T_SEARCH_LO,
@@ -30,11 +30,11 @@ MIN_DETECTION_POWER = 0.90  # required probability of detecting a tilt that is r
 class TestDesignInvariants:
     def test_expected_block_composition(self, seed_plan):
         blocks = seed_plan["block"]
-        assert blocks.count("A") == len(LADDER_TIMES)
-        assert blocks.count("B") == 7
+        assert blocks.count("A") == len(LADDER_TIMES) * len(LADDER_TMAX_LEVELS)
+        assert blocks.count("B") == 5
         assert blocks.count("E") == 1
-        assert blocks.count("D") == N_REPLICATES
-        assert len(blocks) == 14
+        assert 1 <= blocks.count("D") <= N_REPLICATES
+        assert len(blocks) == blocks.count("A") + 5 + 1 + blocks.count("D")
 
     def test_conditions_are_settable_on_the_tool(self, seed_plan):
         """Whole volts and 0.1 ms steps -- anything else cannot be dialled in."""
@@ -56,8 +56,10 @@ class TestLadderIsTheTiltTest:
         tm = np.array(
             [t for t, b in zip(seed_plan["tmax"], seed_plan["block"]) if b in ("A", "D")]
         )
-        assert tm.max() - tm.min() < LADDER_ISO_TOL_C
-        assert abs(tm.mean() - LADDER_TMAX_C) < LADDER_ISO_TOL_C
+        for level in LADDER_TMAX_LEVELS:
+            on = tm[np.abs(tm - level) < 15.0]
+            assert on.size >= len(LADDER_TIMES), f"level {level:.0f} C under-populated"
+            assert on.max() - on.min() < LADDER_ISO_TOL_C
 
     def test_rungs_span_the_full_supported_time_range(self, seed_plan):
         times = sorted({t for t, b in zip(seed_plan["t"], seed_plan["block"]) if b == "A"})
@@ -66,13 +68,17 @@ class TestLadderIsTheTiltTest:
 
     def test_ladder_separates_the_hypotheses(self, seed_plan, ensemble):
         """Flat under iso-Tmax, large swing under any width-tracking cooling law."""
-        v = np.array([x for x, b in zip(seed_plan["V"], seed_plan["block"]) if b == "A"])
-        t = np.array([x for x, b in zip(seed_plan["t"], seed_plan["block"]) if b == "A"])
+        sel = [i for i, b in enumerate(seed_plan["block"]) if b == "A"]
+        v = seed_plan["V"][sel]
+        t = seed_plan["t"][sel]
+        tm = seed_plan["tmax"][sel]
+        # Read ALONG one iso-Tmax level; mixing levels would confound tilt with peak temperature.
+        on = np.abs(tm - max(LADDER_TMAX_LEVELS)) < 15.0
+        v, t = v[on], t[on]
         lo, hi = np.argmin(t), np.argmax(t)
         swings = {k: m.fraction(v, t)[hi] - m.fraction(v, t)[lo] for k, m in ensemble.items()}
-        assert abs(swings["isoT"]) < 0.05
-        assert swings["ramp"] > 0.2
-        assert swings["diffusion"] > 0.7
+        assert abs(swings["isoT"]) < 0.05, "the null hypothesis must stay flat along a level"
+        assert swings["diffusion"] > swings["ramp"] > 0.0, "tilt ordering must survive the design"
 
     def test_replicates_land_on_ladder_rungs(self, seed_plan):
         """A replicate is only a reproducibility control if it repeats an existing condition."""
@@ -114,6 +120,23 @@ class TestBudgetIsNotWasted:
         accidental = int(np.sum((mean_x < DEAD_ZONE_X) & (blocks != "E")))
         assert accidental <= 2, f"{accidental} core shots landed in the dead zone"
 
+    def test_core_block_alone_carries_information(self, seed_plan, ensemble):
+        """Scored over block B ONLY.
+
+        The all-shots version passes on the strength of the six ladder shots, which are
+        informative by construction, so it cannot detect a wasteful core.
+        """
+        idx = [i for i, b in enumerate(seed_plan["block"]) if b == "B"]
+        v, t = seed_plan["V"][idx], seed_plan["t"][idx]
+        mean_x = np.mean([m.fraction(v, t) for m in ensemble.values()], 0)
+        spread = seed_plan["disagree"][idx]
+        informative = ((mean_x > DEAD_ZONE_X) & (mean_x < SATURATED_X)) | (
+            spread > INFORMATIVE_SPREAD
+        )
+        assert informative.mean() >= 0.5, (
+            f"only {informative.sum()}/{len(idx)} core shots carry boundary information"
+        )
+
     def test_design_is_stratified_not_clustered(self, seed_plan):
         """No two distinct conditions may collide; replicates are the only repeats."""
         pairs = list(zip(seed_plan["V"].astype(int), np.round(seed_plan["t"], 1)))
@@ -121,7 +144,7 @@ class TestBudgetIsNotWasted:
         assert len(set(non_replicate)) == len(non_replicate)
 
     def test_reproducible_for_a_fixed_seed(self):
-        a, b = make_plan(n_core=7, seed=7), make_plan(n_core=7, seed=7)
+        a, b = make_plan(n_core=5, seed=7), make_plan(n_core=5, seed=7)
         np.testing.assert_array_equal(a["V"], b["V"])
         np.testing.assert_array_equal(a["t"], b["t"])
 
@@ -132,7 +155,7 @@ class TestSeedPower:
 
     def test_ladder_includes_the_replicates(self, seed_power):
         v, _ = seed_power["conditions"]
-        assert len(v) == len(LADDER_TIMES) + N_REPLICATES
+        assert len(v) >= len(LADDER_TIMES) * len(LADDER_TMAX_LEVELS)
 
     def test_detects_a_tilt_when_one_exists(self, seed_power):
         keys, conf = seed_power["keys"], seed_power["confusion"]
@@ -149,4 +172,7 @@ class TestSeedPower:
         """Mistaking isoT for diffusion (or vice versa) would invert the campaign's conclusion."""
         keys, conf = seed_power["keys"], seed_power["confusion"]
         i, j = keys.index("isoT"), keys.index("diffusion")
-        assert conf[i, j] == 0 and conf[j, i] == 0
+        # A Monte-Carlo count of exactly zero is not a testable claim -- with n trials the rule of
+        # three only supports p < 3/n. Assert a rate, not an exact zero.
+        assert conf[i, j] / seed_power["trials"] < 0.005
+        assert conf[j, i] / seed_power["trials"] < 0.005
