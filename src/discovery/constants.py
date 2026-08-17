@@ -7,6 +7,19 @@ results would move if a number were wrong.
 
   PHYSICAL   exact or standard; never fitted.
   PRIOR      campaign assumptions with real uncertainty. Anything derived from these inherits it.
+
+PROVENANCE AND VINTAGE. Numbers derived from the ARCHIVAL sample set (KHM005/KHM006 flash shots,
+the FE_HZCO RTA series, the PulseForge bolometer runs) are marked [ARCHIVAL]. Those films are not
+1:1 with the current ones, so only SOME quantities carry over:
+
+  * transferable  -- the transition width and the DIMENSIONLESS tilt ratio theta/T50 = kB*T50/Ea.
+                     These describe the crystallization mechanism, not the batch, and theta/T50 is
+                     additionally invariant to any constant rescaling of the temperature axis.
+  * NOT transferable -- the onset temperature, the readout floor, and the noise model. Onset is set
+                     by seeding density, interface chemistry and thickness; a vacuum break alone is
+                     documented to move it ~200 C on nominally identical stacks.
+
+An [ARCHIVAL] number is a PRIOR. Never treat one as a calibration of the current films.
   SHAPE      parameters of the candidate cooling laws. Provenance is recorded per group.
   NUMERICAL  quadrature and root-find settings. Chosen for convergence; results must not depend
              on them (``run_model_checks.py`` verifies this).
@@ -33,16 +46,31 @@ T_ROOM_C = 25.0  # ambient the film returns to between shots
 # different voltage box and in different units, using a ferroelectric switch-on indicator rather
 # than crystallinity. 380 was chosen as a round value near the flash figure. Treat the width below
 # as the honest uncertainty and never quote T_ONSET_C as "the measured onset".
-T_ONSET_C = 380.0  # onset peak temperature (deg C) -- a prior centre
-T_ONSET_SIGMA_C = 30.0  # spread bracketing the two fits and the box mismatch
+# [ARCHIVAL] and NOT transferable -- see the provenance note above. Widened from 30 to 70 C on
+# four independent grounds: the two source fits disagree by 31 C; they were taken in a different
+# voltage box in different units; the readout is a ferroelectric switch-on threshold rather than
+# crystallinity; and the current films are a different sample set, where interface chemistry alone
+# is documented to shift the onset by ~200 C. A 30 C sigma was what made the earlier single-level
+# ladder fail: it slid into saturation and reported "no tilt" when the tilt was large.
+T_ONSET_C = 380.0  # onset peak temperature (deg C) -- a prior centre, NOT a measurement
+T_ONSET_SIGMA_C = 70.0  # honest spread; see above
 T_REF_MS = 5.1  # flash time at which the onset is quoted (a measured table row)
 
 # Activated-kinetics parameters. Ea ~ 1 eV is the growth-limited regime appropriate to
 # nanocrystallite-seeded films (pre-existing nuclei, no nucleation barrier); n between 2 and 3 is
 # 2-3D growth from those seeds. Together they SET the transition width, so they must be stated
 # rather than absorbed into a hardcoded sharpness.
-EA_EV = 1.0  # activation energy (eV)
-AVRAMI_N = 2.5  # Avrami exponent
+# UNRESOLVED -- flagged by review, left at the historical values pending the temperature-axis
+# decision, because Ea and the temperature scale are confounded. Evidence against 1.0 eV:
+#   [ARCHIVAL] graded 2Pr fit of the KHM005/6 flash shots  -> Ea ~ 2.0 eV  (run_tilt_prior.py)
+#   [ARCHIVAL] iso-conversion on the FE_HZCO RTA series    -> Ea ~ 1.5 eV
+#   literature, in-situ XRD crystallization of HfO2        -> Ea ~ 2.6 +/- 0.5 eV
+# The tilt scales as 1/Ea, so Ea alone spans a wider range than the whole pulse-shape ensemble:
+# raising it from 1.0 to 2.0 eV roughly halves every predicted tilt. Do not quote a measured tilt
+# without stating the Ea it assumes.
+EA_EV = 1.0  # activation energy (eV) -- LOW vs all available evidence; see above
+AVRAMI_N = 2.5  # Avrami exponent -- site saturation implies an integer, and 3D growth is
+# geometrically impossible in a 10 nm film with comparable lateral grain size; evidence favours 1-2
 
 # --- MEASURED ------------------------------------------------------------------------------
 # Lamp irradiance envelope q(s) = LAMP_A*exp(-s/LAMP_TAU_FAST) + (1-LAMP_A)*exp(-s/LAMP_TAU_SLOW),

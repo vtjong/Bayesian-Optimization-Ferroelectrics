@@ -117,8 +117,11 @@ class TestBudgetIsNotWasted:
         mean_x = np.mean([m.fraction(seed_plan["V"], seed_plan["t"]) for m in ensemble.values()], 0)
         blocks = np.array(seed_plan["block"])
         assert np.all(mean_x[blocks == "E"] < DEAD_ZONE_X), "the floor anchor should be cold"
-        accidental = int(np.sum((mean_x < DEAD_ZONE_X) & (blocks != "E")))
-        assert accidental <= 2, f"{accidental} core shots landed in the dead zone"
+        # Only block B can waste a shot. The floor anchor is meant to be cold, and the ladder's
+        # lower level is deliberately placed below the onset prior to BRACKET it -- under the
+        # central prior that level reads near zero, which is the cost of bracketing, not waste.
+        accidental = int(np.sum((mean_x < DEAD_ZONE_X) & (blocks == "B")))
+        assert accidental <= 2, f"{accidental} space-filling shots landed in the dead zone"
 
     def test_core_block_alone_carries_information(self, seed_plan, ensemble):
         """Scored over block B ONLY.

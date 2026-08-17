@@ -67,8 +67,26 @@ BAND_LO_C, BAND_HI_C = 310.0, 490.0
 # saturated floor or ceiling if the true onset differs from the prior by ~1 sigma, at which point
 # it reports "no tilt" even when the tilt is large. Two levels straddling the onset prior keep the
 # estimate well-conditioned and roughly flat in precision across T_ONSET_C +/- T_ONSET_SIGMA_C.
-LADDER_TMAX_LEVELS = (T_ONSET_C - T_ONSET_SIGMA_C, T_ONSET_C + T_ONSET_SIGMA_C)
 LADDER_TIMES = (2.6, 5.1, 10.1)  # measured table rows -> no spline extrapolation
+LADDER_MARGIN_C = 8.0  # keep levels off the reachable edge, where inversion is ill-conditioned
+
+
+def ladder_levels() -> tuple:
+    """Two iso-Tmax levels straddling the onset prior, clamped to what the box can actually reach.
+
+    The nominal levels are ``T_ONSET_C +/- T_ONSET_SIGMA_C``, but a level is only usable if EVERY
+    ladder time can reach it: the reachable ceiling falls with dwell (421.6 C at 10.1 ms against
+    563.3 C at 2.6 ms), so the long-pulse arm sets the upper limit. Clamping here rather than
+    hardcoding keeps the design valid when the onset prior moves.
+    """
+    lo_env = max(FLASH.tmax_range(t)[0] for t in LADDER_TIMES) + LADDER_MARGIN_C
+    hi_env = min(FLASH.tmax_range(t)[1] for t in LADDER_TIMES) - LADDER_MARGIN_C
+    lo = float(np.clip(T_ONSET_C - T_ONSET_SIGMA_C, lo_env, hi_env))
+    hi = float(np.clip(T_ONSET_C + T_ONSET_SIGMA_C, lo_env, hi_env))
+    return lo, hi
+
+
+LADDER_TMAX_LEVELS = ladder_levels()
 FLOOR_CONDITION = (V_LO, 5.1)  # coldest reachable column at a supported time
 N_REPLICATES = 2
 

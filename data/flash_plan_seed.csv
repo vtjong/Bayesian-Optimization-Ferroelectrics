@@ -1,14 +1,14 @@
 index,block,voltage_V,time_ms,pred_Tmax_C,pred_X_isoT,pred_X_ramp,pred_X_lamp,pred_X_diffusion,pred_X_rect,model_disagreement,tmax_node_supported,readout,note
-1,A,559,2.6,349.7,0.054,0.055,0.012,0.015,0.015,0.043,True,eps_r,ladder 350 C @ t=2.6 ms
-2,A,607,2.6,410.1,0.944,0.97,0.53,0.601,0.596,0.44,True,eps_r,ladder 410 C @ t=2.6 ms
-3,A,581,5.1,350.1,0.057,0.079,0.079,0.079,0.079,0.023,True,eps_r,ladder 350 C @ t=5.1 ms
-4,A,631,5.1,410.1,0.945,0.993,0.993,0.993,0.993,0.048,True,eps_r,ladder 410 C @ t=5.1 ms
-5,A,642,10.1,350.3,0.057,0.137,0.143,0.369,0.37,0.312,True,eps_r,ladder 350 C @ t=10.1 ms
-6,A,704,10.1,409.9,0.944,1.0,1.0,1.0,1.0,0.056,True,eps_r,ladder 410 C @ t=10.1 ms
-7,B,579,2.6,373.8,0.357,0.274,0.067,0.08,0.08,0.29,True,eps_r,stratified core
-8,B,599,4.4,388.3,0.686,0.669,0.61,0.567,0.566,0.119,True,eps_r,stratified core
-9,B,615,4.8,398.3,0.848,0.894,0.879,0.865,0.864,0.046,True,eps_r,stratified core
-10,B,623,7.5,362.3,0.158,0.234,0.262,0.408,0.409,0.251,True,eps_r,stratified core
-11,B,608,9.0,333.2,0.012,0.035,0.038,0.089,0.089,0.077,True,eps_r,stratified core
-12,D,607,2.6,410.1,0.944,0.97,0.53,0.601,0.596,0.44,True,eps_r,replicate of A4 (separate specimen)
+1,A,525,2.6,309.6,0.001,0.002,0.0,0.001,0.001,0.002,True,eps_r,ladder 310 C @ t=2.6 ms
+2,A,610,2.6,414.1,0.962,0.989,0.622,0.694,0.689,0.367,True,eps_r,ladder 414 C @ t=2.6 ms
+3,A,544,5.1,310.3,0.001,0.003,0.003,0.003,0.003,0.002,True,eps_r,ladder 310 C @ t=5.1 ms
+4,A,634,5.1,413.7,0.96,0.998,0.998,0.998,0.998,0.038,True,eps_r,ladder 414 C @ t=5.1 ms
+5,A,599,10.1,310.2,0.001,0.006,0.006,0.019,0.019,0.017,True,eps_r,ladder 310 C @ t=10.1 ms
+6,A,708,10.1,413.8,0.96,1.0,1.0,1.0,1.0,0.04,True,eps_r,ladder 414 C @ t=10.1 ms
+7,B,574,2.6,367.6,0.238,0.188,0.044,0.053,0.053,0.193,True,eps_r,stratified core
+8,B,593,3.5,397.0,0.832,0.823,0.618,0.567,0.565,0.267,True,eps_r,stratified core
+9,B,568,4.7,344.4,0.034,0.049,0.046,0.043,0.043,0.016,True,eps_r,stratified core
+10,B,652,7.5,393.7,0.784,0.901,0.928,0.989,0.989,0.205,True,eps_r,stratified core
+11,B,625,7.9,360.5,0.137,0.218,0.243,0.409,0.409,0.272,True,eps_r,stratified core
+12,D,610,2.6,414.1,0.962,0.989,0.622,0.694,0.689,0.367,True,eps_r,replicate of A4 (separate specimen)
 13,E,506,5.1,270.4,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,amorphous floor anchor
