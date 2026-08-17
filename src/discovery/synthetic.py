@@ -109,12 +109,18 @@ class PulseShape(Protocol):
 
 @dataclass(frozen=True)
 class FrozenPulse:
-    """LEGACY shape: sin rise then exp decay to a warm plateau, INDEPENDENT of the pulse width.
+    """THE NULL HYPOTHESIS: sin rise then exp decay to a warm plateau, INDEPENDENT of pulse width.
+
+    DO NOT DELETE THIS AS DEAD CODE. It is not merely the historical model; it is the zero-tilt
+    hypothesis that the campaign's seed design exists to test. The iso-Tmax ladder (block A of the
+    seed plan) is built specifically to distinguish this shape's prediction -- a flat response
+    across pulse width at fixed peak temperature -- from every other member of the ensemble. Remove
+    it and the experiment has nothing to falsify.
 
     The commanded pulse width is ignored, so every shot has the same effective dwell and the
     Arrhenius budget collapses to a function of Tmax alone -- i.e. the crystallization boundary is
-    forced to be exactly the Tmax level set, with zero kinetic tilt. Retained so the historical
-    iso-Tmax results stay reproducible; NOT the physics default (see ``DiffusionPulse``).
+    forced to be exactly the Tmax level set, with zero kinetic tilt. It is also what reproduces the
+    earlier campaign's numbers. It is NOT the physics default (see ``DiffusionPulse``).
 
     :param plateau: level the trace settles to, as a fraction of Tmax (a wrong boundary condition:
         the substrate is a heat sink, so the film must return to room temperature).

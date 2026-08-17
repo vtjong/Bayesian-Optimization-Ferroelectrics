@@ -1,43 +1,17 @@
 #!/bin/bash
-# Setup script for virtual environment
+# Create the virtual environment for the crystallization-boundary campaign.
+set -euo pipefail
+cd "$(dirname "$0")"
 
-echo "========================================="
-echo "Setting up Virtual Environment"
-echo "========================================="
-
-# Create venv
-echo "Creating virtual environment..."
 python3 -m venv venv
-
-# Activate venv
-echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Install GPyTorch dependencies first (they're needed by botorch)
-echo "Installing core dependencies..."
-pip install --no-cache-dir torch scipy numpy
+pip install --upgrade pip
+pip install --no-cache-dir -r requirements.txt
+pip install --no-cache-dir -r requirements-dev.txt
 
-# Install gpytorch
-echo "Installing GPyTorch..."
-pip install --no-cache-dir gpytorch
-
-# Install botorch
-echo "Installing BoTorch..."
-pip install --no-cache-dir botorch
-
-# Install remaining packages
-echo "Installing other dependencies..."
-pip install --no-cache-dir matplotlib pandas scikit-learn plotly adjustText wandb pyyaml
-
-echo ""
-echo "========================================="
-echo "Installation Complete!"
-echo "========================================="
-echo ""
-echo "To activate the environment, run:"
+echo
+echo "Done. Activate with:"
 echo "  source venv/bin/activate"
-echo ""
-echo "To test the training script, run:"
-echo "  cd src && python train_clean.py"
-echo ""
-
+echo "Then check the models:"
+echo "  ./scripts/run_tests.sh"

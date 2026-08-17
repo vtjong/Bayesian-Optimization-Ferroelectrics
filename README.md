@@ -1,245 +1,122 @@
-# Bayesian Optimization of Pulse Annealing Parameters in Hafnium Zirconium Oxide Ferroelectric Thin Films
+# Mapping the flash-anneal crystallization boundary in HZO
 
-**Supporting Code Repository for IEEE Publication**
+Active-learning campaign to locate the amorphous → crystalline boundary of flash-lamp-annealed
+Hf₀.₅Zr₀.₅O₂ thin films in the two-knob process space (flash voltage `V`, pulse time `t`), using a
+Gaussian process with a level-set acquisition to spend as few fabricated samples as possible.
 
-TODO: We should determine a publication name...
+The target is **total crystalline fraction**, not phase. The map is therefore monotone in thermal
+severity and there is a single boundary to find.
 
----
+## The question the design is built around
 
-## Abstract
-
-We present a Bayesian optimization framework employing Gaussian process regression for the autonomous optimization of laser pulse annealing parameters in Hf₀.₅Zr₀.₅O₂ (HZO) ferroelectric thin films. The optimization objective maximizes the ferroelectric figure of merit $2Q_{sw}/(U+|D|)$ at $10^6$ switching cycles, balancing switching charge ($Q_{sw}$), remanent polarization ($U$), and coercive field asymmetry ($D$). Using Matérn kernel Gaussian processes with automatic relevance determination (ARD), we achieve sample-efficient exploration of the two-dimensional processing space spanning pulse duration (0.5–5.0 ms) and energy density (2.7–15.4 J/cm²). The implementation utilizes Monte Carlo acquisition functions (qUCB with $\beta=5.0$) to suggest batch experiments, enabling parallel experimental validation. This methodology demonstrates the viability of machine learning-guided processing optimization for complex ferroelectric systems with expensive characterization costs.
-
----
-
-## I. Introduction
-
-Ferroelectric HZO thin films exhibit promise for neuromorphic computing and non-volatile memory applications, but their functional properties critically depend on thermal processing conditions during crystallization. Traditional parameter space exploration via design-of-experiments or grid search scales poorly with dimensionality and requires extensive experimental resources. We address this challenge through Bayesian optimization (BO), a sequential decision-making framework that constructs probabilistic surrogate models to guide experimental exploration.
-
-### A. Problem Formulation
-
-**Objective Function:**
-
-```math
-\text{FOM}(\mathbf{x}) = \frac{2Q_{sw}(\mathbf{x})}{U(\mathbf{x}) + |D(\mathbf{x})|} \quad \text{at } N = 10^6 \text{ cycles}
-```
-
-where $\mathbf{x} = [t_{\text{pulse}}, E_{\text{density}}]^\top$ represents the processing parameters.
-
-**Search Space:**
-- Pulse duration: $t_{\text{pulse}} \in [0.5, 5.0]$ ms (thermal diffusion timescale)
-- Energy density: $E_{\text{density}} \in [2.7, 15.4]$ J/cm² (peak temperature control)
-- **Note:** Search bounds are data-driven, defined by the range of initial exploratory experiments. The acquisition candidate grid extends ~4% beyond observed bounds (one grid spacing $\Delta x = (\text{max} - \text{min})/(n_{\text{grid}} - 2)$ on each side) to allow conservative extrapolation where the GP posterior remains reliable, as the optimum may lie just outside the sampled region (see `src/optimization/grid.py`).
-
-**Constraints:**
-- Sample throughput: ~2–4 experiments per batch
-- Experimental uncertainty: $\sigma_n = 0.1$ (accounts for measurement noise $\approx$ 0.045, process variation, and model inadequacy; see `docs/kernel_design.md` Section V.C for detailed noise estimation)
-- Total budget: $N_{\text{total}} \approx n$ experiments (TODO: FILL THIS IN LATER)
-
----
-
-## II. Methodology
-
-### A. Gaussian Process Surrogate Model
-
-We model the unknown objective function as a Gaussian process:
-
-```math
-f(\mathbf{x}) \sim \mathcal{GP}(m(\mathbf{x}), k(\mathbf{x}, \mathbf{x}'))
-```
-
-with constant mean prior $m(\mathbf{x}) = \mu_0$ and Matérn-$\frac{1}{2}$ covariance kernel:
-
-```math
-k_{\text{Matérn}}(\mathbf{x}, \mathbf{x}') = \sigma_f^2 \exp\!\left(-\sqrt{\sum_{d=1}^{2} \frac{(x_d - x_d')^2}{\ell_d^2}}\right)
-```
-
-The ARD lengthscales $\{\ell_d\}_{d=1}^2$ enable automatic feature relevance learning, with lengthscale constraints $\ell_d \geq 0.03$ preventing overfitting. Hyperparameters $\boldsymbol{\theta} = \{\sigma_f^2, \ell_1, \ell_2, \sigma_n^2\}$ are optimized via Type-II maximum likelihood estimation (MLE).
-
-**Posterior Predictive Distribution:**
-
-Given observations $\mathcal{D} = \{(\mathbf{x}_i, y_i)\}_{i=1}^n$, the posterior is:
-
-```math
-f(\mathbf{x}_*) \mid \mathcal{D} \sim \mathcal{N}(\mu_*, \sigma_*^2)
-```
-
-```math
-\mu_* = \mathbf{k}_*^\top (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y}
-```
-
-```math
-\sigma_*^2 = k_{**} - \mathbf{k}_*^\top (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}_*
-```
-
-### B. Acquisition Function Strategy
-
-We employ the upper confidence bound (UCB) acquisition function for batch sequential optimization:
-
-```math
-\alpha_{\text{qUCB}}(\mathbf{X}) = \mathbb{E}\left[\max_{\mathbf{x} \in \mathbf{X}} \mu(\mathbf{x}) + \beta \sigma(\mathbf{x})\right]
-```
-
-where $\mathbf{X} = \{\mathbf{x}_1, \ldots, \mathbf{x}_q\}$ represents a batch of $q=4$ candidate points, and $\beta=5.0$ controls exploration-exploitation tradeoff. The batch acquisition is evaluated via Monte Carlo sampling with 1024 quasi-random Sobol sequences.
-
-**Optimization Strategy:**
-
-[TODO: We need to determine how many samples we are making, so we can revisit when to tune the beta value. ]
-- **Phase I** ($n < 60$): $\beta = 5.0$ (exploration-dominated)
-- **Phase II** ($60 \leq n < 80$): $\beta = 3.0$ (balanced)
-- **Phase III** ($n \geq 80$): $\beta = 2.0$ (exploitation-focused)
-
-### C. Implementation Details
-
-**Software Stack:**
-- GP inference: GPyTorch v1.11 (GPU-accelerated exact inference)
-- Acquisition optimization: BoTorch v0.9 (MC sampling, L-BFGS-B)
-- Numerical computing: PyTorch v2.0 (automatic differentiation)
-
-**Training Configuration:**
-- Optimizer: Adam with learning rate $\eta = 0.003$
-- Iterations: 3000 epochs (convergence criterion: $\Delta \mathcal{L} < 10^{-4}$)
-- Input normalization: MinMax scaling to $[0, 1]^2$
-- Output scaling: None (preserve physical units for interpretability)
-
----
-
-## III. Repository Structure
+Peak temperature `Tmax(V, t)` is measured (`data/flash_temp_table.csv`). The temperature **trace**
+`T(τ)` is not — it is asserted by a pulse shape. Activated kinetics integrate the trace, so that
+assertion decides the boundary's geometry:
 
 ```
-├── config/
-│   └── training_config.yaml
-├── src/
-│   ├── train_clean.py
-│   ├── models/
-│   │   ├── factory.py
-│   │   └── gp.py
-│   ├── preprocessing/
-│   │   ├── loaders.py
-│   │   └── transforms.py
-│   ├── optimization/
-│   │   ├── acquisition.py
-│   │   └── thompson_sampler.py
-│   ├── trainer.py
-│   ├── evaluator.py
-│   └── training.ipynb
-├── data/
-├── docs/
-│   ├── kernel_design.md
-│   ├── acquisition_functions.md
-│   └── data_preprocessing.md
-└── predictions/
+Phi(V, t) = INT exp(-Ea / kB T(tau)) dtau  =  t_eff * exp(-Ea / kB Tmax)
+Tb(t2) - Tb(t1) = -theta * ln( t_eff(t2)/t_eff(t1) ),      theta = kB Tmax^2 / Ea ~ 37 K
 ```
 
----
+If the effective dwell ignores the commanded pulse width, the tilt is exactly zero and the boundary
+is a plain `Tmax` level set. If it tracks the pulse width, it is not. Four candidate cooling laws
+span the range, over `t` in `[2.6, 10.1] ms`:
 
-## IV. Reproducibility
+| shape | tail | `t_eff` | tilt |
+|---|---|---|---|
+| `isoT` | fitted exponential + permanent plateau | independent of `t` | **0.0 °C** |
+| `ramp` | empirical two-exponential + plateau | `∝ t + 12.4` | **13.3 °C** |
+| `diffusion` | **derived**, `τ^(-1/2)`, no plateau | `∝ 2t` | **49.8 °C** |
+| `rect` | bounding case | `= t` | **50.0 °C** |
 
-### Installation
+`diffusion` is the default: a 30 nm stack has negligible heat capacity, so its temperature is
+slaved to conduction into the fused-silica substrate, and the Carslaw & Jaeger surface solution has
+zero fitted parameters. It depends on `τ` only through `τ/t`, so conduction — having no intrinsic
+timescale — makes the effective dwell exactly proportional to the pulse width.
 
-**System Requirements:**
-- Python 3.8+ (tested on 3.11)
-- CUDA 11.8+ (optional, for GPU acceleration)
-- 8 GB RAM minimum (16 GB recommended)
+**Nothing measured yet distinguishes these.** One digitized `T(τ)` at two pulse widths would, and
+costs no film. The seed design is built to be informative regardless of which is true.
 
-**Environment Setup:**
+## Repository layout
+
+```
+src/discovery/
+  constants.py    every number, grouped by the kind of claim it makes
+                  (physical / prior / shape / readout / numerical)
+  synthetic.py    measured Tmax table + the four pulse shapes + the thermal model
+  kinetics.py     the four boundary models, pinned to one onset anchor
+  picker.py       the active learner: GP, LSE/BALD/entropy acquisitions, batching
+src/
+  run_flash_plan.py     the seed design  -> data/flash_plan_seed.csv
+  run_seed_power.py     can the seed identify the tilt?
+  run_thermal_check.py  what the thermal model can and cannot be checked against
+  run_calibration.py    onset and readout calibration against archival data
+  run_picker_demo.py    acquisition comparison
+  run_batch_demo.py     batch-size study
+  run_seed_budget.py    seed/active split study
+tests/            pytest suite over the models and the seed design
+scripts/          shell wrappers; each emits PNGs under predictions/
+```
+
+## Quick start
 
 ```bash
-git clone https://github.com/your-org/Bayesian-Optimization-Ferroelectrics
-cd Bayesian-Optimization-Ferroelectrics
-./setup_venv.sh
-source venv/bin/activate
+./setup_venv.sh && source venv/bin/activate
+./scripts/run_tests.sh          # 51 checks over the models and the design
+./scripts/run_flash_plan.sh     # regenerate the seed plan
+./scripts/run_seed_power.sh     # its acceptance test
 ```
 
-### Running the Optimization Pipeline
+## The seed design
 
-**Configuration:** Edit `config/training_config.yaml` to specify hyperparameters.
+14 shots of an 80-shot budget. Rather than a uniform Latin hypercube over `(V, t)` — which is not
+uniform in the quantity that matters, since `Tmax` spans 82–563 °C while the transition is tens of
+degrees wide — the generator stratifies the **measured** quantity: LHS over `(Tmax, log t)`,
+inverted through the table to `(V, t)`.
 
-**Execution:**
+| block | n | purpose |
+|---|---|---|
+| A | 4 | iso-`Tmax` ladder: one peak temperature, four pulse widths. The tilt test. |
+| B | 7 | stratified core over `Tmax` ∈ [310, 490] °C, maximin against A. The GP's seed. |
+| E | 1 | amorphous floor anchor. |
+| D | +2 | replicates on separate specimens — the go/no-go on variables outside `(V, t)`. |
 
-```bash
-cd src
-python train_clean.py
+Boundary-search conditions are restricted to `t ≥ 2.6 ms`: the table has no node below that, across
+which `Tmax` rises 374 °C *and* the surface maximum lies, so any `Tmax` quoted there is a spline
+artifact. Every condition is scored against all four hypotheses and the CSV records the spread
+rather than a single predicted label.
+
+Acceptance test (`run_seed_power.py`, calibrated heteroscedastic readout noise):
+
+```
+power to DETECT a tilt when one exists      : 98.7 %
+power to CONFIRM no tilt when there is none : 95.8 %
 ```
 
-**Outputs:**
-- Model checkpoint: `models/model_state.pth`
-- Acquisition suggestions: `predictions/next_experiments.csv`
-- Training logs: Console output with loss curves, lengthscales, noise estimates
+`diffusion` and `rect` separate only 50/50 — expected, they are ~1 °C apart and imply the same
+experimental conclusion.
 
-**Expected Runtime:** ~30 seconds per iteration on CPU (Intel i7), ~5 seconds with GPU (NVIDIA RTX 3080)
+## Method
 
-### Interactive Exploration
+- **Surrogate** — GP on normalized `(V, t)` with Matérn 5/2 ARD and **heteroscedastic** per-point
+  noise `σ_n(f) = 0.02 + 0.30 f(1−f)`, peaking at ≈0.095 mid-transition where the film is a phase
+  mixture. Squared-exponential paths are analytic and ring across a steep ramp; Matérn 5/2 does not.
+- **Acquisition** — level-set entropy on the latent (reducible) variance,
+  `a(x) = H(Φ((μ − θ)/s))`, so it targets where new data reduces boundary uncertainty rather than
+  where noise is irreducibly high. Predictive-entropy and BALD variants are retained as baselines;
+  on current evidence the three are statistically comparable.
+- **Batching** — Kriging-believer fantasizing spreads a batch along the contour.
+- **Readout** — continuous crystalline fraction; in-loop proxy is permittivity `ε_r`.
 
-```bash
-jupyter notebook src/training.ipynb
-```
+## Standing caveats
 
-Key visualizations:
-1. 3D response surface with confidence intervals
-2. Acquisition function landscape
-3. Lengthscale evolution during training
-4. Cross-validation performance (RMSE, R², Spearman $\rho$)
-
----
-
-## V. Performance Metrics
-
-**Typical Performance** (41 training observations):
-- RMSE: 0.13–0.15
-- R²: 0.98–0.99
-- Spearman $\rho$: >0.97
-
----
-
-## VI. Data Format
-
-**Input File:** Excel spreadsheet with columns:
-1. `Time (ms)`
-2. `Energy density new cone (J/cm^2)`
-3. `2 Qsw/(U+|D|) 1e6cycles`
-
-**Preprocessing:**
-- Remove NaN values
-- Filter zero FOM entries
-- MinMax normalization of inputs to $[0, 1]^2$
-
-**Output Format:** CSV with suggested experiments.
-
----
-
-## VII. Advanced Usage
-
-### Hyperparameter Sweeps
-
-```bash
-wandb sweep config/sweep.yaml
-wandb agent <sweep-id>
-```
-
-### Custom Acquisition Functions
-
-```python
-from optimization.acquisition import optimize_acquisition_function
-
-def custom_acquisition(model, likelihood, train_y):
-    pass
-
-candidates = optimize_acquisition_function(
-    acq_function=custom_acquisition,
-    bounds=torch.tensor([[0.0, 0.0], [1.0, 1.0]]),
-    q=4
-)
-```
-
----
-
-## VIII. References
-
-1. Gardner, J. R., Pleiss, G., Bindel, D., Weinberger, K. Q., & Wilson, A. G. (2018). *Advances in Neural Information Processing Systems*, 31.
-2. Balandat, M., Karrer, B., Jiang, D. R., Daulton, S., Letham, B., Wilson, A. G., & Bakshy, E. (2020). *Advances in Neural Information Processing Systems*, 33.
-
----
-**Last Updated:** October 2025  
-**Code Version:** 1.0.0  
-**Compatible with:** GPyTorch 1.11+, BoTorch 0.9+, PyTorch 2.0+
+- **The onset is a prior, not a measurement.** `T_ONSET_C = 380 °C ± 30` comes from logistic fits of
+  `2P_r` vs temperature on two datasets that disagree (flash 388 °C, RTA 357 °C), fitted in a
+  different voltage box and in different units, using a ferroelectric switch-on indicator rather
+  than crystallinity. Reconciling them is open work; until then no result may be stated as "the
+  measured onset".
+- **`ε_r` is calibrated against `2P_r`,** which is o-phase specific, while the target counts any
+  crystalline phase. These agree only if essentially all crystallized material in the box is
+  o-phase. One structural check on the highest-`Tmax` sample audits it.
+- **The cooling law is unvalidated** (above). The ensemble exists precisely so no result silently
+  depends on picking one.
