@@ -1,16 +1,19 @@
 """Power analysis for the seed design: can block A actually identify the boundary tilt?
 
-The seed plan spends four shots on an iso-Tmax ladder -- one peak temperature, four pulse widths --
-because that contrast is the only thing in the design that separates "the boundary is a pure
-temperature threshold" from "the boundary carries a kinetic tilt". This script asks whether those
-four shots (plus the two replicates that land on ladder rungs) survive the readout noise.
+The seed plan spends six shots on an iso-Tmax ladder -- two peak-temperature levels crossed with
+three pulse widths -- because that contrast is the only thing in the design that separates "the
+boundary is a pure temperature threshold" from "the boundary carries a kinetic tilt". This script
+asks whether those shots, plus any replicate landing on a rung, survive the readout noise.
 
 Method: simulate the ladder readings under each hypothesis in turn with the calibrated
 heteroscedastic noise, then select a hypothesis by maximum likelihood under that same noise model,
-and tabulate how often the selection is right. Because the diffusion and rectangular shapes differ
-by ~1 C of tilt they are NOT separable from each other -- that is expected, not a failure, and both
-lead to the same experimental conclusion, so the headline number is the coarse verdict:
-zero tilt vs any tilt.
+and tabulate how often the selection is right.
+
+SCOPE. This is closed-set model selection, not a power calculation: it assumes the truth is one of
+the enumerated members, and it holds the onset fixed at its prior centre. The reported rates are
+therefore conditional on both. The diffusion and rectangular members differ by ~0.2 C of tilt and
+are degenerate by construction, so they are not separable from each other; the meaningful output is
+the coarse verdict, zero tilt vs any tilt.
 
 Usage:  python src/run_seed_power.py [--trials 4000] [--seed 0]
 """

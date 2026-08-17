@@ -7,26 +7,25 @@ of its points land where every hypothesis predicts the same thing. This generato
 measured peak temperature instead -- LHS over (Tmax, log t), inverted through the measured table to
 (V, t) -- and spends part of the seed on a designed contrast rather than on coverage.
 
-Four blocks (12 primary + 2 replicates of 80 total shots):
+Four blocks, 13 conditions of an 80-shot budget:
 
-  A  iso-Tmax dwell ladder   4  same peak temperature, four pulse widths. Under a boundary that is
-                                a pure Tmax level set all four read the same fraction; under
-                                activated kinetics with a width-tracking cooling law they sweep
-                                nearly 0 to 1. This is the one contrast that measures the boundary
-                                tilt, and it costs nothing because the rung also brackets the
-                                prior onset.
-  B  stratified core        7  (Tmax, log t) Latin hypercube over the informative band, maximin
-                                against block A. This is the GP's actual space-filling seed.
+  A  iso-Tmax dwell ladder   6  TWO peak-temperature levels crossed with three pulse widths.
+                                Reading ALONG a level measures the boundary tilt; reading ACROSS
+                                the levels measures the transition sharpness. One level would
+                                confound the two, and would slide into the floor or the ceiling if
+                                the true onset differs from the prior.
+  B  stratified core        5  (Tmax, log t) Latin hypercube over the range where the ensemble
+                                actually transitions, maximin against block A.
+  D  replicate             +1  the ladder rung selected by both the mid-transition and the
+                                maximum-disagreement criteria, repeated on a separate specimen.
+                                Scatter beyond measurement noise means a variable outside (V, t)
+                                is in play. A single pair is a sentinel, not a variance estimate.
   E  amorphous floor        1  one cold condition to pin the readout's amorphous floor.
-  D  replicates            +2  the two most boundary-adjacent A conditions, repeated on separate
-                                specimens. If these scatter by more than measurement noise, a
-                                variable outside (V, t) is in play and the 2-D map is not valid --
-                                which we want to learn in the first batch, not the last.
 
 Every condition is scored against the whole boundary-model ensemble, and the CSV records the
 spread rather than a single predicted label: the disagreement IS what the seed buys.
 
-Usage:  python src/run_flash_plan.py [--n-core 7] [--seed 7]
+Usage:  python src/run_flash_plan.py [--n-core 5] [--seed 7]
 """
 
 import argparse
@@ -68,9 +67,9 @@ OUT = ROOT / "predictions" / "flash_plan"
 # the surface maximum sits inside it, so any Tmax quoted there is an artifact of the spline.
 T_SEARCH_LO, T_SEARCH_HI = float(FLASH_T[1]), float(FLASH_T[-1])  # 2.6 .. 10.1 ms
 
-# Informative band. Onset prior 380 +/- 30 C; tilt 0-51 C across the usable time range puts the
-# boundary anywhere in ~325-435 C; widening by the transition half-width gives roughly [292, 468].
-# Outside [310, 490] every hypothesis in the ensemble agrees, so a shot there settles nothing.
+# Outer bound on where a boundary-search condition may sit. Derived from the onset prior
+# (T_ONSET_C +/- T_ONSET_SIGMA_C) widened by the tilt range and the transition half-width. Block B
+# narrows further, to the range where the ensemble mean actually transitions (_transition_band).
 BAND_LO_C, BAND_HI_C = 310.0, 490.0
 
 # Block A uses TWO peak-temperature levels, not one. A single-level ladder is rank-deficient: it

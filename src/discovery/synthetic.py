@@ -59,6 +59,8 @@ __all__ = [
     "RampPulse",
     "RectangularPulse",
     "TableThermalModel",
+    "DEFAULT_SHAPE",
+    "default_shape",
     "ThermalModel",
     "T_HI",
     "T_LO",
@@ -161,7 +163,7 @@ class RampPulse:
     An empirical parameterization of the measured normalized transient. The decay constants below
     are eyeball fits to a normalized figure, NOT measurements, and they dominate the result:
     ``a_fast / tau_fast`` contributes ~12 ms of effective dwell, more than the commanded pulse
-    width over most of the design box, which holds the kinetic tilt down to ~15 C. Treat the tilt
+    width over most of the design box, which holds the kinetic tilt down to ~13 C. Treat the tilt
     it predicts as a consequence of those four numbers, not as a measured property of the tool.
 
     :param plateau: level the trace settles to, as a fraction of Tmax (see ``FrozenPulse``).
@@ -250,8 +252,10 @@ class LampDrivenPulse:
     not a top hat. Measured fluence rises only sublinearly with commanded width
     (d lnE/d lnt = 0.505 across the campaign box), i.e. the irradiance droops with a ~2 ms time
     constant that sits squarely inside the 2.6-10.1 ms design range. That intrinsic timescale
-    breaks the self-similarity and cuts the predicted tilt to ~12 C. The top-hat idealization, not
-    any of the conduction idealizations, was doing all the work.
+    breaks the self-similarity and reduces the predicted tilt: this implementation gives ~38 C
+    against ~50 C for a top-hat drive. The top-hat idealization, not any of the conduction
+    idealizations, is what makes the difference. Note an independent inversion of the same fluence
+    data gives ~12 C; the disagreement is unresolved.
 
     :param a_fast: weight of the fast decay component of the lamp envelope.
     :param tau_fast: fast decay constant of the lamp envelope (ms).
@@ -357,7 +361,8 @@ class TableThermalModel:
     :param voltages: measured flash voltages (grid columns).
     :param times: measured flash times (grid rows).
     :param tmax_table: peak temperatures (deg C), shape ``(len(times), len(voltages))``.
-    :param shape: normalized pulse shape (defaults to ``DiffusionPulse()``, the physics default).
+    :param shape: normalized pulse shape; defaults to ``default_shape()``, the same shape the
+        module-level ``FLASH`` uses, so there is exactly one default in the codebase.
     :param t_room: baseline (room) temperature (deg C).
     """
 
@@ -367,7 +372,7 @@ class TableThermalModel:
         self.voltages = np.asarray(voltages, float)
         self.times = np.asarray(times, float)
         self.tmax_table = np.asarray(tmax_table, float)
-        self.shape = shape if shape is not None else DiffusionPulse()
+        self.shape = shape if shape is not None else default_shape()
         self.t_room = t_room
         self._spline = RectBivariateSpline(self.times, self.voltages, self.tmax_table, kx=3, ky=3)
 
@@ -423,8 +428,19 @@ class TableThermalModel:
         return float(self.voltages_for_tmax(np.array([target_c]), np.array([t]))[0])
 
     def tmax_range(self, t: float) -> Tuple[float, float]:
-        """Reachable ``(min, max)`` peak temperature at flash time ``t`` across the voltage axis."""
-        return float(self.tmax(self.voltages[0], t)), float(self.tmax(self.voltages[-1], t))
+        """Reachable ``(min, max)`` peak temperature at flash time ``t`` across the voltage axis.
+
+        The ceiling comes from the same dense scan ``voltages_for_tmax`` uses, not from the
+        voltage-axis endpoint: the spline is not monotone in V for flash times around 8-9 ms, so
+        the endpoint understates what is reachable. Using the endpoint here while the inversion
+        used the scan would let a design ask for a temperature the inversion can reach but the
+        feasibility check has already rejected.
+
+        :param t: flash time (ms).
+        """
+        scan_v = np.linspace(self.voltages[0], self.voltages[-1], V_SCAN_POINTS)
+        scan = self.tmax(scan_v, np.full_like(scan_v, float(t)))
+        return float(self.tmax(self.voltages[0], t)), float(scan.max())
 
     def trace(self, v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
         """Temperature trace ``T(tau) = t_room + (Tmax - t_room) * shape(tau; t)``; tau in ms.
@@ -463,14 +479,22 @@ def thermal_model(shape: PulseShape) -> TableThermalModel:
 SHAPES: Dict[str, PulseShape] = {
     "isoT": FrozenPulse(),  # width-independent -> zero tilt (the null hypothesis)
     "ramp": RampPulse(),  # empirical two-exponential transient -> ~13 C tilt
-    "lamp": LampDrivenPulse(),  # MEASURED lamp + conduction -> ~12 C tilt (DEFAULT)
-    "diffusion": DiffusionPulse(),  # conduction under a TOP-HAT lamp -> ~50 C tilt
+    "lamp": LampDrivenPulse(),  # measured lamp + conduction -> ~38 C tilt (DEFAULT)
+    "diffusion": DiffusionPulse(),  # conduction under a TOP-HAT drive -> ~50 C tilt
     "rect": RectangularPulse(),  # bounding case; degenerate with diffusion by construction
 }
 
+DEFAULT_SHAPE = "lamp"  # the single default; used by TableThermalModel and by FLASH alike
+
+
+def default_shape() -> PulseShape:
+    """The campaign's default pulse shape. One definition, referenced everywhere."""
+    return SHAPES[DEFAULT_SHAPE]
+
+
 # Default forward model = the measured Tmax table driven by the MEASURED lamp envelope.
 # Module-level tmax/_trace wrap it so existing callers keep a stable import.
-FLASH = thermal_model(SHAPES["lamp"])
+FLASH = thermal_model(default_shape())
 
 # The historical model, kept so the earlier iso-Tmax campaign numbers stay reproducible.
 FLASH_ISOT = thermal_model(SHAPES["isoT"])

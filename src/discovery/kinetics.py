@@ -85,7 +85,7 @@ class BoundaryModel(Protocol):
     def fraction_grid(self, v_grid: np.ndarray, t_grid: np.ndarray) -> np.ndarray: ...
 
 
-def _trace_times(t_pulse: float, duration_ms: float) -> np.ndarray:
+def trace_times(t_pulse: float, duration_ms: float) -> np.ndarray:
     """Integration grid dense near the peak, sparse in the tail.
 
     The Arrhenius integrand is concentrated within ``theta`` of the peak -- for the diffusion shape
@@ -137,7 +137,7 @@ class KineticBoundary:
         :param t: flash time / pulse width (ms).
         """
         tmax_c = np.atleast_1d(np.asarray(tmax_c, float))
-        tau = _trace_times(float(t), self.thermal.shape.duration_ms)
+        tau = trace_times(float(t), self.thermal.shape.duration_ms)
         g = self.thermal.shape(tau, float(t))[:, None]
         t_kelvin = T_ROOM_C + (tmax_c[None, :] - T_ROOM_C) * g + CELSIUS_TO_KELVIN
         return np.trapezoid(np.exp(-self.ea_ev / (KB_EV * t_kelvin)), tau, axis=0)
@@ -287,13 +287,14 @@ class IsoTmaxBoundary:
 def build_ensemble(
     t_star: float = T_ONSET_C, ea_ev: float = EA_EV, n: float = AVRAMI_N
 ) -> Dict[str, BoundaryModel]:
-    """The four boundary hypotheses, sharing the measured Tmax table and one onset anchor.
+    """The five boundary hypotheses, sharing the measured Tmax table and one onset anchor.
 
-    Members, by the tilt they imply over t in [2.6, 10.1] ms:
-      ``isoT``      0 C   -- historical; the pulse width never reaches the trace
-      ``ramp``     ~14 C  -- empirical two-exponential decay with eyeball-fit constants
-      ``diffusion``~51 C  -- derived semi-infinite substrate conduction (PHYSICS DEFAULT)
-      ``rect``     ~51 C  -- bounding case, held at peak for the pulse width
+    Members, by the tilt they imply over t in [2.6, 10.1] ms (as this implementation computes them):
+      ``isoT``       0 C  -- the null hypothesis; the pulse width never reaches the trace
+      ``ramp``      13 C  -- empirical two-exponential decay with eyeball-fit constants
+      ``lamp``      38 C  -- measured lamp envelope driving conduction (DEFAULT)
+      ``diffusion`` 50 C  -- conduction under a top-hat drive
+      ``rect``      50 C  -- bounding case; degenerate with ``diffusion`` by construction
 
     :param t_star: onset peak temperature at the anchor (deg C).
     :param ea_ev: activation energy (eV).

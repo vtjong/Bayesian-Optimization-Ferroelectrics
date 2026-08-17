@@ -80,10 +80,12 @@ AVRAMI_N = 2.5  # Avrami exponent -- site saturation implies an integer, and 3D 
 # INT q(s)/sqrt(t-s) ds). Reproduce with: python src/run_lamp_check.py
 #
 # These numbers matter more than any other in the model. The lamp does NOT deliver fixed energy
-# per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width
-# (measured d lnE/d lnt = 0.505 over the campaign box), which is an intrinsic ~2 ms timescale
-# sitting inside the 2.6-10.1 ms design range. That timescale is what breaks the self-similarity
-# of pure conduction and cuts the predicted boundary tilt from ~50 C to ~12 C.
+# per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width, an
+# intrinsic ~2 ms timescale sitting inside the 2.6-10.1 ms design range. That timescale breaks the
+# self-similarity of pure conduction and reduces the predicted boundary tilt relative to a top-hat
+# drive: 49.8 C for the square-drive member against 37.6 C here, as this implementation computes
+# them. An independent inversion of the same fluence data gives ~12 C; that disagreement is
+# unresolved and is itself a reason not to treat any single tilt figure as settled.
 LAMP_A = 0.88
 LAMP_TAU_FAST_MS = 2.06
 LAMP_TAU_SLOW_MS = 54.6

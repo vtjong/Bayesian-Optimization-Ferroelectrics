@@ -35,7 +35,7 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.kinetics import EA_EV, build_ensemble, theta_kelvin
+from discovery.kinetics import EA_EV, build_ensemble, theta_kelvin, trace_times
 from discovery.synthetic import (
     FLASH,
     FLASH_T,
@@ -72,20 +72,13 @@ def effective_dwell(shape, tmax_c: float, t: float, ea_ev: float = EA_EV) -> flo
     :param t: flash time / pulse width (ms).
     :param ea_ev: activation energy (eV).
     """
-    tau = np.unique(
-        np.concatenate(
-            [
-                np.linspace(0.0, min(3.0 * t, shape.duration_ms), 6000),
-                np.geomspace(max(3.0 * t, 1e-3), shape.duration_ms, 1500),
-            ]
-        )
-    )
+    tau = trace_times(t, shape.duration_ms)
     t_kelvin = T_ROOM + (tmax_c - T_ROOM) * shape(tau, t) + _C2K
     integral = np.trapezoid(np.exp(-ea_ev / (KB_EV * t_kelvin)), tau)
     return float(integral / np.exp(-ea_ev / (KB_EV * (tmax_c + _C2K))))
 
 
-def _collapse_residual(shape, v: float = CUT_V) -> float:
+def _collapse_residual(shape) -> float:
     """Spread of normalized traces across flash times; 0 means the shape ignores pulse width."""
     shapes = []
     for t in FLASH_T:
