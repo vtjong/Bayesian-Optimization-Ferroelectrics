@@ -14,9 +14,9 @@ from discovery.constants import (
     CELSIUS_TO_KELVIN,
     EA_EV,
     KB_EV,
-    T_ONSET_C,
     T_REF_MS,
     T_ROOM_C,
+    T_TRANSITION_REF_C,
 )
 from discovery.kinetics import (
     KineticBoundary,
@@ -34,7 +34,7 @@ QUADRATURE_TOL_C = 0.5  # boundary shift permitted under a much finer integratio
 @pytest.fixture(scope="module")
 def anchor_voltage() -> float:
     """Voltage reaching the onset temperature at the reference flash time."""
-    return thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_ONSET_C, T_REF_MS)
+    return thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_TRANSITION_REF_C, T_REF_MS)
 
 
 class TestAnchoring:
@@ -93,7 +93,7 @@ class TestTilt:
 
     def test_diffusion_matches_the_closed_form(self, ensemble):
         """t_eff proportional to t implies tilt = theta * ln(t2 / t1) with no free parameters."""
-        predicted = theta_kelvin(T_ONSET_C) * np.log(LADDER_HI_MS / LADDER_LO_MS)
+        predicted = theta_kelvin(T_TRANSITION_REF_C) * np.log(LADDER_HI_MS / LADDER_LO_MS)
         measured = ensemble["diffusion"].tilt_c(LADDER_LO_MS, LADDER_HI_MS)
         assert abs(measured - predicted) < TILT_TOL_C
 
@@ -112,13 +112,13 @@ class TestTilt:
 class TestSharpness:
     def test_derived_from_activation_parameters(self):
         """The transition width is a consequence of (Ea, n), not an independent constant."""
-        sharp = logistic_sharpness(T_ONSET_C, EA_EV, AVRAMI_N)
-        assert sharp == pytest.approx(2 * np.log(2.0) * AVRAMI_N / theta_kelvin(T_ONSET_C))
+        sharp = logistic_sharpness(T_TRANSITION_REF_C, EA_EV, AVRAMI_N)
+        assert sharp == pytest.approx(2 * np.log(2.0) * AVRAMI_N / theta_kelvin(T_TRANSITION_REF_C))
         assert 0.05 < sharp < 0.30
 
     def test_higher_barrier_sharpens_the_transition(self):
-        assert logistic_sharpness(T_ONSET_C, 2.0, AVRAMI_N) > logistic_sharpness(
-            T_ONSET_C, 1.0, AVRAMI_N
+        assert logistic_sharpness(T_TRANSITION_REF_C, 2.0, AVRAMI_N) > logistic_sharpness(
+            T_TRANSITION_REF_C, 1.0, AVRAMI_N
         )
 
 
@@ -130,7 +130,7 @@ class TestDisagreement:
 
     def test_large_on_the_iso_tmax_ladder(self, ensemble):
         """The short-pulse rung is where the hypotheses separate most."""
-        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_ONSET_C, LADDER_LO_MS)
+        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_TRANSITION_REF_C, LADDER_LO_MS)
         spread = disagreement(ensemble, np.array([v]), np.array([LADDER_LO_MS]))
         assert spread[0] > 0.3
 

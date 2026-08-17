@@ -48,9 +48,9 @@ sys.path.append(str(Path(__file__).resolve().parent))
 from discovery.constants import (
     NOISE_BOUNDARY,
     NOISE_FLOOR,
-    T_ONSET_C,
-    T_ONSET_SIGMA_C,
     T_REF_MS,
+    T_TRANSITION_REF_C,
+    T_TRANSITION_SIGMA_C,
 )
 from discovery.kinetics import (
     DEFAULT_MODEL,
@@ -74,7 +74,8 @@ T_SEARCH_LO, T_SEARCH_HI = float(FLASH_T[1]), float(FLASH_T[-1])  # 2.6 .. 10.1 
 # identifies only the product of transition sharpness and tilt, and it slides bodily into the
 # saturated floor or ceiling if the true onset differs from the prior by ~1 sigma, at which point
 # it reports "no tilt" even when the tilt is large. Two levels straddling the onset prior keep the
-# estimate well-conditioned and roughly flat in precision across T_ONSET_C +/- T_ONSET_SIGMA_C.
+# estimate well-conditioned and roughly flat in precision across T_TRANSITION_REF_C +/-
+# T_TRANSITION_SIGMA_C.
 #
 # Two constraints leave exactly two usable flash times, and they are both MEASURED TABLE ROWS.
 #
@@ -101,6 +102,26 @@ LADDER_LEVEL_STEP_C = 2.0  # search resolution
 # tilt this script reports is quoted over the ladder's own range, which is what block A measures.
 LADDER_DWELL_RANGE = (min(LADDER_TIMES), max(LADDER_TIMES))
 
+# Block C: model-agnostic exploration. Block B is restricted to where the ENSEMBLE predicts a
+# transition, so the design chooses where to look using the very models it exists to test. If every
+# member is wrong the same way, the batch can systematically avoid the evidence that would show it.
+# Block C is exempt from that restriction: it covers a wide temperature window by maximin,
+# regardless of what any member predicts there.
+#
+# Three points, not two and not four, and not zero. Scored against ground truths NO member can
+# represent (run_seed_stress.py, 5 core realizations x 8 noise draws), worst-case misclassification
+# of the supported box runs 0.217 with no C block, 0.194 at two, 0.155 at three, 0.165 at four.
+# Without it the worst case is a transition COLDER than the bracket -- well inside the stated prior
+# -- because nothing then covers the shoulder between the floor anchor at 270 C and the core at
+# 420 C, and the surrogate cannot place a boundary it has bracketed nowhere.
+#
+# The window is the transition bracket widened well beyond its own sigma. It is NOT the whole box:
+# unconstrained maximin spends its picks on corners (230 C, 568 C) that duplicate the floor anchor
+# or sit in saturation.
+N_EXPLORE = 3
+EXPLORE_LO_C, EXPLORE_HI_C = 350.0, 520.0
+CORE_SIZE = 4  # block B, after block C took three of the seven coverage slots
+
 # Resolution of the scan that locates the transition band, over a band ~100 C wide. Near the
 # long-dwell end the reachable ceiling clips the band to a sliver; below about 0.3 C of width the
 # scan finds fewer than two nodes inside and reports it unreachable. That is the intended
@@ -114,10 +135,10 @@ BAND_SCAN_NODES = 600
 # stale literal behind. Block B narrows further, to the range where the ensemble mean actually
 # transitions (_transition_band).
 # Quoted over the range block B actually spans, not the ladder's -- this bound constrains block B.
-_BAND_TILT_C = theta_kelvin(T_ONSET_C) * np.log(T_SEARCH_HI / T_SEARCH_LO)
-_BAND_HALFWIDTH_C = np.log(9.0) / logistic_sharpness(T_ONSET_C)  # 10-90% half-width
-BAND_LO_C = T_ONSET_C - T_ONSET_SIGMA_C - _BAND_TILT_C - _BAND_HALFWIDTH_C
-BAND_HI_C = T_ONSET_C + T_ONSET_SIGMA_C + _BAND_TILT_C + _BAND_HALFWIDTH_C
+_BAND_TILT_C = theta_kelvin(T_TRANSITION_REF_C) * np.log(T_SEARCH_HI / T_SEARCH_LO)
+_BAND_HALFWIDTH_C = np.log(9.0) / logistic_sharpness(T_TRANSITION_REF_C)  # 10-90% half-width
+BAND_LO_C = T_TRANSITION_REF_C - T_TRANSITION_SIGMA_C - _BAND_TILT_C - _BAND_HALFWIDTH_C
+BAND_HI_C = T_TRANSITION_REF_C + T_TRANSITION_SIGMA_C + _BAND_TILT_C + _BAND_HALFWIDTH_C
 
 
 def _tilt_precision(levels, t0: float, sharp: float, tilt: float = 18.0) -> float:
@@ -157,8 +178,8 @@ def ladder_levels() -> tuple:
     """Two iso-Tmax levels chosen to measure the tilt as precisely as possible, MINIMAX over the
     onset prior.
 
-    Placing the levels at ``T_ONSET_C +/- T_ONSET_SIGMA_C`` is intuitive and wrong: with a wide
-    onset prior it puts one level in the amorphous floor and the other near saturation, where the
+    Placing the levels at ``T_TRANSITION_REF_C +/- T_TRANSITION_SIGMA_C`` is intuitive and wrong:
+    with a wide prior it puts one level in the amorphous floor and the other near saturation, where
     response is flat under every hypothesis. Instead the pair is chosen to minimise the WORST-CASE
     uncertainty on the tilt as the true onset ranges over its prior, which keeps the ladder useful
     whether the onset sits at the centre or the edge of what we believe.
@@ -166,11 +187,13 @@ def ladder_levels() -> tuple:
     Levels are additionally constrained to be reachable at EVERY ladder time -- the reachable
     ceiling falls with dwell, so the long-pulse arm sets the upper limit.
     """
-    sharp = logistic_sharpness(T_ONSET_C)
+    sharp = logistic_sharpness(T_TRANSITION_REF_C)
     lo = max(FLASH.tmax_range(t)[0] for t in LADDER_TIMES) + LADDER_MARGIN_C
     hi = min(FLASH.tmax_range(t)[1] for t in LADDER_TIMES) - LADDER_MARGIN_C
     grid = np.arange(np.ceil(lo), np.floor(hi) + 1, LADDER_LEVEL_STEP_C)
-    onsets = np.linspace(T_ONSET_C - T_ONSET_SIGMA_C, T_ONSET_C + T_ONSET_SIGMA_C, 9)
+    lo_t0 = T_TRANSITION_REF_C - T_TRANSITION_SIGMA_C
+    hi_t0 = T_TRANSITION_REF_C + T_TRANSITION_SIGMA_C
+    onsets = np.linspace(lo_t0, hi_t0, 9)
     best, best_score = None, np.inf
     for i, a in enumerate(grid):
         for b in grid[i + int(LADDER_MIN_GAP_C / LADDER_LEVEL_STEP_C) :]:
@@ -317,6 +340,48 @@ def core_block(
     return best
 
 
+def explore_block(n: int, avoid_v: np.ndarray, avoid_t: np.ndarray) -> tuple:
+    """Block C: maximin coverage of a wide temperature window, ignoring every model's prediction.
+
+    Coverage is judged in (Tmax, log t), the coordinates the rest of the design uses, so a point is
+    "far from" the others in the quantity the film responds to rather than in the knobs.
+
+    :param n: how many conditions to place.
+    :param avoid_v: voltages already spoken for.
+    :param avoid_t: flash times already spoken for.
+    """
+    vg = np.linspace(V_LO, V_HI, 120)
+    tg = np.geomspace(T_SEARCH_LO, T_SEARCH_HI, 90)
+    vv, tt = np.meshgrid(vg, tg)
+    v, t = vv.ravel(), tt.ravel()
+    tm = FLASH.tmax(v, t)
+    keep = np.isfinite(tm) & (tm >= EXPLORE_LO_C) & (tm <= EXPLORE_HI_C)
+    v, t, tm = v[keep], t[keep], tm[keep]
+    if v.size < n:
+        raise RuntimeError("the exploration window is unreachable inside the design box")
+
+    lo, hi = tm.min(), tm.max()
+    log_lo, log_hi = np.log10(T_SEARCH_LO), np.log10(T_SEARCH_HI)
+
+    def coords(vs, ts):
+        a = (FLASH.tmax(np.asarray(vs, float), np.asarray(ts, float)) - lo) / max(hi - lo, 1e-9)
+        b = (np.log10(np.asarray(ts, float)) - log_lo) / (log_hi - log_lo)
+        return np.column_stack([a, b])
+
+    cand = coords(v, t)
+    chosen_v, chosen_t = list(avoid_v), list(avoid_t)
+    out_v, out_t = [], []
+    for _ in range(n):
+        d = np.min(np.linalg.norm(cand[:, None, :] - coords(chosen_v, chosen_t)[None], axis=2), 1)
+        j = int(np.argmax(d))
+        vs, ts = _snap(float(v[j]), float(t[j]))
+        out_v.append(vs)
+        out_t.append(ts)
+        chosen_v.append(vs)
+        chosen_t.append(ts)
+    return np.array(out_v, int), np.array(out_t, float)
+
+
 def make_plan(n_core: int, seed: int) -> dict:
     """Assemble the full seed plan and score every condition against the model ensemble.
 
@@ -348,16 +413,29 @@ def make_plan(n_core: int, seed: int) -> dict:
     # scatter from a thermal-delivery error at that condition.
     rep_idx = list(range(len(v_a)))
 
-    v = np.concatenate([v_a, v_b, v_e, v_a[rep_idx]])
-    t = np.concatenate([t_a, t_b, t_e, t_a[rep_idx]])
-    block = ["A"] * len(v_a) + ["B"] * len(v_b) + ["E"] * len(v_e) + ["D"] * len(rep_idx)
+    v_c, t_c = explore_block(
+        N_EXPLORE,
+        np.concatenate([v_a, v_b, v_e]),
+        np.concatenate([t_a, t_b, t_e]),
+    )
+
+    v = np.concatenate([v_a, v_b, v_c, v_e, v_a[rep_idx]])
+    t = np.concatenate([t_a, t_b, t_c, t_e, t_a[rep_idx]])
+    block = (
+        ["A"] * len(v_a)
+        + ["B"] * len(v_b)
+        + ["C"] * len(v_c)
+        + ["E"] * len(v_e)
+        + ["D"] * len(rep_idx)
+    )
     note = (
-[f"ladder {lv:.0f} C @ t={x} ms" for lv, x in zip(lvl_a, t_a)]
+        [f"ladder {lv:.0f} C @ t={x} ms" for lv, x in zip(lvl_a, t_a)]
         + ["stratified core"] * len(v_b)
+        + ["model-agnostic probe"] * len(v_c)
         + ["amorphous floor anchor"]
         + [f"replicate of A{i + 1} (separate specimen)" for i in rep_idx]
     )
-    order = np.lexsort((v, t, np.array([("ABDE".index(b)) for b in block])))
+    order = np.lexsort((v, t, np.array([("ABCDE".index(b)) for b in block])))
     return {
         "V": v[order],
         "t": t[order],
@@ -386,10 +464,17 @@ def _check(plan: dict) -> None:
         on = lad_tm[owner == k]
         assert on.size >= len(LADDER_TIMES), f"ladder level {level:.0f} C under-populated"
         assert on.max() - on.min() < 2.0, f"ladder level {level:.0f} C not iso-Tmax"
-    core = np.array([tm[i] for i in range(len(tm)) if block[i] != "E"])
+    # Blocks C and E are deliberately outside the informative band -- that is what they are for --
+    # so the band assertion applies only to the hypothesis-directed blocks.
+    core = np.array([tm[i] for i in range(len(tm)) if block[i] in ("A", "B", "D")])
     assert core.min() >= BAND_LO_C - 1.0, f"a non-anchor point is too cold: {core.min():.0f} C"
     assert core.max() <= BAND_HI_C + 1.0, f"a non-anchor point is too hot: {core.max():.0f} C"
     assert sum(b == "E" for b in block) == 1, "expected exactly one floor anchor"
+    assert sum(b == "C" for b in block) == N_EXPLORE, "exploration block is the wrong size"
+    probe = np.array([tm[i] for i in range(len(tm)) if block[i] == "C"])
+    assert probe.min() >= EXPLORE_LO_C - 1.0 and probe.max() <= EXPLORE_HI_C + 1.0, (
+        "an exploration probe fell outside its window"
+    )
 
 
 def _write_csv(plan: dict, path: Path) -> None:
@@ -535,7 +620,9 @@ def _figure(plan: dict, path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--n-core", type=int, default=7, help="size of the stratified core block")
+    ap.add_argument(
+        "--n-core", type=int, default=CORE_SIZE, help="size of the stratified core block"
+    )
     ap.add_argument("--seed", type=int, default=7, help="base RNG seed for the core LHS")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)

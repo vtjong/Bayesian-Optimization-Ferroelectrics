@@ -11,8 +11,10 @@ from conftest import LADDER_HI_MS, LADDER_LO_MS
 from run_flash_plan import (
     BAND_HI_C,
     BAND_LO_C,
+    CORE_SIZE,
     LADDER_TIMES,
     LADDER_TMAX_LEVELS,
+    N_EXPLORE,
     T_SEARCH_HI,
     T_SEARCH_LO,
     make_plan,
@@ -30,10 +32,11 @@ class TestDesignInvariants:
     def test_expected_block_composition(self, seed_plan):
         blocks = seed_plan["block"]
         assert blocks.count("A") == len(LADDER_TIMES) * len(LADDER_TMAX_LEVELS)
-        assert blocks.count("B") == 5
+        assert blocks.count("B") == CORE_SIZE
+        assert blocks.count("C") == N_EXPLORE, "the model-agnostic block must not be dropped"
         assert blocks.count("E") == 1
         assert blocks.count("D") == blocks.count("A"), "every ladder rung needs a replicate"
-        assert len(blocks) == blocks.count("A") + 5 + 1 + blocks.count("D")
+        assert len(blocks) == sum(blocks.count(b) for b in "ABCDE"), "an unknown block appeared"
 
     def test_conditions_are_settable_on_the_tool(self, seed_plan):
         """Whole volts and 0.1 ms steps -- anything else cannot be dialled in."""
@@ -99,9 +102,19 @@ class TestLadderIsTheTiltTest:
 
 class TestBudgetIsNotWasted:
     def test_core_points_lie_in_the_informative_band(self, seed_plan):
-        tm = [t for t, b in zip(seed_plan["tmax"], seed_plan["block"]) if b != "E"]
+        """Blocks C and E are deliberately outside it; that exemption is the point of block C."""
+        tm = [t for t, b in zip(seed_plan["tmax"], seed_plan["block"]) if b in ("A", "B", "D")]
         assert min(tm) >= BAND_LO_C - 1.0
         assert max(tm) <= BAND_HI_C + 1.0
+
+    def test_exploration_block_is_outside_the_ensemble_band(self, seed_plan, ensemble):
+        """Block C earns its slots only by going where every member says nothing happens."""
+        sel = [i for i, b in enumerate(seed_plan["block"]) if b == "C"]
+        assert sel, "no exploration block"
+        spread = seed_plan["disagree"][sel]
+        assert (spread < 0.02).all(), (
+            "an exploration probe landed where the ensemble already disagrees; block B covers that"
+        )
 
     def test_most_shots_carry_boundary_information(self, seed_plan, ensemble):
         """A shot is informative if it is mid-transition under some hypothesis, or the hypotheses

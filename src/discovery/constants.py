@@ -43,27 +43,48 @@ CELSIUS_TO_KELVIN = 273.15
 T_ROOM_C = 25.0  # ambient the film returns to between shots
 
 # --- PRIOR ---------------------------------------------------------------------------------
-# [MEASURED, campaign tool] The onset is bracketed by six samples in
-# Bolometer_readings_PulseForge.xlsx, which carries a ferroelectric readout column alongside the
-# fluence. They are the ones that survive both support filters -- in-box voltage (506-716 V) and
-# table-supported flash time -- and they sit at t = 5.0 ms. The hottest un-crystallized sample is
-# at 434.7 C and the coldest crystallized one at 458.7 C, so the onset lies inside that 24 C
-# bracket; 447 is its midpoint. It is inverted through the campaign's own peak-temperature table,
-# so it is on the same temperature scale as the rest of the design and no cross-tool transfer is
-# involved.
+# [MEASURED, campaign tool] WHERE THE PROXY CHANGES REGIME -- not a crystallization onset.
 #
-# The spread is wider than the 12 C half-bracket because the bracket is not the only uncertainty:
-# n = 6, all at one flash time; a single voltage step (650 -> 670 V) brackets it; the readout is a
-# switching figure of merit rather than crystallinity; and KHM009/KHM010 may not be the stack about
-# to be run.
-T_ONSET_C = 447.0  # onset peak temperature (deg C), campaign tool, bracketed 434.7-458.7
-T_ONSET_SIGMA_C = 25.0  # covers the bracket plus proxy and sample-set transfer; see above
-T_REF_MS = 5.1  # flash time at which the onset is quoted (a measured table row)
+# What was actually observed, in Bolometer_readings_PulseForge.xlsx, is a pair of adjacent voltage
+# settings at t = 5.0 ms:
+#
+#     650 V  ->  low  ferroelectric-switching response
+#     670 V  ->  high ferroelectric-switching response
+#
+# Inverting the campaign's own peak-temperature table puts those two conditions at 434.7 C and
+# 458.7 C. So the defensible claim is a BRACKET on where the electrical response transitions, and
+# that bracket -- not its midpoint -- is what the design is entitled to rely on.
+#
+# THIS IS NOT A MEASURED CRYSTALLIZATION ONSET. The readout is 2*Qsw/(U+|D|), a ferroelectric
+# switching figure of merit. It is phase-sensitive, it is not calibrated against total crystalline
+# fraction, and the repo's own RTA series shows a comparable readout that is NON-MONOTONE in
+# thermal severity. Calling 447 C "the onset" would assert more than the data supports, in exactly
+# the way the earlier 380 C figure did.
+#
+# T_TRANSITION_REF_C is the bracket midpoint, used ONLY as a reference coordinate for placing seed
+# conditions and for anchoring the kinetic ensemble. The design is built to be robust to its being
+# wrong: the ladder levels are chosen by MINIMAX over the whole prior rather than optimised at the
+# midpoint, and because the bracket is read through the same table the design inverts, a rescaling
+# of the temperature axis leaves every commanded voltage unchanged.
+T_TRANSITION_LO_C = 434.7  # hottest specimen still in the low-response regime
+T_TRANSITION_HI_C = 458.7  # coldest specimen in the high-response regime
+# Rounded to a whole degree deliberately. This is a design COORDINATE, not a measurement, and the
+# bracket endpoints are themselves spline inversions of a 5x6 table -- carrying 446.7 would assert
+# a tenth of a degree of precision that nothing here supports.
+T_TRANSITION_REF_C = round(0.5 * (T_TRANSITION_LO_C + T_TRANSITION_HI_C))  # 447 C
+#
+# Wider than the 12 C half-bracket, because the bracket is not the only uncertainty: n = 6, all at
+# one flash time; a single voltage step brackets it, so 24 C is a SAMPLING RESOLUTION rather than a
+# measured width; the readout is a switching figure of merit rather than crystallinity; and
+# KHM009/KHM010 may not be the stack about to be run.
+T_TRANSITION_SIGMA_C = 25.0
+T_REF_MS = 5.1  # flash time at which the bracket was observed (a measured table row)
 
 # Activated-kinetics parameters. Together they SET the transition width, so they must be stated
 # rather than absorbed into a hardcoded sharpness.
 #
-# The same six campaign-tool samples that fix T_ONSET_C bound the product n*Ea from below, because
+# The same six campaign-tool samples that fix the transition bracket bound the product n*Ea from
+# below, because
 # they fix the onset and the width on one temperature scale at once. The readout climbs from 0.044
 # to 1.447 between 434.7 C and 458.7 C, so the 10-90% transition fits inside 24 C, giving
 # s > 0.183 /C and hence

@@ -24,8 +24,8 @@ model per shape so a design can be scored against the whole ensemble instead of 
 Every tilt this module reports scales as 1/Ea and depends on the dwell range it is quoted over, so
 tilts are not stated as constants anywhere -- call ``tilt_c(t1, t2)`` for the range you mean.
 
-All members are anchored to the same (T_ONSET_C, T_REF_MS) so they differ ONLY in tilt; otherwise a
-comparison confounds the cooling law with the onset temperature.
+All members are anchored to the same (T_TRANSITION_REF_C, T_REF_MS) so they differ ONLY in tilt;
+otherwise a comparison confounds the cooling law with where the transition sits.
 """
 
 from dataclasses import dataclass
@@ -45,9 +45,9 @@ from .constants import (
     QUAD_NEAR_POINTS,
     QUAD_NEAR_WINDOW_PULSES,
     QUAD_TAU_MIN_MS,
-    T_ONSET_C,
     T_REF_MS,
     T_ROOM_C,
+    T_TRANSITION_REF_C,
 )
 from .synthetic import FLASH_T, SHAPES, TableThermalModel, thermal_model
 
@@ -125,7 +125,7 @@ class KineticBoundary:
     name: str = "kinetic"
     ea_ev: float = EA_EV
     n: float = AVRAMI_N
-    t_star: float = T_ONSET_C
+    t_star: float = T_TRANSITION_REF_C
     t_ref: float = T_REF_MS
 
     def __post_init__(self) -> None:
@@ -223,7 +223,7 @@ class IsoTmaxBoundary:
 
     thermal: TableThermalModel
     name: str = "isoT"
-    t_star: float = T_ONSET_C
+    t_star: float = T_TRANSITION_REF_C
     sharp: float = None
     ea_ev: float = EA_EV
     n: float = AVRAMI_N
@@ -287,7 +287,7 @@ class IsoTmaxBoundary:
 
 
 def build_ensemble(
-    t_star: float = T_ONSET_C, ea_ev: float = EA_EV, n: float = AVRAMI_N
+    t_star: float = T_TRANSITION_REF_C, ea_ev: float = EA_EV, n: float = AVRAMI_N
 ) -> Dict[str, BoundaryModel]:
     """The five boundary hypotheses, sharing the measured Tmax table and one onset anchor.
 

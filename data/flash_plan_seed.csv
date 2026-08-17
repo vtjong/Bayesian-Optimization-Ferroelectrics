@@ -3,13 +3,13 @@ index,block,voltage_V,time_ms,pred_Tmax_C,pred_X_isoT,pred_X_ramp,pred_X_lamp,pr
 2,A,643,2.6,460.4,0.931,0.954,0.571,0.561,0.556,0.397,True,eps_r,ladder 461 C @ t=2.6 ms
 3,A,660,5.1,444.6,0.384,0.388,0.389,0.388,0.389,0.005,True,eps_r,ladder 445 C @ t=5.1 ms
 4,A,674,5.1,461.3,0.941,0.993,0.993,0.993,0.993,0.052,True,eps_r,ladder 461 C @ t=5.1 ms
-5,B,617,3.1,430.9,0.042,0.05,0.029,0.019,0.02,0.03,True,eps_r,stratified core
-6,B,644,3.7,463.8,0.963,0.997,0.992,0.957,0.955,0.042,True,eps_r,stratified core
-7,B,635,4.4,434.9,0.088,0.105,0.104,0.081,0.082,0.024,True,eps_r,stratified core
-8,B,650,4.8,441.7,0.262,0.268,0.269,0.244,0.245,0.026,True,eps_r,stratified core
-9,B,694,6.3,452.5,0.743,0.826,0.799,0.92,0.919,0.177,True,eps_r,stratified core
-10,B,698,7.5,434.0,0.075,0.137,0.113,0.247,0.249,0.174,True,eps_r,stratified core
-11,B,712,9.0,420.3,0.006,0.023,0.016,0.057,0.058,0.052,True,eps_r,stratified core
+5,B,636,3.5,455.8,0.846,0.846,0.76,0.601,0.598,0.248,True,eps_r,stratified core
+6,B,648,5.0,433.2,0.065,0.091,0.091,0.088,0.089,0.026,True,eps_r,stratified core
+7,B,686,6.9,434.4,0.08,0.135,0.118,0.216,0.218,0.138,True,eps_r,stratified core
+8,B,702,8.2,426.3,0.018,0.05,0.038,0.108,0.11,0.092,True,eps_r,stratified core
+9,C,555,3.3,351.4,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,model-agnostic probe
+10,C,690,4.0,519.5,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,model-agnostic probe
+11,C,601,6.5,349.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,model-agnostic probe
 12,D,632,2.6,444.8,0.395,0.297,0.093,0.09,0.09,0.305,True,eps_r,replicate of A1 (separate specimen)
 13,D,643,2.6,460.4,0.931,0.954,0.571,0.561,0.556,0.397,True,eps_r,replicate of A3 (separate specimen)
 14,D,660,5.1,444.6,0.384,0.388,0.389,0.388,0.389,0.005,True,eps_r,replicate of A2 (separate specimen)

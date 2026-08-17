@@ -14,7 +14,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from discovery.kinetics import build_ensemble  # noqa: E402
-from run_flash_plan import LADDER_TIMES, make_plan  # noqa: E402
+from run_flash_plan import CORE_SIZE, LADDER_TIMES, make_plan  # noqa: E402
 
 # The pair of flash times the boundary tilt is quoted over: the shortest and longest table rows
 # that the campaign actually uses. Kept here so every test reports tilt on the same interval.
@@ -32,7 +32,7 @@ def ensemble() -> dict:
 @pytest.fixture(scope="session")
 def seed_plan() -> dict:
     """The committed seed design, generated with the defaults the script ships with."""
-    return make_plan(n_core=5, seed=7)
+    return make_plan(n_core=CORE_SIZE, seed=7)
 
 
 @pytest.fixture(scope="session")
