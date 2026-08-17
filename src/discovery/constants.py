@@ -33,7 +33,9 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 FLASH_TABLE_CSV = DATA_DIR / "flash_temp_table.csv"
-MEASURED_TRACE_CSV = DATA_DIR / "measured_transient.csv"  # not yet available; see run_thermal_check
+MEASURED_TRACE_CSV = (
+    DATA_DIR / "measured_transient.csv"
+)  # not yet available; see run_thermal_check
 
 # --- PHYSICAL ------------------------------------------------------------------------------
 KB_EV = 8.617333e-5  # Boltzmann constant (eV/K)
@@ -41,36 +43,62 @@ CELSIUS_TO_KELVIN = 273.15
 T_ROOM_C = 25.0  # ambient the film returns to between shots
 
 # --- PRIOR ---------------------------------------------------------------------------------
-# The onset is NOT a measured number for this stack. It comes from logistic fits of 2Pr vs
-# temperature on two datasets that disagree: flash T50 = 388 C, RTA T50 = 357 C, fitted in a
-# different voltage box and in different units, using a ferroelectric switch-on indicator rather
-# than crystallinity. 380 was chosen as a round value near the flash figure. Treat the width below
-# as the honest uncertainty and never quote T_ONSET_C as "the measured onset".
-# [ARCHIVAL] and NOT transferable -- see the provenance note above. Widened from 30 to 70 C on
-# four independent grounds: the two source fits disagree by 31 C; they were taken in a different
-# voltage box in different units; the readout is a ferroelectric switch-on threshold rather than
-# crystallinity; and the current films are a different sample set, where interface chemistry alone
-# is documented to shift the onset by ~200 C. A 30 C sigma was what made the earlier single-level
-# ladder fail: it slid into saturation and reported "no tilt" when the tilt was large.
-T_ONSET_C = 380.0  # onset peak temperature (deg C) -- a prior centre, NOT a measurement
-T_ONSET_SIGMA_C = 70.0  # honest spread; see above
+# [MEASURED, campaign tool] The onset is bracketed by six samples in
+# Bolometer_readings_PulseForge.xlsx, which carries a ferroelectric readout column alongside the
+# fluence. They are the ones that survive both support filters -- in-box voltage (506-716 V) and
+# table-supported flash time -- and they sit at t = 5.0 ms. The hottest un-crystallized sample is
+# at 434.7 C and the coldest crystallized one at 458.7 C, so the onset lies inside that 24 C
+# bracket; 447 is its midpoint. It is inverted through the campaign's own peak-temperature table,
+# so it is on the same temperature scale as the rest of the design and no cross-tool transfer is
+# involved.
+#
+# The spread is wider than the 12 C half-bracket because the bracket is not the only uncertainty:
+# n = 6, all at one flash time; a single voltage step (650 -> 670 V) brackets it; the readout is a
+# switching figure of merit rather than crystallinity; and KHM009/KHM010 may not be the stack about
+# to be run.
+T_ONSET_C = 447.0  # onset peak temperature (deg C), campaign tool, bracketed 434.7-458.7
+T_ONSET_SIGMA_C = 25.0  # covers the bracket plus proxy and sample-set transfer; see above
 T_REF_MS = 5.1  # flash time at which the onset is quoted (a measured table row)
 
-# Activated-kinetics parameters. Ea ~ 1 eV is the growth-limited regime appropriate to
-# nanocrystallite-seeded films (pre-existing nuclei, no nucleation barrier); n between 2 and 3 is
-# 2-3D growth from those seeds. Together they SET the transition width, so they must be stated
+# Activated-kinetics parameters. Together they SET the transition width, so they must be stated
 # rather than absorbed into a hardcoded sharpness.
-# UNRESOLVED -- flagged by review, left at the historical values pending the temperature-axis
-# decision, because Ea and the temperature scale are confounded. Evidence against 1.0 eV:
+#
+# The same six campaign-tool samples that fix T_ONSET_C bound the product n*Ea from below, because
+# they fix the onset and the width on one temperature scale at once. The readout climbs from 0.044
+# to 1.447 between 434.7 C and 458.7 C, so the 10-90% transition fits inside 24 C, giving
+# s > 0.183 /C and hence
+#   n*Ea  =  s * kB * Tc^2 / (2 ln2)  >  5.90 eV      (Tc = 447 C)
+# which at n = 2.5 is Ea > 2.36 eV. Three independent off-tool lines agree on the magnitude:
 #   [ARCHIVAL] graded 2Pr fit of the KHM005/6 flash shots  -> Ea ~ 2.0 eV  (run_tilt_prior.py)
-#   [ARCHIVAL] iso-conversion on the FE_HZCO RTA series    -> Ea ~ 1.5 eV
+#   [ARCHIVAL] JMAK refit of the FE_HZCO 350 C RTA isotherm -> Ea ~ 2.0-2.2 eV, n ~ 1.8
 #   literature, in-situ XRD crystallization of HfO2        -> Ea ~ 2.6 +/- 0.5 eV
-# The tilt scales as 1/Ea, so Ea alone spans a wider range than the whole pulse-shape ensemble:
-# raising it from 1.0 to 2.0 eV roughly halves every predicted tilt. Do not quote a measured tilt
-# without stating the Ea it assumes.
-EA_EV = 1.0  # activation energy (eV) -- LOW vs all available evidence; see above
-AVRAMI_N = 2.5  # Avrami exponent -- site saturation implies an integer, and 3D growth is
-# geometrically impossible in a 10 nm film with comparable lateral grain size; evidence favours 1-2
+# 2.5 eV clears the on-tool bound at n = 2.5 (n*Ea = 6.25 eV) and reproduces a 23 C model width
+# against the 24 C measured bracket. That agreement is weaker than it looks: 24 C is the spacing
+# between the 650 V and 670 V settings that bracket the onset, so it is a SAMPLING RESOLUTION, and
+# the same six points are equally consistent with a much sharper transition. The bound is a floor
+# on n*Ea, not a measurement of it.
+#
+# The literature figure is one study -- isothermal in-situ XRD on ion-beam-sputtered UNDOPED HfO2 at
+# 15-50 nm and 550-650 C -- not a spread across studies, so applying it to 10 nm ALD HZO between
+# TiN at millisecond timescales is a substantial extrapolation.
+#
+# The bound holds only if the readout tracks crystalline fraction through the transition. A figure
+# of merit that saturates before the film does would make the transition look sharper than it is,
+# so 24 C is an upper bound on the width for the PROXY and Ea inherits that. It is a floor, not an
+# estimate.
+#
+# The tilt scales as 1/Ea, so no measured tilt should be quoted without stating the Ea it assumes.
+EA_EV = 2.5  # activation energy (eV); on-tool bound Ea > 2.36 at n = 2.5, literature 2.6 +/- 0.5
+# Avrami exponent. In JMAK n = d/m + a (m = 1 interface-controlled, 2 diffusion-controlled;
+# a = 0 site-saturated, 1 continuous nucleation). The empirical support for 2.5 is the repo's own
+# 350 C RTA isotherm, which gives n = 2.2-2.6, and the in-situ XRD literature, which reports n ~ 2
+# for HfO2. Note that no clean mechanism gives exactly 2.5 in a 10 nm film -- d/m + a = 2.5 would
+# be 3-D diffusion-controlled growth with continuous nucleation, and HfO2 crystallization is
+# polymorphic and interface-controlled. Treat 2.5 as an empirical fit, not a mechanism.
+#
+# n MATTERS FOR THE Ea FLOOR: the bound is on the PRODUCT n*Ea > 5.90 eV, so EA_EV = 2.5 clears it
+# only for n >= 2.36. At n = 2.0 the floor is Ea > 2.95 eV, above the literature centre.
+AVRAMI_N = 2.5
 
 # --- MEASURED ------------------------------------------------------------------------------
 # Lamp irradiance envelope q(s) = LAMP_A*exp(-s/LAMP_TAU_FAST) + (1-LAMP_A)*exp(-s/LAMP_TAU_SLOW),
@@ -83,9 +111,15 @@ AVRAMI_N = 2.5  # Avrami exponent -- site saturation implies an integer, and 3D 
 # per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width, an
 # intrinsic ~2 ms timescale sitting inside the 2.6-10.1 ms design range. That timescale breaks the
 # self-similarity of pure conduction and reduces the predicted boundary tilt relative to a top-hat
-# drive: 49.8 C for the square-drive member against 37.6 C here, as this implementation computes
-# them. An independent inversion of the same fluence data gives ~12 C; that disagreement is
-# unresolved and is itself a reason not to treat any single tilt figure as settled.
+# drive. For the tilts this implementation actually produces, see the ensemble table printed by
+# run_flash_plan.py -- they depend on EA_EV and on the dwell range quoted, so no single figure
+# belongs in a comment.
+#
+# TWO LIMITS ON THESE NUMBERS. The bolometer rows they invert span V in [620, 799] V and
+# t in [0.5, 5.0] ms, while the design box is V in [506, 716] and t in [0.1, 10.1] -- so the
+# saturation is EXTRAPOLATED at exactly the long widths where it matters most. And 78% of the
+# envelope's asymptotic energy sits in the slow component, entirely outside both the fluence data
+# and the design range, so LAMP_TAU_SLOW_MS is unconstrained by either.
 LAMP_A = 0.88
 LAMP_TAU_FAST_MS = 2.06
 LAMP_TAU_SLOW_MS = 54.6

@@ -13,7 +13,6 @@ from run_flash_plan import (
     BAND_LO_C,
     LADDER_TIMES,
     LADDER_TMAX_LEVELS,
-    N_REPLICATES,
     T_SEARCH_HI,
     T_SEARCH_LO,
     make_plan,
@@ -33,7 +32,7 @@ class TestDesignInvariants:
         assert blocks.count("A") == len(LADDER_TIMES) * len(LADDER_TMAX_LEVELS)
         assert blocks.count("B") == 5
         assert blocks.count("E") == 1
-        assert 1 <= blocks.count("D") <= N_REPLICATES
+        assert blocks.count("D") == blocks.count("A"), "every ladder rung needs a replicate"
         assert len(blocks) == blocks.count("A") + 5 + 1 + blocks.count("D")
 
     def test_conditions_are_settable_on_the_tool(self, seed_plan):
@@ -56,8 +55,11 @@ class TestLadderIsTheTiltTest:
         tm = np.array(
             [t for t, b in zip(seed_plan["tmax"], seed_plan["block"]) if b in ("A", "D")]
         )
-        for level in LADDER_TMAX_LEVELS:
-            on = tm[np.abs(tm - level) < 15.0]
+        # Nearest-level assignment, not a fixed window: LADDER_MIN_GAP_C permits levels closer
+        # together than any window wide enough to hold a level's own rungs.
+        owner = np.argmin(np.abs(tm[:, None] - np.asarray(LADDER_TMAX_LEVELS)[None, :]), axis=1)
+        for k, level in enumerate(LADDER_TMAX_LEVELS):
+            on = tm[owner == k]
             assert on.size >= len(LADDER_TIMES), f"level {level:.0f} C under-populated"
             assert on.max() - on.min() < LADDER_ISO_TOL_C
 

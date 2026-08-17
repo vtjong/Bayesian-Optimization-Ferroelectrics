@@ -130,7 +130,7 @@ class TestDisagreement:
 
     def test_large_on_the_iso_tmax_ladder(self, ensemble):
         """The short-pulse rung is where the hypotheses separate most."""
-        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(385.0, LADDER_LO_MS)
+        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_ONSET_C, LADDER_LO_MS)
         spread = disagreement(ensemble, np.array([v]), np.array([LADDER_LO_MS]))
         assert spread[0] > 0.3
 

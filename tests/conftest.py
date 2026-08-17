@@ -14,11 +14,13 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from discovery.kinetics import build_ensemble  # noqa: E402
-from run_flash_plan import make_plan  # noqa: E402
+from run_flash_plan import LADDER_TIMES, make_plan  # noqa: E402
 
 # The pair of flash times the boundary tilt is quoted over: the shortest and longest table rows
 # that the campaign actually uses. Kept here so every test reports tilt on the same interval.
-LADDER_LO_MS, LADDER_HI_MS = 2.6, 10.1
+# Derived from the design rather than restated, so a change to the ladder cannot leave the
+# tests asserting a span the generator no longer produces.
+LADDER_LO_MS, LADDER_HI_MS = min(LADDER_TIMES), max(LADDER_TIMES)
 
 
 @pytest.fixture(scope="session")

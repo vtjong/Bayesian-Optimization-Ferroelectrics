@@ -18,9 +18,11 @@ value then gives the boundary tilt in closed form,
     Tb(t2) - Tb(t1) = -theta * ln( t_eff(t2) / t_eff(t1) ),    theta = kB * Tmax^2 / Ea
 
 so a shape whose t_eff ignores the commanded pulse width forces zero tilt (the boundary is exactly
-the Tmax level set), while a shape whose t_eff tracks it does not. Over t in [2.6, 10.1] ms the
-shapes in ``synthetic.SHAPES`` span 0 to 51 C of tilt. This module builds one boundary model per
-shape so a design can be scored against the whole ensemble instead of one assumed member.
+the Tmax level set), while a shape whose t_eff tracks it does not. This module builds one boundary
+model per shape so a design can be scored against the whole ensemble instead of one assumed member.
+
+Every tilt this module reports scales as 1/Ea and depends on the dwell range it is quoted over, so
+tilts are not stated as constants anywhere -- call ``tilt_c(t1, t2)`` for the range you mean.
 
 All members are anchored to the same (T_ONSET_C, T_REF_MS) so they differ ONLY in tilt; otherwise a
 comparison confounds the cooling law with the onset temperature.
@@ -205,11 +207,11 @@ class KineticBoundary:
 
 @dataclass
 class IsoTmaxBoundary:
-    """The historical model: a logistic in peak temperature, with NO time-at-temperature term.
+    """THE ZERO-TILT HYPOTHESIS: a logistic in peak temperature, with NO time-at-temperature term.
 
-    Retained as an explicit ensemble member -- the zero-tilt hypothesis -- rather than as the
-    default assumption. Its sharpness is derived from (Ea, n) via ``logistic_sharpness`` so it is
-    directly comparable to the kinetic members instead of being an independent free constant.
+    Carried as an explicit ensemble member rather than as the default assumption, so that the seed
+    has something to falsify. Its sharpness is derived from (Ea, n) via ``logistic_sharpness``, so
+    it is comparable to the kinetic members instead of being an independent free constant.
 
     :param thermal: thermal forward model supplying Tmax.
     :param name: short identifier used in outputs.
@@ -289,12 +291,17 @@ def build_ensemble(
 ) -> Dict[str, BoundaryModel]:
     """The five boundary hypotheses, sharing the measured Tmax table and one onset anchor.
 
-    Members, by the tilt they imply over t in [2.6, 10.1] ms (as this implementation computes them):
-      ``isoT``       0 C  -- the null hypothesis; the pulse width never reaches the trace
-      ``ramp``      13 C  -- empirical two-exponential decay with eyeball-fit constants
-      ``lamp``      38 C  -- measured lamp envelope driving conduction (DEFAULT)
-      ``diffusion`` 50 C  -- conduction under a top-hat drive
-      ``rect``      50 C  -- bounding case; degenerate with ``diffusion`` by construction
+    Five members. The tilt each implies scales as 1/ea_ev and depends on the dwell range it is
+    quoted over, so the numbers are not repeated here -- call ``tilt_c(t1, t2)`` for the range you
+    mean, or run ``run_flash_plan.py``, which prints them over the ladder's range.
+
+      ``isoT``       the null hypothesis; the pulse width never reaches the trace, so tilt is
+                     exactly zero by construction
+      ``ramp``       empirical two-exponential decay with eyeball-fit constants; smallest non-zero
+      ``lamp``       measured lamp envelope driving conduction (DEFAULT)
+      ``diffusion``  conduction under a top-hat drive
+      ``rect``       bounding case; degenerate with ``diffusion`` by construction, because any
+                     drive whose effective dwell scales with commanded width gives theta*ln(t2/t1)
 
     :param t_star: onset peak temperature at the anchor (deg C).
     :param ea_ev: activation energy (eV).

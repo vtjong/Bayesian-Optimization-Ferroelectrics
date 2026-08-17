@@ -120,8 +120,8 @@ class PulseShape(Protocol):
 class FrozenPulse:
     """THE NULL HYPOTHESIS: sin rise then exp decay to a warm plateau, INDEPENDENT of pulse width.
 
-    DO NOT DELETE THIS AS DEAD CODE. It is not merely the historical model; it is the zero-tilt
-    hypothesis that the campaign's seed design exists to test. The iso-Tmax ladder (block A of the
+    DO NOT DELETE THIS AS DEAD CODE. It is the zero-tilt hypothesis that the campaign's seed
+    design exists to test. The iso-Tmax ladder (block A of the
     seed plan) is built specifically to distinguish this shape's prediction -- a flat response
     across pulse width at fixed peak temperature -- from every other member of the ensemble. Remove
     it and the experiment has nothing to falsify.
@@ -162,9 +162,10 @@ class RampPulse:
 
     An empirical parameterization of the measured normalized transient. The decay constants below
     are eyeball fits to a normalized figure, NOT measurements, and they dominate the result:
-    ``a_fast / tau_fast`` contributes ~12 ms of effective dwell, more than the commanded pulse
-    width over most of the design box, which holds the kinetic tilt down to ~13 C. Treat the tilt
-    it predicts as a consequence of those four numbers, not as a measured property of the tool.
+    the slow component's 40 ms constant keeps the trace warm long after the pulse ends, which
+    compresses the RATIO of effective dwells across the design box and so holds the kinetic tilt
+    well below every conduction member's. Treat the tilt it predicts as a consequence of those four
+    numbers, not as a measured property of the tool.
 
     :param plateau: level the trace settles to, as a fraction of Tmax (see ``FrozenPulse``).
     :param a_fast: amplitude of the fast decay component.
@@ -201,7 +202,7 @@ class RampPulse:
 class DiffusionPulse:
     """PHYSICS DEFAULT: constant surface flux for ``t_pulse`` into a semi-infinite substrate.
 
-    A 30 nm stack has negligible heat capacity, so its temperature is slaved to heat diffusing into
+    A 10 nm stack has negligible heat capacity, so its temperature is slaved to heat diffusing into
     the thick fused-silica substrate. The exact Carslaw & Jaeger surface solution for a constant
     flux applied over [0, t_pulse] and then removed, normalized to its peak at tau = t_pulse, is
 
@@ -248,14 +249,18 @@ class LampDrivenPulse:
 
     WHY THIS AND NOT ``DiffusionPulse``: conduction alone has no intrinsic timescale, so a top-hat
     drive makes the whole transient self-similar in tau/t and the effective dwell exactly
-    proportional to pulse width -- which is what predicts ~50 C of boundary tilt. But the lamp is
-    not a top hat. Measured fluence rises only sublinearly with commanded width
-    (d lnE/d lnt = 0.505 across the campaign box), i.e. the irradiance droops with a ~2 ms time
-    constant that sits squarely inside the 2.6-10.1 ms design range. That intrinsic timescale
-    breaks the self-similarity and reduces the predicted tilt: this implementation gives ~38 C
-    against ~50 C for a top-hat drive. The top-hat idealization, not any of the conduction
-    idealizations, is what makes the difference. Note an independent inversion of the same fluence
-    data gives ~12 C; the disagreement is unresolved.
+    proportional to pulse width. But the lamp is not a top hat. Measured fluence rises only
+    sublinearly with commanded width -- the local exponent d lnE/d lnt falls from 0.42 at 2.6 ms to
+    0.01 at 10.1 ms under the fitted saturating law -- i.e. the irradiance droops with a ~2 ms time
+    constant that sits squarely inside the 2.6-10.1 ms design range. That intrinsic timescale breaks
+    the self-similarity and reduces the predicted tilt relative to a top-hat drive. The top-hat
+    idealization, not any of the conduction idealizations, is what makes the difference.
+
+    LIMITATION. This shape truncates a FIXED-AMPLITUDE envelope at the commanded width, so its
+    unnormalized peak is monotone non-decreasing in t and saturates rather than turning over. It
+    therefore cannot itself generate the re-entrance of the measured Tmax table, and must not be
+    cited as evidence for it: re-entrance requires the drive AMPLITUDE to fall with commanded
+    width. This shape supplies a normalized trace only; Tmax always comes from the measured table.
 
     :param a_fast: weight of the fast decay component of the lamp envelope.
     :param tau_fast: fast decay constant of the lamp envelope (ms).
@@ -496,7 +501,7 @@ def default_shape() -> PulseShape:
 # Module-level tmax/_trace wrap it so existing callers keep a stable import.
 FLASH = thermal_model(default_shape())
 
-# The historical model, kept so the earlier iso-Tmax campaign numbers stay reproducible.
+# The zero-tilt null, bound to a thermal model so it can be scored alongside the kinetic members.
 FLASH_ISOT = thermal_model(SHAPES["isoT"])
 
 
