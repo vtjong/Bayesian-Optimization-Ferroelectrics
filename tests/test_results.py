@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 from discovery.results import (  # noqa: E402
     ACTUAL_T_COLUMN,
     ACTUAL_V_COLUMN,
+    CONTROL_INDEX,
     CROSSCHECK_COLUMN,
     PLAN_KEY,
     READOUT_COLUMN,
@@ -46,7 +47,11 @@ def plan(seed_plan):
 
 
 def _filled(plan, **overrides):
-    """A fully measured sheet, with per-column overrides applied afterwards."""
+    """A fully measured sheet, with per-column overrides applied afterwards.
+
+    Includes the as-deposited control row, which the template always carries and which is exempt
+    from the as-fired requirement because it is never flashed.
+    """
     # object dtype throughout: the sheet is a CSV, and tests must be free to write "" or "n/a"
     # into any cell exactly as an operator would.
     t = blank_template(plan).astype(object)
@@ -86,11 +91,11 @@ class TestBlanksAreNeverNumbers:
     def test_a_genuine_zero_survives_as_zero(self, plan, tmp_path):
         """The archival failure was the converse: a blank silently became 0.0."""
         f = _filled(plan)
-        f.loc[0, READOUT_COLUMN] = A_REAL_ZERO
+        f.loc[f[PLAN_KEY] == 1, READOUT_COLUMN] = A_REAL_ZERO
         res = load(_write(tmp_path, f), plan)
-        assert res.measured[0]
-        assert res.table.loc[0, READOUT_COLUMN] == A_REAL_ZERO
-        assert res.n_measured == len(plan)
+        row = res.table[res.table[PLAN_KEY] == 1]
+        assert row[READOUT_COLUMN].iloc[0] == A_REAL_ZERO
+        assert res.n_measured == len(plan) + 1
 
     def test_non_numeric_reading_is_rejected(self, plan, tmp_path):
         f = _filled(plan)
@@ -117,7 +122,7 @@ class TestCorrespondenceWithThePlan:
     def test_readout_kind_may_not_differ_from_the_plan(self, plan, tmp_path):
         """The noise model and the boundary anchor are specific to one readout."""
         f = _filled(plan)
-        f.loc[0, READOUT_KIND_COLUMN] = "two_pr"
+        f.loc[f[PLAN_KEY] == 1, READOUT_KIND_COLUMN] = "two_pr"
         with pytest.raises(ValueError, match="readout kind"):
             load(_write(tmp_path, f), plan)
 
@@ -125,40 +130,60 @@ class TestCorrespondenceWithThePlan:
 class TestAsFiredConditions:
     def test_models_see_the_as_fired_condition_not_the_planned_one(self, plan, tmp_path):
         f = _filled(plan)
-        f.loc[0, ACTUAL_V_COLUMN] = float(plan.loc[0, "voltage_V"]) + 13.0
+        f.loc[f[PLAN_KEY] == 1, ACTUAL_V_COLUMN] = float(plan.loc[0, "voltage_V"]) + 13.0
         res = load(_write(tmp_path, f), plan)
-        v, _, _ = res.conditions()
-        assert v[0] == pytest.approx(float(plan.loc[0, "voltage_V"]) + 13.0)
+        d = res.table[res.table[PLAN_KEY] == 1]
+        assert d[ACTUAL_V_COLUMN].iloc[0] == pytest.approx(float(plan.loc[0, "voltage_V"]) + 13.0)
 
     def test_drift_beyond_tolerance_is_reported(self, plan, tmp_path):
         f = _filled(plan)
-        f.loc[0, ACTUAL_V_COLUMN] = float(plan.loc[0, "voltage_V"]) + 13.0
+        f.loc[f[PLAN_KEY] == 1, ACTUAL_V_COLUMN] = float(plan.loc[0, "voltage_V"]) + 13.0
         res = load(_write(tmp_path, f), plan)
-        assert list(res.drift[PLAN_KEY]) == [int(plan.loc[0, PLAN_KEY])]
+        assert list(res.drift[PLAN_KEY]) == [1]
 
     def test_no_drift_reported_when_the_tool_delivered_the_plan(self, plan, tmp_path):
         assert load(_write(tmp_path, _filled(plan)), plan).drift.empty
 
     def test_as_fired_condition_required_on_measured_rows(self, plan, tmp_path):
         f = _filled(plan)
-        f.loc[0, ACTUAL_T_COLUMN] = ""
+        f.loc[f[PLAN_KEY] != CONTROL_INDEX, ACTUAL_T_COLUMN] = ""
         with pytest.raises(ValueError, match="missing or non-numeric"):
             load(_write(tmp_path, f), plan)
+
+    def test_the_as_deposited_control_needs_no_condition(self, plan, tmp_path):
+        """It is never flashed, so demanding a voltage would make the sheet unfillable."""
+        res = load(_write(tmp_path, _filled(plan)), plan)
+        row = res.table[res.table[PLAN_KEY] == CONTROL_INDEX]
+        assert len(row) == 1, "the control row must survive the join"
+        assert row["block"].iloc[0] == "R"
+        assert np.isfinite(row[READOUT_COLUMN].iloc[0]), "the control must carry a reading"
+
+    def test_control_readout_kind_is_checked_too(self, plan, tmp_path):
+        """It is read on the same instrument, so a mismatch there is the same error."""
+        f = _filled(plan)
+        f.loc[f[PLAN_KEY] == CONTROL_INDEX, READOUT_KIND_COLUMN] = "two_pr"
+        with pytest.raises(ValueError, match="readout kind"):
+            load(_write(tmp_path, f), plan)
+
+    def test_control_is_not_reported_as_drift(self, plan, tmp_path):
+        """Its blank condition must not read as a delivery error."""
+        res = load(_write(tmp_path, _filled(plan)), plan)
+        assert CONTROL_INDEX not in list(res.drift[PLAN_KEY])
 
 
 class TestPartialBatches:
     def test_unfired_conditions_are_named_not_silently_dropped(self, plan, tmp_path):
         f = _filled(plan)
-        f.loc[[1, 4], STATUS_COLUMN] = "failed"
-        f.loc[[1, 4], READOUT_COLUMN] = ""
+        f.loc[f[PLAN_KEY].isin([2, 5]), STATUS_COLUMN] = "failed"
+        f.loc[f[PLAN_KEY].isin([2, 5]), READOUT_COLUMN] = ""
         res = load(_write(tmp_path, f), plan)
-        assert res.n_measured == len(plan) - 2
-        assert unfired(res) == sorted(plan.loc[[1, 4], PLAN_KEY].astype(int))
+        assert res.n_measured == len(plan) + 1 - 2
+        assert unfired(res) == [2, 5]
 
     def test_conditions_returns_only_measured_rows(self, plan, tmp_path):
         f = _filled(plan)
-        f.loc[0, STATUS_COLUMN] = "not_run"
-        f.loc[0, READOUT_COLUMN] = ""
+        f.loc[f[PLAN_KEY].isin([CONTROL_INDEX, 1]), STATUS_COLUMN] = "not_run"
+        f.loc[f[PLAN_KEY].isin([CONTROL_INDEX, 1]), READOUT_COLUMN] = ""
         v, t, y = load(_write(tmp_path, f), plan).conditions()
-        assert len(v) == len(t) == len(y) == len(plan) - 1
+        assert len(v) == len(t) == len(y) == len(plan) - 1  # control + one row not_run
         assert np.isfinite(y).all()

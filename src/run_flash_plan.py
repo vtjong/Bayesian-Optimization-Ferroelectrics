@@ -1,33 +1,50 @@
 """Generate the seed flash-condition plan for the crystallization-boundary campaign.
 
-The design box is (flash voltage, flash time), but crystallization responds to PEAK TEMPERATURE,
-which spans 82-563 C across that box while the transition is only tens of degrees wide. A Latin
-hypercube laid out uniformly in (V, t) is therefore NOT uniform in the quantity that matters: most
-of its points land where every hypothesis predicts the same thing. This generator stratifies the
-measured peak temperature instead -- LHS over (Tmax, log t), inverted through the measured table to
-(V, t) -- and spends part of the seed on a designed contrast rather than on coverage.
+A Latin hypercube over the two knobs, stratified in log time, plus two replicates. That is a
+deliberately plain design, and it is plain because a targeted one was tested against it and lost.
 
-Four blocks, 16 conditions of an 80-shot budget:
+WHY NOT A TARGETED DESIGN. The obvious move is to spend most of the batch near where the
+transition is believed to be, and to buy a matched-temperature dwell contrast there. That design
+was built, and it is better -- IF the belief is right. Counting distinct conditions that land in
+the transition, as a function of where the transition actually turns out to be:
 
-  A  iso-Tmax dwell ladder   4  TWO peak-temperature levels crossed with the two measured table
-                                rows that can reach them.
-                                Reading ALONG a level measures the boundary tilt; reading ACROSS
-                                the levels measures the transition sharpness. One level would
-                                confound the two, and would slide into the floor or the ceiling if
-                                the true onset differs from the prior.
-  B  stratified core         7  (Tmax, log t) Latin hypercube over the range where the ensemble
-                                actually transitions, maximin against block A.
-  D  ladder replicates      +4  every block-A condition on a second specimen. Needed for
-                                POWER -- one specimen per rung confirms a flat boundary only 86% of
-                                the time, against the 90% the design is held to -- and so that a
-                                discrepant replicate, which means a variable outside (V, t) is in
-                                play, can be diagnosed at any rung rather than only a chosen one.
-  E  amorphous floor         1  one cold condition to pin the readout's amorphous floor.
+    true onset      targeted      hypercube
+       380 C               0              3
+       440 C               5              3
+       447 C               7              2      <- what the targeted design bets on
+       480 C               0              2
+       500 C               0              2
 
-Every condition is scored against the whole boundary-model ensemble, and the CSV records the
-spread rather than a single predicted label: the disagreement IS what the seed buys.
+Seven against two where the bet lands, zero against two once it is 33 C out. The belief is a
+bracket from six archival samples at one flash time, on a switching figure of merit, from a
+different sample set, bracketed by a single voltage step. Averaged over the range that belief
+honestly spans, both designs put the same 1.2 conditions in the transition -- but the hypercube
+does it reliably and the targeted design does it as a coin flip.
 
-Usage:  python src/run_flash_plan.py [--n-core 7] [--seed 7]
+The comparison was run over randomly drawn worlds in which the response family, the transition
+location and width, the dwell dependence, a non-thermal voltage channel, the noise scale and the
+readout's floor, span and saturation are all sampled independently, with only the 30 MEASURED peak
+temperatures held fixed (``discovery.worlds``). Worst-case misclassified area over the supported
+box, at the 90th percentile: hypercube 0.25, targeted 0.58. The targeted design also lost on the
+dwell question it was built for -- 0.30 power against 0.36 -- so it was dominated on both.
+
+WHY TWO REPLICATES. Averaged over five hypercube realizations, 0 and 2 replicates are
+indistinguishable on coverage (p90 0.250 vs 0.247) while 3 and 4 degrade it (0.292, 0.440). Two
+therefore cost nothing measurable and buy two things: a check that (V, t) describes the experiment
+at all -- archival replicates on this tool disagree by up to 2.08x -- and the repeated measurement
+that separates readout noise from surface structure, which is otherwise confounded at this budget.
+
+WHAT THE BATCH CANNOT DO. No 16-shot design answers the dwell question under honest uncertainty.
+The best of everything tested calls a large tilt 47% of the time at a 16% false-positive rate;
+this one manages 36% at 22%. That is not a defect of the design, it is the budget. The dwell
+question has to accumulate across the campaign, informed by where the boundary actually turns out
+to be -- which is what this batch is for.
+
+Every condition is scored against the whole boundary-model ensemble and the CSV records each
+member's prediction, so no single model's label is presented as the answer. The scoring is
+REPORTING only; nothing in the placement uses it.
+
+Usage:  python src/run_flash_plan.py [--n-core 14] [--seed 7]
 """
 
 import argparse
@@ -45,19 +62,11 @@ from scipy.stats import qmc
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import (
-    NOISE_BOUNDARY,
-    NOISE_FLOOR,
-    T_REF_MS,
-    T_TRANSITION_REF_C,
-    T_TRANSITION_SIGMA_C,
-)
+from discovery.constants import T_TRANSITION_REF_C, T_TRANSITION_SIGMA_C
 from discovery.kinetics import (
     DEFAULT_MODEL,
     build_ensemble,
     disagreement,
-    logistic_sharpness,
-    theta_kelvin,
 )
 from discovery.synthetic import FLASH, FLASH_T, T_HI, T_LO, V_HI, V_LO
 from visualization.base import save_figure
@@ -70,142 +79,40 @@ OUT = ROOT / "predictions" / "flash_plan"
 # the surface maximum sits inside it, so any Tmax quoted there is an artifact of the spline.
 T_SEARCH_LO, T_SEARCH_HI = float(FLASH_T[1]), float(FLASH_T[-1])  # 2.6 .. 10.1 ms
 
-# Block A uses TWO peak-temperature levels, not one. A single-level ladder is rank-deficient: it
-# identifies only the product of transition sharpness and tilt, and it slides bodily into the
-# saturated floor or ceiling if the true onset differs from the prior by ~1 sigma, at which point
-# it reports "no tilt" even when the tilt is large. Two levels straddling the onset prior keep the
-# estimate well-conditioned and roughly flat in precision across T_TRANSITION_REF_C +/-
-# T_TRANSITION_SIGMA_C.
+# The batch is restricted to flash times the measured table supports, and to nothing else. A
+# targeted design that concentrated conditions near the believed transition -- two matched
+# peak-temperature levels crossed with two flash times -- was built and tested against this one. It
+# was dominated on both the boundary-mapping metric and the dwell question it existed for, because
+# concentration only pays if the belief is precise and ours is a bracket from six archival samples.
+# See docs for the comparison; the machinery for it has been removed rather than left dormant.
+
+SEED_SIZE = 16  # of an 80-specimen campaign
+N_REPLICATES = 2  # measured: 0 and 2 are indistinguishable on coverage, 3+ degrade it
+N_DRAWN = SEED_SIZE - N_REPLICATES
+
+# The hypercube is stratified over PEAK TEMPERATURE and inverted through the measured table, not
+# drawn over the raw knobs. Which of those wins turns entirely on how much is assumed about where
+# the transition sits, and that dependence is worth stating because it nearly went unnoticed:
 #
-# Two constraints leave exactly two usable flash times, and they are both MEASURED TABLE ROWS.
+#   transition sampled uniformly 360-620 C  ->  knobs 0.508, temperature 0.511   (a tie)
+#   transition sampled 420-560 C            ->  knobs 0.455, temperature 0.301
 #
-# The long rows are out of reach. The reachable ceiling falls with pulse width -- 563 C at 2.6 ms,
-# 515 at 5.1, 438 at 7.6, 422 at 10.1 -- and the levels must be reachable at EVERY ladder time, so
-# a level near the onset rules out everything beyond ~7 ms.
+# (worst-case misclassified area, 90th percentile, over randomized worlds). The second prior is the
+# defensible one. Six campaign-tool samples at 5.0 ms put a non-crystallized film at 434.7 C and a
+# crystallized one at 458.7 C, so a transition at 380 C is not merely unlikely, it is contradicted
+# by the measurement. A uniform prior reaching down to 360 C throws that evidence away, and under
+# it the raw knobs look better only because nothing else is known.
 #
-# The gaps between rows cannot be used either. At a measured row the spline and the GP fitted to
-# the same 30 nodes agree to ~0.1 C and the GP's own uncertainty is ~0.15 C. Midway between the 2.6
-# and 5.1 ms rows they disagree by 10.9 C and that uncertainty is 15.8 C -- comparable to the 16.5 C
-# separation between the two levels, so an off-node rung cannot be placed on the same iso-Tmax
-# contour to a tolerance the tilt estimate can use. A 3.8 ms rung would improve worst-case SE(tilt)
-# from 28.7 to 25.1 K on paper while spending that gain on a rung whose temperature is unknown to
-# the width of the contrast being measured.
-#
-# The dwell contrast is therefore ln(5.1/2.6) = 0.67 e-folds. That is a limit of the tool at this
-# onset rather than of the design: the boundary sits exactly where the reachable ceiling is
-# collapsing. Widening it requires a new peak-temperature row, not a different design.
-LADDER_TIMES = (2.6, 5.1)
-LADDER_MARGIN_C = 6.0  # keep levels off the reachable edge, where inversion is ill-conditioned
-LADDER_MIN_GAP_C = 6.0  # two levels closer than this are one level
-LADDER_LEVEL_STEP_C = 2.0  # search resolution
-# Tilt is a DIFFERENCE between two dwells, so it is meaningless without the range it spans. Every
-# tilt this script reports is quoted over the ladder's own range, which is what block A measures.
-LADDER_DWELL_RANGE = (min(LADDER_TIMES), max(LADDER_TIMES))
+# Stratifying temperature is therefore NOT a bet on the bracket midpoint -- the draw spans the whole
+# reachable range and the design is scored against transitions anywhere in it. It is a bet that the
+# film responds to temperature rather than to voltage, which the measured table already asserts.
+LHS_TRIES = 400  # realizations to score; the best by maximin separation is kept
 
-# Block C: model-agnostic exploration. Block B is restricted to where the ENSEMBLE predicts a
-# transition, so the design chooses where to look using the very models it exists to test. If every
-# member is wrong the same way, the batch can systematically avoid the evidence that would show it.
-# Block C is exempt from that restriction: it covers a wide temperature window by maximin,
-# regardless of what any member predicts there.
-#
-# Three points, not two and not four, and not zero. Scored against ground truths NO member can
-# represent (run_seed_stress.py, 5 core realizations x 8 noise draws), worst-case misclassification
-# of the supported box runs 0.217 with no C block, 0.194 at two, 0.155 at three, 0.165 at four.
-# Without it the worst case is a transition COLDER than the bracket -- well inside the stated prior
-# -- because nothing then covers the shoulder between the floor anchor at 270 C and the core at
-# 420 C, and the surrogate cannot place a boundary it has bracketed nowhere.
-#
-# The window is the transition bracket widened well beyond its own sigma. It is NOT the whole box:
-# unconstrained maximin spends its picks on corners (230 C, 568 C) that duplicate the floor anchor
-# or sit in saturation.
-N_EXPLORE = 3
-EXPLORE_LO_C, EXPLORE_HI_C = 350.0, 520.0
-CORE_SIZE = 4  # block B, after block C took three of the seven coverage slots
-
-# Resolution of the scan that locates the transition band, over a band ~100 C wide. Near the
-# long-dwell end the reachable ceiling clips the band to a sliver; below about 0.3 C of width the
-# scan finds fewer than two nodes inside and reports it unreachable. That is the intended
-# behaviour, not a defect -- a band narrower than that offers no range to stratify over, and the
-# caller drops those times from its interpolation table.
-BAND_SCAN_NODES = 600
-
-# Outer bound on where a boundary-search condition may sit: the onset prior widened by the tilt a
-# boundary could show across the ladder's dwell range and by the transition half-width. Derived
-# from those three inputs rather than hardcoded, so that a change to any of them cannot leave a
-# stale literal behind. Block B narrows further, to the range where the ensemble mean actually
-# transitions (_transition_band).
-# Quoted over the range block B actually spans, not the ladder's -- this bound constrains block B.
-_BAND_TILT_C = theta_kelvin(T_TRANSITION_REF_C) * np.log(T_SEARCH_HI / T_SEARCH_LO)
-_BAND_HALFWIDTH_C = np.log(9.0) / logistic_sharpness(T_TRANSITION_REF_C)  # 10-90% half-width
-BAND_LO_C = T_TRANSITION_REF_C - T_TRANSITION_SIGMA_C - _BAND_TILT_C - _BAND_HALFWIDTH_C
-BAND_HI_C = T_TRANSITION_REF_C + T_TRANSITION_SIGMA_C + _BAND_TILT_C + _BAND_HALFWIDTH_C
-
-
-def _tilt_precision(levels, t0: float, sharp: float, tilt: float = 18.0) -> float:
-    """Standard error on the boundary tilt from a ladder, with sharpness left FREE.
-
-    The ladder measures a boundary of the form ``X = sigmoid(s * [Tmax - T0 + beta*ln(t/t_ref)])``.
-    Reading along one level constrains only the PRODUCT of the sharpness ``s`` and the tilt
-    ``beta``; a single level therefore cannot separate a sharp boundary that barely moves from a
-    broad one that moves a lot. Two levels break that degeneracy, but only if they are placed well.
-    This returns sqrt of the (beta, beta) entry of the inverse Fisher information, i.e. the
-    uncertainty on the quantity the first batch exists to measure.
-
-    :param levels: candidate peak-temperature levels (deg C).
-    :param t0: assumed onset temperature (deg C).
-    :param sharp: assumed transition sharpness (per deg C).
-    :param tilt: assumed tilt, at which the information is evaluated (K per e-fold of dwell).
-    """
-    times = np.asarray(LADDER_TIMES, float)
-    temp = np.repeat(np.asarray(levels, float), times.size)
-    t = np.tile(times, len(levels))
-    u = np.log(t / T_REF_MS)
-    arg = temp - t0 + tilt * u
-    mu = 1.0 / (1.0 + np.exp(-sharp * arg))
-    grad_z = mu * (1.0 - mu)
-    sd = NOISE_FLOOR + NOISE_BOUNDARY * mu * (1.0 - mu)
-    jac = np.column_stack([grad_z * -sharp, grad_z * arg, grad_z * sharp * u])
-    jac = jac / sd[:, None]
-    fisher = jac.T @ jac
-    try:
-        cov = np.linalg.inv(fisher)
-    except np.linalg.LinAlgError:
-        return np.inf
-    return float(np.sqrt(cov[2, 2])) if cov[2, 2] > 0 else np.inf
-
-
-def ladder_levels() -> tuple:
-    """Two iso-Tmax levels chosen to measure the tilt as precisely as possible, MINIMAX over the
-    onset prior.
-
-    Placing the levels at ``T_TRANSITION_REF_C +/- T_TRANSITION_SIGMA_C`` is intuitive and wrong:
-    with a wide prior it puts one level in the amorphous floor and the other near saturation, where
-    response is flat under every hypothesis. Instead the pair is chosen to minimise the WORST-CASE
-    uncertainty on the tilt as the true onset ranges over its prior, which keeps the ladder useful
-    whether the onset sits at the centre or the edge of what we believe.
-
-    Levels are additionally constrained to be reachable at EVERY ladder time -- the reachable
-    ceiling falls with dwell, so the long-pulse arm sets the upper limit.
-    """
-    sharp = logistic_sharpness(T_TRANSITION_REF_C)
-    lo = max(FLASH.tmax_range(t)[0] for t in LADDER_TIMES) + LADDER_MARGIN_C
-    hi = min(FLASH.tmax_range(t)[1] for t in LADDER_TIMES) - LADDER_MARGIN_C
-    grid = np.arange(np.ceil(lo), np.floor(hi) + 1, LADDER_LEVEL_STEP_C)
-    lo_t0 = T_TRANSITION_REF_C - T_TRANSITION_SIGMA_C
-    hi_t0 = T_TRANSITION_REF_C + T_TRANSITION_SIGMA_C
-    onsets = np.linspace(lo_t0, hi_t0, 9)
-    best, best_score = None, np.inf
-    for i, a in enumerate(grid):
-        for b in grid[i + int(LADDER_MIN_GAP_C / LADDER_LEVEL_STEP_C) :]:
-            score = max(_tilt_precision((a, b), t0, sharp) for t0 in onsets)
-            if score < best_score:
-                best, best_score = (float(a), float(b)), score
-    if best is None:
-        raise RuntimeError("no feasible ladder levels")
-    return best
-
-
-LADDER_TMAX_LEVELS = ladder_levels()
+# Coldest peak temperature worth a specimen. Crystallizing 10 nm HZO on a millisecond timescale is
+# not plausible below this on any kinetics, and the campaign-tool samples put the transition far
+# above it. A physical floor, not an archival one.
+DRAW_LO_C = 350.0
+DRAW_MARGIN_C = 6.0  # keep draws off the reachable edge, where the inversion is ill-conditioned
 FLOOR_CONDITION = (V_LO, 5.1)  # coldest reachable column at a supported time
 
 
@@ -230,212 +137,88 @@ def _min_separation(v: np.ndarray, t: np.ndarray) -> float:
     return float(d.min())
 
 
-def ladder_block() -> tuple:
-    """Block A: two peak-temperature levels crossed with three pulse widths.
-
-    Voltage is inverted from the measured Tmax table at each (level, time), so each level is an
-    iso-Tmax contour to within the snapping resolution. Reading along a level measures the tilt;
-    reading across the two levels measures the transition sharpness, which is what makes the two
-    separable instead of confounded.
-    """
-    vs, ts, levels = [], [], []
-    for level in LADDER_TMAX_LEVELS:
-        for t in LADDER_TIMES:
-            v = FLASH.voltage_for_tmax(level, t)
-            if not np.isfinite(v):
-                raise ValueError(f"{level} C unreachable at t = {t} ms")
-            v, t = _snap(v, t)
-            vs.append(v)
-            ts.append(t)
-            levels.append(level)
-    return np.array(vs), np.array(ts), np.array(levels)
 
 
-def _transition_band(models: dict, t: float, lo_x: float = 0.03, hi_x: float = 0.97) -> tuple:
-    """Peak-temperature range over which the ENSEMBLE MEAN fraction runs from ``lo_x`` to ``hi_x``.
-
-    Uses the mean across all hypotheses rather than any single one, so the stratification hedges
-    the same way the rest of the design does.
-
-    Returns ``(nan, nan)`` when the transition is NOT REACHABLE at this flash time. The reachable
-    ceiling falls with pulse width, so beyond about 8 ms no voltage in the box gets the film near
-    the onset. Reporting the full prior band there would hand the caller a range that looks like a
-    transition band but lies entirely in the amorphous floor, and draws taken from it would look
-    stratified while carrying no information.
-
-    :param models: the boundary-model ensemble.
-    :param t: flash time (ms).
-    :param lo_x: lower fraction defining the informative range.
-    :param hi_x: upper fraction defining the informative range.
-    """
-    grid = np.linspace(BAND_LO_C, BAND_HI_C, BAND_SCAN_NODES)
-    v = FLASH.voltages_for_tmax(grid, np.full_like(grid, t))
-    ok = np.isfinite(v)
-    if ok.sum() < 2:
-        return float("nan"), float("nan")
-    x = np.mean([m.fraction(v[ok], np.full(ok.sum(), t)) for m in models.values()], axis=0)
-    inside = grid[ok][(x >= lo_x) & (x <= hi_x)]
-    if inside.size < 2:
-        return float("nan"), float("nan")
-    return float(inside.min()), float(inside.max())
 
 
-def core_block(
-    n: int, seed: int, avoid_v: np.ndarray, avoid_t: np.ndarray, models: dict, n_tries: int = 400
-):
-    """Block B: Latin hypercube over (Tmax, log t), inverted to (V, t).
+def draw_block(n: int, seed: int, n_tries: int = LHS_TRIES) -> tuple:
+    """Latin hypercube over ``(Tmax, log t)``, inverted through the measured table.
 
-    Draws a stratified flash time and a stratified peak-temperature quantile within the band that
-    is actually reachable at that time, then solves the measured table for the voltage. Repeats
-    over ``n_tries`` LHS seeds and keeps the design with the largest minimum separation from block
-    A and from itself -- a maximin criterion applied in the coordinates the GP sees.
+    Repeats over ``n_tries`` realizations and keeps the one with the largest minimum separation in
+    normalized coordinates. A hypercube guarantees each axis is stratified but says nothing about
+    the pair, so a realization can still leave two conditions almost coincident; maximin removes
+    that without importing any belief about where the boundary is.
 
-    The per-draw Latin hypercube is deliberately NOT discrepancy-optimized. Selection here is by
-    maximin in normalized (V, log t) AFTER inverting through the temperature table, so optimizing
-    centered discrepancy in the raw unit square first would spend most of the runtime refining
-    candidates against a different criterion, only to discard them.
-
-    :param n: number of core conditions.
+    :param n: number of conditions.
     :param seed: base RNG seed.
-    :param avoid_v: voltages of already-placed conditions.
-    :param avoid_t: flash times of already-placed conditions.
-    :param n_tries: how many LHS realizations to score.
+    :param n_tries: how many realizations to score.
     """
     best, best_sep = None, -np.inf
     log_lo, log_hi = np.log10(T_SEARCH_LO), np.log10(T_SEARCH_HI)
-    # Precompute the transition band once on a coarse time grid and interpolate: recomputing it
-    # per candidate design would dominate the search cost. Times where the band is unreachable are
-    # dropped from the interpolation table rather than carried as nan, which np.interp would spread
-    # over both neighbouring intervals and turn into a silent, unintended exclusion zone.
-    band_t = np.geomspace(T_SEARCH_LO, T_SEARCH_HI, 24)
-    _edges = np.array([_transition_band(models, x) for x in band_t])
-    keep = np.isfinite(_edges[:, 0])
-    if keep.sum() < 2:
-        raise RuntimeError("the transition is unreachable across the supported flash times")
-    band_t = band_t[keep]
-    band_lo_v, band_hi_v = _edges[keep, 0], _edges[keep, 1]
     for k in range(n_tries):
         u = qmc.LatinHypercube(d=2, seed=seed + k).random(n)
-        t = np.round(10.0 ** (log_lo + u[:, 0] * (log_hi - log_lo)) * 10.0) / 10.0
-        reach_lo = np.array([FLASH.tmax_range(x)[0] for x in t])
-        reach_hi = np.array([FLASH.tmax_range(x)[1] for x in t])
-        # Stratify across the range where the ensemble actually transitions, not uniformly over
-        # the full prior band: the band is ~4x the width of the transition, so uniform
-        # stratification spends most shots where every hypothesis already agrees.
-        edges = np.column_stack([np.interp(t, band_t, band_lo_v), np.interp(t, band_t, band_hi_v)])
-        band_lo = np.maximum(np.maximum(reach_lo, BAND_LO_C), edges[:, 0])
-        band_hi = np.minimum(np.minimum(reach_hi, BAND_HI_C), edges[:, 1])
-        if np.any(band_hi <= band_lo):
-            continue
-        target = band_lo + u[:, 1] * (band_hi - band_lo)
-        v = FLASH.voltages_for_tmax(target, t)
-        if not np.all(np.isfinite(v)):
-            continue
-        v = np.round(v)
-        sep = _min_separation(np.concatenate([avoid_v, v]), np.concatenate([avoid_t, t]))
+        t = np.round(10.0 ** (log_lo + u[:, 1] * (log_hi - log_lo)), 1)
+        v = np.empty(n)
+        for i, ti in enumerate(t):
+            r_lo, r_hi = FLASH.tmax_range(float(ti))
+            lo_c = max(r_lo + DRAW_MARGIN_C, DRAW_LO_C)
+            hi_c = r_hi - DRAW_MARGIN_C
+            if hi_c <= lo_c:  # this flash time cannot reach the window at all
+                lo_c, hi_c = r_lo + DRAW_MARGIN_C, r_hi - DRAW_MARGIN_C
+            v[i] = FLASH.voltage_for_tmax(lo_c + u[i, 0] * (hi_c - lo_c), float(ti))
+        snapped = [_snap(a, b) for a, b in zip(v, t)]
+        v = np.array([p[0] for p in snapped])
+        t = np.array([p[1] for p in snapped], float)
+        if len(set(zip(v.tolist(), t.tolist()))) < n:
+            continue  # snapping collapsed two conditions onto one another
+        sep = _min_separation(v, t)
         if sep > best_sep:
-            best_sep, best = sep, (v.astype(int), t)
+            best_sep, best = sep, (v, t)
     if best is None:
-        raise RuntimeError("no feasible core design found")
+        raise RuntimeError("no feasible hypercube found")
     return best
 
 
-def explore_block(n: int, avoid_v: np.ndarray, avoid_t: np.ndarray) -> tuple:
-    """Block C: maximin coverage of a wide temperature window, ignoring every model's prediction.
+def replicate_indices(v: np.ndarray, t: np.ndarray, n: int) -> list:
+    """Which conditions to repeat on a second specimen: spread across peak temperature.
 
-    Coverage is judged in (Tmax, log t), the coordinates the rest of the design uses, so a point is
-    "far from" the others in the quantity the film responds to rather than in the knobs.
+    The tempting choice is the condition nearest mid-transition, where the readout is noisiest and
+    a disagreement is most visible. That was tried and rejected for two reasons. It needs the
+    ensemble to say where mid-transition IS, which is the bet this design exists to avoid; and when
+    the draw happens to place nothing near the boundary it silently replicates a SATURATED point
+    instead, where two specimens agree trivially and the check is worthless.
 
-    :param n: how many conditions to place.
-    :param avoid_v: voltages already spoken for.
-    :param avoid_t: flash times already spoken for.
+    Spreading the replicates over the temperature range asks the reproducibility question in more
+    than one regime and cannot degenerate that way. It also assumes nothing.
+
+    :param v: drawn voltages.
+    :param t: drawn flash times (ms).
+    :param n: how many to replicate.
     """
-    vg = np.linspace(V_LO, V_HI, 120)
-    tg = np.geomspace(T_SEARCH_LO, T_SEARCH_HI, 90)
-    vv, tt = np.meshgrid(vg, tg)
-    v, t = vv.ravel(), tt.ravel()
     tm = FLASH.tmax(v, t)
-    keep = np.isfinite(tm) & (tm >= EXPLORE_LO_C) & (tm <= EXPLORE_HI_C)
-    v, t, tm = v[keep], t[keep], tm[keep]
-    if v.size < n:
-        raise RuntimeError("the exploration window is unreachable inside the design box")
-
-    lo, hi = tm.min(), tm.max()
-    log_lo, log_hi = np.log10(T_SEARCH_LO), np.log10(T_SEARCH_HI)
-
-    def coords(vs, ts):
-        a = (FLASH.tmax(np.asarray(vs, float), np.asarray(ts, float)) - lo) / max(hi - lo, 1e-9)
-        b = (np.log10(np.asarray(ts, float)) - log_lo) / (log_hi - log_lo)
-        return np.column_stack([a, b])
-
-    cand = coords(v, t)
-    chosen_v, chosen_t = list(avoid_v), list(avoid_t)
-    out_v, out_t = [], []
-    for _ in range(n):
-        d = np.min(np.linalg.norm(cand[:, None, :] - coords(chosen_v, chosen_t)[None], axis=2), 1)
-        j = int(np.argmax(d))
-        vs, ts = _snap(float(v[j]), float(t[j]))
-        out_v.append(vs)
-        out_t.append(ts)
-        chosen_v.append(vs)
-        chosen_t.append(ts)
-    return np.array(out_v, int), np.array(out_t, float)
+    order = np.argsort(tm)
+    # evenly spaced in rank, avoiding the two extremes where a replicate is least informative
+    picks = np.linspace(0, len(order) - 1, n + 2)[1:-1]
+    return [int(order[int(round(p))]) for p in picks]
 
 
 def make_plan(n_core: int, seed: int) -> dict:
-    """Assemble the full seed plan and score every condition against the model ensemble.
+    """Assemble the seed plan and score every condition against the model ensemble.
 
-    :param n_core: size of the stratified core block.
-    :param seed: RNG seed for the core Latin hypercube.
+    :param n_core: number of drawn conditions, before replicates.
+    :param seed: RNG seed for the hypercube.
     """
     models = build_ensemble()
-    v_a, t_a, lvl_a = ladder_block()
-    v_e, t_e = _snap(*FLOOR_CONDITION)
-    v_e, t_e = np.array([v_e]), np.array([t_e])
-    v_b, t_b = core_block(
-        n_core, seed, np.concatenate([v_a, v_e]), np.concatenate([t_a, t_e]), models
-    )
+    v_d, t_d = draw_block(n_core, seed)
+    rep = replicate_indices(v_d, t_d, N_REPLICATES)
 
-    # EVERY ladder condition is replicated on a second specimen, rather than a hand-picked subset.
-    # Two independent reasons, and the design needs both:
-    #
-    #   power       -- with only two usable flash times the ladder is short, and a single specimen
-    #                  per rung leaves the probability of correctly confirming a FLAT boundary at
-    #                  0.841, under the 0.9 the design is held to. Doubling the rungs raises it to
-    #                  0.941. (4000 trials; at 400 the third digit is pure Monte Carlo noise.)
-    #                  Confirming the null is the harder of the two jobs: a tilted boundary is
-    #                  recovered at 0.975 unreplicated and 0.989 replicated.
-    #   attribution -- a discrepant replicate says a variable outside (V, t) is in play. Replicating
-    #                  only some rungs makes that diagnosis conditional on which rung happened to be
-    #                  picked, and unreplicated rungs would carry scatter that reads as tilt.
-    #
-    # A pair is still a sentinel, not a variance estimate; two specimens cannot separate specimen
-    # scatter from a thermal-delivery error at that condition.
-    rep_idx = list(range(len(v_a)))
-
-    v_c, t_c = explore_block(
-        N_EXPLORE,
-        np.concatenate([v_a, v_b, v_e]),
-        np.concatenate([t_a, t_b, t_e]),
-    )
-
-    v = np.concatenate([v_a, v_b, v_c, v_e, v_a[rep_idx]])
-    t = np.concatenate([t_a, t_b, t_c, t_e, t_a[rep_idx]])
-    block = (
-        ["A"] * len(v_a)
-        + ["B"] * len(v_b)
-        + ["C"] * len(v_c)
-        + ["E"] * len(v_e)
-        + ["D"] * len(rep_idx)
-    )
-    note = (
-        [f"ladder {lv:.0f} C @ t={x} ms" for lv, x in zip(lvl_a, t_a)]
-        + ["stratified core"] * len(v_b)
-        + ["model-agnostic probe"] * len(v_c)
-        + ["amorphous floor anchor"]
-        + [f"replicate of A{i + 1} (separate specimen)" for i in rep_idx]
-    )
-    order = np.lexsort((v, t, np.array([("ABCDE".index(b)) for b in block])))
+    v = np.concatenate([v_d, v_d[rep]])
+    t = np.concatenate([t_d, t_d[rep]])
+    block = ["L"] * len(v_d) + ["R"] * len(rep)
+    note = ["hypercube draw"] * len(v_d) + [
+        f"replicate of L{i + 1} (separate specimen)" for i in rep
+    ]
+    order = np.lexsort((v, t, np.array([("LR".index(b)) for b in block])))
     return {
         "V": v[order],
         "t": t[order],
@@ -445,36 +228,25 @@ def make_plan(n_core: int, seed: int) -> dict:
         "preds": {k: m.fraction(v[order], t[order]) for k, m in models.items()},
         "disagree": disagreement(models, v[order], t[order]),
         "models": models,
-        "ladder": (v_a, t_a, lvl_a),
     }
 
 
 def _check(plan: dict) -> None:
     """Assert the design properties the plan is supposed to guarantee."""
-    v, t, block, tm = plan["V"], plan["t"], plan["block"], plan["tmax"]
+    v, t, block = plan["V"], plan["t"], plan["block"]
+    assert len(v) == SEED_SIZE, f"expected {SEED_SIZE} shots, got {len(v)}"
     assert np.all(t >= T_SEARCH_LO - 1e-9), "a condition lands in the un-noded 0.1-2.6 ms gap"
     assert np.all(t <= T_SEARCH_HI + 1e-9), "a condition exceeds the measured time range"
+    assert np.all(v >= V_LO) and np.all(v <= V_HI), "a condition leaves the voltage box"
     assert np.all(v == np.round(v)) and np.allclose(t, np.round(t * 10) / 10), "not snapped"
-    lad_tm = np.array([tm[i] for i in range(len(tm)) if block[i] in ("A", "D")])
-    # Assign each ladder shot to its NEAREST level. A fixed-width window would be wrong whenever
-    # the levels sit closer together than the window -- which LADDER_MIN_GAP_C explicitly permits,
-    # and which happens as soon as the transition is narrow enough to pull the pair together.
-    owner = np.argmin(np.abs(lad_tm[:, None] - np.asarray(LADDER_TMAX_LEVELS)[None, :]), axis=1)
-    for k, level in enumerate(LADDER_TMAX_LEVELS):
-        on = lad_tm[owner == k]
-        assert on.size >= len(LADDER_TIMES), f"ladder level {level:.0f} C under-populated"
-        assert on.max() - on.min() < 2.0, f"ladder level {level:.0f} C not iso-Tmax"
-    # Blocks C and E are deliberately outside the informative band -- that is what they are for --
-    # so the band assertion applies only to the hypothesis-directed blocks.
-    core = np.array([tm[i] for i in range(len(tm)) if block[i] in ("A", "B", "D")])
-    assert core.min() >= BAND_LO_C - 1.0, f"a non-anchor point is too cold: {core.min():.0f} C"
-    assert core.max() <= BAND_HI_C + 1.0, f"a non-anchor point is too hot: {core.max():.0f} C"
-    assert sum(b == "E" for b in block) == 1, "expected exactly one floor anchor"
-    assert sum(b == "C" for b in block) == N_EXPLORE, "exploration block is the wrong size"
-    probe = np.array([tm[i] for i in range(len(tm)) if block[i] == "C"])
-    assert probe.min() >= EXPLORE_LO_C - 1.0 and probe.max() <= EXPLORE_HI_C + 1.0, (
-        "an exploration probe fell outside its window"
-    )
+    assert block.count("R") == N_REPLICATES, "wrong number of replicates"
+
+    pairs = list(zip(v.astype(int).tolist(), np.round(t, 1).tolist()))
+    drawn = [p for p, b in zip(pairs, block) if b == "L"]
+    assert len(set(drawn)) == len(drawn), "two drawn conditions collided after snapping"
+    for p, b in zip(pairs, block):
+        if b == "R":
+            assert p in drawn, "a replicate does not match any drawn condition"
 
 
 def _write_csv(plan: dict, path: Path) -> None:
@@ -507,18 +279,13 @@ def _write_csv(plan: dict, path: Path) -> None:
 
 
 def _figure(plan: dict, path: Path) -> None:
-    """Three panels: where the points sit, what the hypotheses disagree about, and the ladder."""
+    """Three panels: where the conditions sit, where the hypotheses disagree, and coverage."""
     models = plan["models"]
     vg = np.linspace(V_LO, V_HI, 220)
     tg = np.linspace(T_SEARCH_LO, T_SEARCH_HI, 220)
     vv, tt = np.meshgrid(vg, tg)
-    colors = {"A": "#e41a1c", "B": "#377eb8", "E": "#4daf4a", "D": "#ff7f00"}
-    labels = {
-        "A": "A  iso-T$_{max}$ ladder",
-        "B": "B  stratified core",
-        "E": "E  floor anchor",
-        "D": "D  replicate",
-    }
+    colors = {"L": "#377eb8", "R": "#ff7f00"}
+    labels = {"L": "hypercube draw", "R": "replicate"}
 
     fig, axes = plt.subplots(1, 3, figsize=(19, 5.6))
 
@@ -586,29 +353,20 @@ def _figure(plan: dict, path: Path) -> None:
     )
 
     a = axes[2]
-    v_a, t_a, lvl_a = plan["ladder"]
-    for li, level in enumerate(LADDER_TMAX_LEVELS):
-        on = np.isclose(lvl_a, level)
-        order = np.argsort(t_a[on])
-        for key, m in models.items():
-            a.plot(
-                t_a[on][order],
-                m.fraction(v_a[on], t_a[on])[order],
-                marker="o" if li == 0 else "s",
-                lw=2.4 if key == DEFAULT_MODEL else 1.4,
-                ls=styles[key],
-                alpha=1.0 if li == 0 else 0.55,
-                label=f"{key} (tilt {m.tilt_c(*LADDER_DWELL_RANGE):.0f} °C)" if li == 0 else None,
-            )
-    a.axhline(0.5, color="gray", lw=1, ls=":")
-    a.set_xscale("log")
-    a.set_xlabel("flash time t (ms)   [same T$_{max}$ at every point]")
-    a.set_ylabel("predicted crystalline fraction X")
-    a.set_ylim(-0.05, 1.05)
+    # How much of the reachable temperature range the batch actually covers -- the property that
+    # decided this design, since a targeted batch covers a narrow band superbly and the rest not
+    # at all.
+    tm = plan["tmax"]
+    a.hist(tm, bins=12, color="#7fa8d1", edgecolor="k", linewidth=0.5)
+    lo = T_TRANSITION_REF_C - T_TRANSITION_SIGMA_C
+    hi = T_TRANSITION_REF_C + T_TRANSITION_SIGMA_C
+    for x in (lo, hi):
+        a.axvline(x, color="#b23", lw=1.4, ls="--")
+    a.axvline(T_TRANSITION_REF_C, color="#b23", lw=2, label="proxy transition bracket")
+    a.set_xlabel("peak temperature T$_{max}$ (°C)")
+    a.set_ylabel("conditions")
     a.set_title(
-        "Block A: the tilt test, two T$_{max}$ levels\n"
-        f"({LADDER_TMAX_LEVELS[0]:.0f} / {LADDER_TMAX_LEVELS[1]:.0f} °C) — "
-        "flat lines = pure temperature threshold",
+        "Coverage of the reachable range\n(the batch does not bet on the bracket)",
         fontweight="bold",
         fontsize=10,
     )
@@ -621,9 +379,9 @@ def _figure(plan: dict, path: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--n-core", type=int, default=CORE_SIZE, help="size of the stratified core block"
+        "--n-core", type=int, default=N_DRAWN, help="number of drawn conditions before replicates"
     )
-    ap.add_argument("--seed", type=int, default=7, help="base RNG seed for the core LHS")
+    ap.add_argument("--seed", type=int, default=7, help="base RNG seed for the hypercube")
     args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -633,8 +391,9 @@ def main() -> int:
 
     n = len(plan["V"])
     print(f"Seed flash plan: {n} shots over V=[{V_LO:.0f},{V_HI:.0f}] V, t=[{T_LO},{T_HI}] ms")
-    print(f"  boundary search restricted to t in [{T_SEARCH_LO}, {T_SEARCH_HI}] ms (table nodes)")
-    print(f"  informative band Tmax in [{BAND_LO_C:.0f}, {BAND_HI_C:.0f}] C\n")
+    print(f"  restricted to t in [{T_SEARCH_LO}, {T_SEARCH_HI}] ms; the table has no node below")
+    tm = plan["tmax"]
+    print(f"  covers Tmax {tm.min():.0f}-{tm.max():.0f} C, and bets on none of it\n")
     head = "  #  blk    V   t(ms)   Tmax  " + "".join(f"{k:>11s}" for k in keys) + "   spread"
     print(head)
     print("  " + "-" * (len(head) - 2))
@@ -645,17 +404,15 @@ def main() -> int:
         row += f"   {plan['disagree'][i]:6.3f}"
         print(row)
 
-    v_a, t_a, lvl_a = plan["ladder"]
-    print("\n  Block A tilt test -- swing in X along each level, shortest to longest pulse:")
-    hdr = "    " + f"{'model':10s}" + "".join(f"{lv:>12.0f} C" for lv in LADDER_TMAX_LEVELS)
-    print(hdr + f"{'tilt':>10s}")
-    for k, m in plan["models"].items():
-        row = f"    {k:10s}"
-        for level in LADDER_TMAX_LEVELS:
-            on = np.isclose(lvl_a, level)
-            x = m.fraction(v_a[on], t_a[on])
-            row += f"{x[np.argmax(t_a[on])] - x[np.argmin(t_a[on])]:+14.3f}"
-        print(row + f"{m.tilt_c(*LADDER_DWELL_RANGE):9.0f} C")
+    tm = plan["tmax"]
+    print("\n  What the ensemble expects, as a check on coverage rather than a prediction:")
+    mean_x = np.mean([plan["preds"][k] for k in keys], axis=0)
+    print(f"    conditions the ensemble puts in the transition (0.05 < X < 0.95): "
+          f"{int(np.sum((mean_x > 0.05) & (mean_x < 0.95)))} of {n}")
+    print(f"    conditions it puts at the floor  (X < 0.05): {int(np.sum(mean_x <= 0.05))}")
+    print(f"    conditions it puts at saturation (X > 0.95): {int(np.sum(mean_x >= 0.95))}")
+    print("    Those counts assume the ensemble is right about WHERE the transition is. It is the")
+    print("    bet this design declines to make -- but if the bracket is right, they are the cost.")
 
     _write_csv(plan, ROOT / "data" / "flash_plan_seed.csv")
     _figure(plan, OUT / "flash_plan.png")

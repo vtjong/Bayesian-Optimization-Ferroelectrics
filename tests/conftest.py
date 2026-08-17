@@ -14,13 +14,12 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from discovery.kinetics import build_ensemble  # noqa: E402
-from run_flash_plan import CORE_SIZE, LADDER_TIMES, make_plan  # noqa: E402
+from run_flash_plan import N_DRAWN, T_SEARCH_HI, T_SEARCH_LO, make_plan  # noqa: E402
 
-# The pair of flash times the boundary tilt is quoted over: the shortest and longest table rows
-# that the campaign actually uses. Kept here so every test reports tilt on the same interval.
-# Derived from the design rather than restated, so a change to the ladder cannot leave the
-# tests asserting a span the generator no longer produces.
-LADDER_LO_MS, LADDER_HI_MS = min(LADDER_TIMES), max(LADDER_TIMES)
+# The dwell interval tilt is quoted over: the supported time range the campaign actually uses.
+# Derived from the design rather than restated, so a change cannot leave the tests asserting a
+# span the generator no longer produces.
+LADDER_LO_MS, LADDER_HI_MS = T_SEARCH_LO, T_SEARCH_HI
 
 
 @pytest.fixture(scope="session")
@@ -32,7 +31,7 @@ def ensemble() -> dict:
 @pytest.fixture(scope="session")
 def seed_plan() -> dict:
     """The committed seed design, generated with the defaults the script ships with."""
-    return make_plan(n_core=CORE_SIZE, seed=7)
+    return make_plan(n_core=N_DRAWN, seed=7)
 
 
 @pytest.fixture(scope="session")

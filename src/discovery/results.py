@@ -30,6 +30,13 @@ import pandas as pd
 
 # Join key back to the plan, then what the operator records.
 PLAN_KEY = "index"
+# The as-deposited reference: a specimen that is NEVER FLASHED, carried as index 0 so it travels
+# with the batch and is read by the same loader. It exists because the campaign currently has no
+# measured amorphous value at all -- every P-V sample in the archive was annealed, and the "floor"
+# quoted from them selects loops with 2Pr < 2, which means NOT FERROELECTRIC rather than NOT
+# CRYSTALLIZED. Without this row, block E's floor anchor has nothing to anchor against and a
+# reading of 38 cannot be told apart from an already-transformed non-ferroelectric film.
+CONTROL_INDEX = 0
 STATUS_COLUMN = "status"
 STATUS_MEASURED = "measured"
 STATUS_FAILED = "failed"  # fired, but the specimen or the readout was lost
@@ -104,17 +111,22 @@ def blank_template(plan: pd.DataFrame) -> pd.DataFrame:
 
     :param plan: the seed plan, as written by ``run_flash_plan``.
     """
-    out = pd.DataFrame({PLAN_KEY: plan[PLAN_KEY].to_numpy()})
+    out = pd.DataFrame({PLAN_KEY: np.concatenate([[CONTROL_INDEX], plan[PLAN_KEY].to_numpy()])})
     out[SPECIMEN_COLUMN] = ""
     out[STATUS_COLUMN] = ""
-    out[ACTUAL_V_COLUMN] = plan["voltage_V"].to_numpy()
-    out[ACTUAL_T_COLUMN] = plan["time_ms"].to_numpy()
-    out[READOUT_KIND_COLUMN] = plan[READOUT_KIND_COLUMN].to_numpy()
+    out[ACTUAL_V_COLUMN] = np.concatenate([[np.nan], plan["voltage_V"].to_numpy()])
+    out[ACTUAL_T_COLUMN] = np.concatenate([[np.nan], plan["time_ms"].to_numpy()])
+    out[READOUT_KIND_COLUMN] = np.concatenate(
+        [[plan[READOUT_KIND_COLUMN].iloc[0]], plan[READOUT_KIND_COLUMN].to_numpy()]
+    )
     out[READOUT_COLUMN] = ""
     out[CROSSCHECK_COLUMN] = ""
     out[DATE_COLUMN] = ""
     out[OPERATOR_COLUMN] = ""
     out[NOTES_COLUMN] = ""
+    out.loc[out[PLAN_KEY] == CONTROL_INDEX, NOTES_COLUMN] = (
+        "AS-DEPOSITED CONTROL -- do not flash. Leave voltage/time blank."
+    )
     return out[list(RESULT_COLUMNS)]
 
 
@@ -146,7 +158,7 @@ def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
         raise ValueError(f"non-numeric {PLAN_KEY} in rows {list(np.where(idx.isna())[0] + 2)}")
     raw[PLAN_KEY] = idx.astype(int)
 
-    want, got = set(plan[PLAN_KEY]), set(raw[PLAN_KEY])
+    want, got = set(plan[PLAN_KEY]) | {CONTROL_INDEX}, set(raw[PLAN_KEY])
     if want != got:
         raise ValueError(
             f"results do not correspond 1:1 with the plan -- missing {sorted(want - got)}, "
@@ -182,10 +194,13 @@ def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
         rows = list(raw.loc[is_measured & ~np.isfinite(value.to_numpy(float)), PLAN_KEY])
         raise ValueError(f"non-numeric readout values in rows {rows}")
 
+    # The as-deposited control is exempt: it has no as-fired condition because it was never fired.
+    needs_condition = is_measured & (raw[PLAN_KEY].to_numpy() != CONTROL_INDEX)
     for col in (ACTUAL_V_COLUMN, ACTUAL_T_COLUMN):
         as_num = pd.to_numeric(raw[col].where(~_blank(raw[col])), errors="coerce")
-        if (is_measured & ~np.isfinite(as_num.to_numpy(float))).any():
-            rows = list(raw.loc[is_measured & ~np.isfinite(as_num.to_numpy(float)), PLAN_KEY])
+        bad = needs_condition & ~np.isfinite(as_num.to_numpy(float))
+        if bad.any():
+            rows = list(raw.loc[bad, PLAN_KEY])
             raise ValueError(f"'{col}' missing or non-numeric on measured rows {rows}")
         raw[col] = as_num
 
@@ -194,16 +209,22 @@ def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
         raw[CROSSCHECK_COLUMN].where(~_blank(raw[CROSSCHECK_COLUMN])), errors="coerce"
     )
 
+    # The control is read on the same instrument as the batch, so it is checked too.
     kind_plan = plan.set_index(PLAN_KEY)[READOUT_KIND_COLUMN]
+    expected = {i: kind_plan[i] for i in kind_plan.index}
+    expected[CONTROL_INDEX] = kind_plan.iloc[0]
     kind_got = raw.set_index(PLAN_KEY)[READOUT_KIND_COLUMN].str.strip()
-    clash = [i for i in kind_plan.index if kind_got[i] and kind_got[i] != kind_plan[i]]
+    clash = [i for i in expected if kind_got[i] and kind_got[i] != expected[i]]
     if clash:
         raise ValueError(
             f"readout kind differs from the plan on rows {clash}; the noise model and the "
             "boundary anchor are specific to one readout and cannot be mixed"
         )
 
-    table = plan.merge(raw, on=PLAN_KEY, suffixes=("", "_result"), validate="one_to_one")
+    table = plan.merge(
+        raw, on=PLAN_KEY, how="right", suffixes=("", "_result"), validate="one_to_one"
+    )
+    table["block"] = table["block"].fillna("R")  # R = reference, never flashed
     table = table.sort_values(PLAN_KEY).reset_index(drop=True)
     measured = (
         table[STATUS_COLUMN].astype(str).str.strip().str.lower() == STATUS_MEASURED
@@ -211,7 +232,8 @@ def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
 
     dv = (table[ACTUAL_V_COLUMN] - table["voltage_V"]).abs()
     dt = (table[ACTUAL_T_COLUMN] - table["time_ms"]).abs()
-    drifted = measured & ((dv > DRIFT_V_TOLERANCE) | (dt > DRIFT_T_TOLERANCE_MS)).to_numpy()
+    drifted = measured & ((dv > DRIFT_V_TOLERANCE) | (dt > DRIFT_T_TOLERANCE_MS)).fillna(False)
+    drifted = drifted.to_numpy()
     return SeedResults(table=table, measured=measured, drift=table[drifted])
 
 

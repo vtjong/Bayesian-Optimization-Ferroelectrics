@@ -1,17 +1,17 @@
 index,block,voltage_V,time_ms,pred_Tmax_C,pred_X_isoT,pred_X_ramp,pred_X_lamp,pred_X_diffusion,pred_X_rect,model_disagreement,tmax_node_supported,readout,note
-1,A,632,2.6,444.8,0.395,0.297,0.093,0.09,0.09,0.305,True,eps_r,ladder 445 C @ t=2.6 ms
-2,A,643,2.6,460.4,0.931,0.954,0.571,0.561,0.556,0.397,True,eps_r,ladder 461 C @ t=2.6 ms
-3,A,660,5.1,444.6,0.384,0.388,0.389,0.388,0.389,0.005,True,eps_r,ladder 445 C @ t=5.1 ms
-4,A,674,5.1,461.3,0.941,0.993,0.993,0.993,0.993,0.052,True,eps_r,ladder 461 C @ t=5.1 ms
-5,B,636,3.5,455.8,0.846,0.846,0.76,0.601,0.598,0.248,True,eps_r,stratified core
-6,B,648,5.0,433.2,0.065,0.091,0.091,0.088,0.089,0.026,True,eps_r,stratified core
-7,B,686,6.9,434.4,0.08,0.135,0.118,0.216,0.218,0.138,True,eps_r,stratified core
-8,B,702,8.2,426.3,0.018,0.05,0.038,0.108,0.11,0.092,True,eps_r,stratified core
-9,C,555,3.3,351.4,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,model-agnostic probe
-10,C,690,4.0,519.5,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,model-agnostic probe
-11,C,601,6.5,349.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,model-agnostic probe
-12,D,632,2.6,444.8,0.395,0.297,0.093,0.09,0.09,0.305,True,eps_r,replicate of A1 (separate specimen)
-13,D,643,2.6,460.4,0.931,0.954,0.571,0.561,0.556,0.397,True,eps_r,replicate of A3 (separate specimen)
-14,D,660,5.1,444.6,0.384,0.388,0.389,0.388,0.389,0.005,True,eps_r,replicate of A2 (separate specimen)
-15,D,674,5.1,461.3,0.941,0.993,0.993,0.993,0.993,0.052,True,eps_r,replicate of A4 (separate specimen)
-16,E,506,5.1,270.4,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,amorphous floor anchor
+1,L,613,2.7,420.6,0.006,0.01,0.003,0.003,0.003,0.007,True,eps_r,hypercube draw
+2,L,643,3.0,467.1,0.98,1.0,0.982,0.944,0.941,0.059,True,eps_r,hypercube draw
+3,L,576,3.2,376.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+4,L,699,3.7,540.6,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,hypercube draw
+5,L,660,4.0,478.6,0.998,1.0,1.0,1.0,1.0,0.002,True,eps_r,hypercube draw
+6,L,604,4.6,389.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+7,L,678,4.9,472.7,0.993,1.0,1.0,1.0,1.0,0.007,True,eps_r,hypercube draw
+8,L,634,5.4,406.2,0.0,0.002,0.002,0.002,0.002,0.002,True,eps_r,hypercube draw
+9,L,616,6.1,371.9,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+10,L,705,6.4,459.8,0.923,0.992,0.988,0.999,0.999,0.076,True,eps_r,hypercube draw
+11,L,667,7.1,413.9,0.002,0.007,0.006,0.012,0.012,0.011,True,eps_r,hypercube draw
+12,L,647,7.6,387.2,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+13,L,626,8.7,353.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+14,L,680,9.2,401.7,0.0,0.001,0.001,0.003,0.003,0.003,True,eps_r,hypercube draw
+15,R,604,4.6,389.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,replicate of L6 (separate specimen)
+16,R,705,6.4,459.8,0.923,0.992,0.988,0.999,0.999,0.076,True,eps_r,replicate of L12 (separate specimen)

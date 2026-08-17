@@ -283,14 +283,44 @@ def straddle(
     return beta * s - np.abs(mu - theta)
 
 
+def targeted_mse(
+    mu: np.ndarray, s: np.ndarray, sig_n: np.ndarray, theta: float = 0.5
+) -> np.ndarray:
+    """Targeted mean-squared error: kriging variance weighted toward the threshold. THE DEFAULT.
+
+    ``a(x) = s^2 * W(x)`` with ``W`` a Gaussian in ``mu - theta`` of width ``sqrt(s^2 + sig_n^2)``,
+    so the utility is large only where the surface is BOTH uncertain and plausibly on the boundary.
+
+    Two properties the entropy family lacks. It self-suppresses: ``s -> 0`` at a measured point
+    drives the whole utility to zero, so an already-resolved boundary point cannot be chosen again
+    and the spreading penalty stops being load-bearing. And the width uses the TOTAL spread
+    ``s^2 + sig_n^2``, so a point whose ambiguity is pure measurement noise is down-weighted
+    relative to one that more data would actually resolve.
+
+    Chosen over straddle because the level-set benchmarking literature finds targeted-variance
+    methods the strongest option specifically in low dimension, which is where this campaign sits;
+    straddle remains available and is the better-known choice.
+    """
+    total = s**2 + sig_n**2
+    weight = np.exp(-0.5 * (mu - theta) ** 2 / total) / np.sqrt(2.0 * np.pi * total)
+    return s**2 * weight
+
+
 # Strategy registry: acquisition name -> a(mu, s, sig_n, theta) scoring callable.
 ACQUISITIONS: Dict[str, Callable[..., np.ndarray]] = {
     "predictive_entropy": acq_entropy,
     "noise_weighted": noise_weighted_boundary_entropy,
     "latent_entropy": latent_class_entropy,
     "straddle": straddle,
+    "targeted_mse": targeted_mse,
 }
-DEFAULT_ACQ = "latent_entropy"
+# NOT latent_entropy. H(Phi((mu-theta)/s)) equals its maximum ln 2 on the whole predicted contour
+# for ANY s -- verified identical to machine precision from s = 0.01 to s = 50 -- so the utility is
+# a flat plateau along the boundary and the argmax is settled by optimizer tie-breaking rather than
+# by information. That is the criterion which failed to converge on three of four benchmarks in the
+# founding level-set paper (Bryan et al., NIPS 2005) and was indistinguishable from random search on
+# the fourth. The spreading penalty was the only thing preventing it from re-measuring one point.
+DEFAULT_ACQ = "targeted_mse"
 
 
 def _spread(Vc: np.ndarray, tc: np.ndarray, Vs, ts, r: float = 0.08) -> np.ndarray:
