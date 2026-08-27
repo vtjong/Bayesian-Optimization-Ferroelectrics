@@ -1,17 +1,11 @@
 index,block,voltage_V,time_ms,pred_Tmax_C,pred_X_isoT,pred_X_ramp,pred_X_lamp,pred_X_diffusion,pred_X_rect,model_disagreement,tmax_node_supported,readout,note
-1,L,613,2.7,420.6,0.006,0.01,0.003,0.003,0.003,0.007,True,eps_r,hypercube draw
-2,L,643,3.0,467.1,0.98,1.0,0.982,0.944,0.941,0.059,True,eps_r,hypercube draw
-3,L,576,3.2,376.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
-4,L,699,3.7,540.6,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,hypercube draw
-5,L,660,4.0,478.6,0.998,1.0,1.0,1.0,1.0,0.002,True,eps_r,hypercube draw
-6,L,604,4.6,389.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
-7,L,678,4.9,472.7,0.993,1.0,1.0,1.0,1.0,0.007,True,eps_r,hypercube draw
-8,L,634,5.4,406.2,0.0,0.002,0.002,0.002,0.002,0.002,True,eps_r,hypercube draw
-9,L,616,6.1,371.9,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
-10,L,705,6.4,459.8,0.923,0.992,0.988,0.999,0.999,0.076,True,eps_r,hypercube draw
-11,L,667,7.1,413.9,0.002,0.007,0.006,0.012,0.012,0.011,True,eps_r,hypercube draw
-12,L,647,7.6,387.2,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
-13,L,626,8.7,353.8,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
-14,L,680,9.2,401.7,0.0,0.001,0.001,0.003,0.003,0.003,True,eps_r,hypercube draw
-15,R,604,4.6,389.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,replicate of L6 (separate specimen)
-16,R,705,6.4,459.8,0.923,0.992,0.988,0.999,0.999,0.076,True,eps_r,replicate of L12 (separate specimen)
+1,L,709,2.8,558.9,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,hypercube draw
+2,L,655,3.2,484.5,0.999,1.0,1.0,1.0,1.0,0.001,True,eps_r,hypercube draw
+3,L,691,3.6,531.1,1.0,1.0,1.0,1.0,1.0,0.0,True,eps_r,hypercube draw
+4,L,572,4.4,355.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+5,L,641,4.9,427.7,0.023,0.041,0.041,0.038,0.039,0.018,True,eps_r,hypercube draw
+6,L,674,5.6,447.4,0.517,0.541,0.532,0.602,0.602,0.085,True,eps_r,hypercube draw
+7,L,605,5.9,362.6,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+8,L,626,6.8,373.1,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+9,L,647,8.7,375.9,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
+10,L,669,9.5,387.4,0.0,0.0,0.0,0.0,0.0,0.0,True,eps_r,hypercube draw
