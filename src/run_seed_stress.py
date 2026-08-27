@@ -6,7 +6,7 @@ every member is wrong in the same way, the batch can systematically avoid the re
 show it. Scoring the seed against those five members cannot detect that -- it is the same
 circularity one level up.
 
-So this scores designs against ``discovery.adversarial``, which includes truths no member can
+So this scores designs against ``validation.adversarial``, which includes truths no member can
 represent: a response that falls at high temperature, a second crystallization branch at long
 dwell, a boundary that curves in log t, a direct voltage channel, a hard step.
 
@@ -41,11 +41,11 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.adversarial import build_truths
-from discovery.constants import NOISE_BOUNDARY, NOISE_FLOOR
-from discovery.kinetics import build_ensemble
-from discovery.synthetic import FLASH, T_HI, V_HI, V_LO
-from run_flash_plan import T_SEARCH_HI, T_SEARCH_LO, core_block, make_plan
+from campaign.plan import T_SEARCH_HI, T_SEARCH_LO, core_block, make_plan
+from physics.constants import NOISE_BOUNDARY, NOISE_FLOOR
+from physics.kinetics import build_ensemble
+from physics.thermal_model import FLASH, T_HI, V_HI, V_LO
+from validation.adversarial import build_truths
 from visualization.base import save_figure
 
 ROOT = Path(__file__).resolve().parent.parent

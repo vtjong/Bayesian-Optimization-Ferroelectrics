@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from conftest import LADDER_HI_MS, LADDER_LO_MS
 
-from discovery.constants import (
+from physics.constants import (
     AVRAMI_N,
     CELSIUS_TO_KELVIN,
     EA_EV,
@@ -18,13 +18,13 @@ from discovery.constants import (
     T_ROOM_C,
     T_TRANSITION_REF_C,
 )
-from discovery.kinetics import (
+from physics.kinetics import (
     KineticBoundary,
     disagreement,
     logistic_sharpness,
     theta_kelvin,
 )
-from discovery.synthetic import SHAPES, thermal_model
+from physics.thermal_model import SHAPES, thermal_model
 
 ANCHOR_TOL_X = 5e-3  # |X - 1/2| at the calibration anchor
 TILT_TOL_C = 2.0  # agreement with the closed-form tilt law

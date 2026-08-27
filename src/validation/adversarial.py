@@ -20,7 +20,7 @@ from typing import Callable, Dict
 
 import numpy as np
 
-from .constants import (
+from physics.constants import (
     CELSIUS_TO_KELVIN,
     EA_EV,
     KB_EV,
@@ -28,8 +28,8 @@ from .constants import (
     T_TRANSITION_REF_C,
     T_TRANSITION_SIGMA_C,
 )
-from .kinetics import logistic_sharpness
-from .synthetic import FLASH
+from physics.kinetics import logistic_sharpness
+from physics.thermal_model import FLASH
 
 # Multipliers defining how hostile each variant is. They are deliberately large: a stress test that
 # only perturbs within the prior tests nothing the minimax placement has not already handled.

@@ -3,16 +3,10 @@
 import numpy as np
 import pytest
 
-from discovery.constants import FLASH_TABLE_CSV, T_REF_MS
-from discovery.synthetic import (
-    FLASH,
-    FLASH_T,
-    FLASH_TMAX,
-    FLASH_V,
-    SHAPES,
-    load_flash_table,
-    tmax,
-)
+from design_space import load_flash_table
+from paths import FLASH_TABLE_CSV
+from physics.constants import T_REF_MS
+from physics.thermal_model import FLASH, FLASH_T, FLASH_TMAX, FLASH_V, SHAPES, tmax
 
 NODE_TOL_C = 1e-6  # spline must interpolate a measured node to well below readout precision
 PEAK_TOL = 1e-3  # |max(g) - 1| for a shape normalized to a unit peak

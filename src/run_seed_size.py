@@ -17,7 +17,7 @@ boundary point against an unexplored one, and it is the criterion that failed to
 of four benchmarks in the founding level-set paper. Targeted variance weights the posterior
 variance toward the threshold, so it collapses at a measured point and genuinely moves on.
 
-Worlds come from ``discovery.worlds``: the 30 measured peak temperatures are held fixed and
+Worlds come from ``validation.worlds``: the 30 measured peak temperatures are held fixed and
 everything else -- response family, transition location and width, dwell dependence, a non-thermal
 voltage channel, noise scale, and the readout's floor, span and saturation -- is sampled.
 
@@ -32,11 +32,12 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.designs import thermal_lhs, with_replicates
-from discovery.evaluate import has_boundary, supported_grid
-from discovery.surrogate import BoundarySurrogate
-from discovery.worlds import sample_world
-from run_flash_plan import N_REPLICATES, T_SEARCH_HI, T_SEARCH_LO, _snap
+from active_learning.surrogate import BoundarySurrogate
+from campaign.plan import N_REPLICATES, T_SEARCH_HI, T_SEARCH_LO
+from design_space import snap
+from validation.designs import thermal_lhs, with_replicates
+from validation.evaluate import has_boundary, supported_grid
+from validation.worlds import sample_world
 
 SEED_SIZES = (8, 12, 16, 20, 24, 32)
 BATCH_SIZES = (2, 4, 6, 8)
@@ -49,7 +50,7 @@ def _candidates() -> tuple:
     vv, tt = supported_grid(T_SEARCH_LO, T_SEARCH_HI)
     v = np.linspace(vv.min(), vv.max(), CAND_V)
     t = np.geomspace(T_SEARCH_LO, T_SEARCH_HI, CAND_T)
-    g = np.array([_snap(a, b) for a in v for b in t])
+    g = np.array([snap(a, b) for a in v for b in t])
     return g[:, 0], g[:, 1]
 
 

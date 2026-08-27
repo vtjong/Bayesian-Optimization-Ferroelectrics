@@ -6,7 +6,7 @@ design most depends on, and it flatters designs that navigate in thermal coordin
 assumes the calibrated noise model and a readout that reports crystalline fraction directly --
 and the readout calibration is now known to be mislabeled.
 
-This script removes all of those guarantees. Each trial draws a world from ``discovery.worlds`` in
+This script removes all of those guarantees. Each trial draws a world from ``validation.worlds`` in
 which the temperature scale, the local table accuracy, the response family, its location, width,
 tilt and curvature, a non-thermal voltage channel, the noise scale, a heavy tail, per-specimen
 scatter, and the readout's floor, span and saturation are ALL sampled independently.
@@ -42,10 +42,7 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.designs import catalogue
-from discovery.evaluate import has_boundary, misclassified_area, supported_grid
-from discovery.worlds import sample_world
-from run_flash_plan import (
+from campaign.plan import (
     CORE_SIZE,
     FLOOR_CONDITION,
     T_SEARCH_HI,
@@ -53,6 +50,9 @@ from run_flash_plan import (
     explore_block,
     make_plan,
 )
+from validation.designs import catalogue
+from validation.evaluate import has_boundary, misclassified_area, supported_grid
+from validation.worlds import sample_world
 from visualization.base import save_figure
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -28,7 +28,8 @@ from typing import Sequence, Tuple
 import numpy as np
 from scipy.stats import qmc
 
-from .synthetic import FLASH, V_HI, V_LO
+from design_space import V_HI, V_LO, snap, snap_all
+from physics.thermal_model import FLASH
 
 N_SHOTS = 16  # every candidate is compared at the committed budget
 
@@ -36,11 +37,6 @@ N_SHOTS = 16  # every candidate is compared at the committed budget
 # It is a physical floor, not an archival one -- which is the point of using it here.
 SWEEP_LO_C = 350.0
 LEVEL_MARGIN_C = 6.0  # keep levels off the reachable edge, where the inversion is ill-conditioned
-
-
-def _snap(v: float, t: float) -> Tuple[int, float]:
-    """Round to what the tool can actually be set to: whole volts, 0.1 ms."""
-    return int(round(v)), float(round(t, 1))
 
 
 def naive_lhs(n: int, t_lo: float, t_hi: float, seed: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -55,7 +51,7 @@ def naive_lhs(n: int, t_lo: float, t_hi: float, seed: int) -> Tuple[np.ndarray, 
     v = V_LO + u[:, 0] * (V_HI - V_LO)
     lo, hi = np.log10(t_lo), np.log10(t_hi)
     t = 10.0 ** (lo + u[:, 1] * (hi - lo))
-    out = [_snap(a, b) for a, b in zip(v, t)]
+    out = [snap(a, b) for a, b in zip(v, t)]
     return np.array([o[0] for o in out]), np.array([o[1] for o in out], float)
 
 
@@ -72,7 +68,7 @@ def thermal_lhs(n: int, t_lo: float, t_hi: float, seed: int) -> Tuple[np.ndarray
     """
     u = qmc.LatinHypercube(d=2, seed=seed).random(n)
     lo, hi = np.log10(t_lo), np.log10(t_hi)
-    t = np.round(10.0 ** (lo + u[:, 1] * (hi - lo)), 1)
+    t = snap_all(np.zeros_like(u[:, 1]), 10.0 ** (lo + u[:, 1] * (hi - lo)))[1]
     v = np.empty(n)
     for i, ti in enumerate(t):
         r_lo, r_hi = FLASH.tmax_range(float(ti))
@@ -81,7 +77,7 @@ def thermal_lhs(n: int, t_lo: float, t_hi: float, seed: int) -> Tuple[np.ndarray
         if hi_c <= lo_c:  # this flash time cannot reach the window at all
             lo_c, hi_c = r_lo + LEVEL_MARGIN_C, r_hi - LEVEL_MARGIN_C
         v[i] = FLASH.voltage_for_tmax(lo_c + u[i, 0] * (hi_c - lo_c), float(ti))
-    out = [_snap(a, b) for a, b in zip(v, t)]
+    out = [snap(a, b) for a, b in zip(v, t)]
     return np.array([o[0] for o in out]), np.array([o[1] for o in out], float)
 
 
@@ -106,7 +102,7 @@ def paired_sweep(
     v, t, lv = [], [], []
     for level in levels:
         for ti in times:
-            vs, ts = _snap(FLASH.voltage_for_tmax(float(level), float(ti)), float(ti))
+            vs, ts = snap(FLASH.voltage_for_tmax(float(level), float(ti)), float(ti))
             v.append(vs)
             t.append(ts)
             lv.append(level)

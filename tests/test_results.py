@@ -13,7 +13,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from discovery.results import (  # noqa: E402
+from campaign.results import (  # noqa: E402
     ACTUAL_T_COLUMN,
     ACTUAL_V_COLUMN,
     CONTROL_INDEX,

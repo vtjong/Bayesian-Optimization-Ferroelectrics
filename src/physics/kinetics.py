@@ -49,7 +49,7 @@ from .constants import (
     T_ROOM_C,
     T_TRANSITION_REF_C,
 )
-from .synthetic import FLASH_T, SHAPES, TableThermalModel, thermal_model
+from .thermal_model import FLASH_T, SHAPES, TableThermalModel, thermal_model
 
 
 def theta_kelvin(tmax_c: float, ea_ev: float = EA_EV) -> float:

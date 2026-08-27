@@ -39,12 +39,12 @@ from scipy.optimize import minimize
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import T_REF_MS
-from discovery.evaluate import has_boundary, supported_grid
-from discovery.synthetic import FLASH
-from discovery.worlds import sample_world
-from run_flash_plan import T_SEARCH_HI, T_SEARCH_LO
+from campaign.plan import T_SEARCH_HI, T_SEARCH_LO
+from physics.constants import T_REF_MS
+from physics.thermal_model import FLASH
 from run_seed_robust import build_designs
+from validation.evaluate import has_boundary, supported_grid
+from validation.worlds import sample_world
 
 BETA_GRID = np.linspace(-20.0, 80.0, 21)  # K per e-fold; the sampler draws truth in [0, 60]
 T0_STARTS = (410.0, 480.0, 545.0)

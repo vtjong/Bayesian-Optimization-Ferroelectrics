@@ -39,8 +39,7 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import NOISE_BOUNDARY, NOISE_FLOOR
-from discovery.results import (
+from campaign.results import (
     ACTUAL_T_COLUMN,
     ACTUAL_V_COLUMN,
     CROSSCHECK_COLUMN,
@@ -52,6 +51,7 @@ from discovery.results import (
     load,
     unfired,
 )
+from physics.constants import NOISE_BOUNDARY, NOISE_FLOOR
 
 ROOT = Path(__file__).resolve().parent.parent
 PLAN_CSV = ROOT / "data" / "flash_plan_seed.csv"

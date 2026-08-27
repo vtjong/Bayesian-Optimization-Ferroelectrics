@@ -15,8 +15,8 @@ from typing import Callable, Tuple
 
 import numpy as np
 
-from .surrogate import BoundarySurrogate
-from .synthetic import V_HI, V_LO
+from active_learning.surrogate import BoundarySurrogate
+from physics.thermal_model import V_HI, V_LO
 
 GRID_V, GRID_T = 90, 70  # resolution of the misclassification integral
 CLASS_THRESHOLD = 0.5

@@ -31,10 +31,10 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.kinetics import build_ensemble
-from discovery.picker import DEFAULT as NOISE_CFG
-from discovery.picker import noise_sigma
-from run_flash_plan import make_plan
+from campaign.plan import make_plan
+from physics.kinetics import build_ensemble
+from validation.picker import DEFAULT as NOISE_CFG
+from validation.picker import noise_sigma
 from visualization.base import save_figure
 
 ROOT = Path(__file__).resolve().parent.parent

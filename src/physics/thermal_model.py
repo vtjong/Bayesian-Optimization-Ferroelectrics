@@ -20,9 +20,18 @@ from typing import Dict, Protocol, Tuple, runtime_checkable
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
 
+from design_space import (
+    GRID_T,
+    GRID_TMAX,
+    GRID_V,
+    T_HI,
+    T_LO,
+    V_HI,
+    V_LO,
+)
+
 from .constants import (
     BISECT_ITERS,
-    FLASH_TABLE_CSV,
     KB_EV,
     LAMP_A,
     LAMP_QUAD_NODES,
@@ -74,31 +83,9 @@ __all__ = [
 ]
 
 
-def load_flash_table(path=FLASH_TABLE_CSV) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read the measured peak-temperature table; returns ``(voltages, times, tmax_table)``.
-
-    The CSV is the single source of truth for this measurement -- it is deliberately NOT mirrored
-    as a literal in the source, so the two cannot drift apart. Header cells are ``V=<volts>`` and
-    row labels ``t=<milliseconds>``.
-
-    :param path: path to the table CSV.
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"measured flash table not found at {path}")
-    rows = [line.split(",") for line in path.read_text().strip().splitlines() if line.strip()]
-    voltages = np.array([float(c.strip().removeprefix("V=")) for c in rows[0][1:]], float)
-    times = np.array([float(r[0].strip().removeprefix("t=")) for r in rows[1:]], float)
-    table = np.array([[float(c) for c in r[1:]] for r in rows[1:]], float)
-    if table.shape != (times.size, voltages.size):
-        raise ValueError(f"table shape {table.shape} does not match axes in {path}")
-    return voltages, times, table
-
-
-FLASH_V, FLASH_T, FLASH_TMAX = load_flash_table()
-
-# Design box = the extent of the measured grid; the model is never extrapolated beyond it.
-V_LO, V_HI = float(FLASH_V[0]), float(FLASH_V[-1])
-T_LO, T_HI = float(FLASH_T[0]), float(FLASH_T[-1])
+# The measured grid and the box it defines both live in design_space, which owns them because
+# both the thermal model and the learner need the box while neither may reach the other.
+FLASH_V, FLASH_T, FLASH_TMAX = GRID_V, GRID_T, GRID_TMAX
 
 
 @runtime_checkable

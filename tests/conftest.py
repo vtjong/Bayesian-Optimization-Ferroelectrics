@@ -13,7 +13,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from discovery.kinetics import build_ensemble  # noqa: E402
+from physics.kinetics import build_ensemble  # noqa: E402
 from run_flash_plan import N_DRAWN, T_SEARCH_HI, T_SEARCH_LO, make_plan  # noqa: E402
 
 # The dwell interval tilt is quoted over: the supported time range the campaign actually uses.

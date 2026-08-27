@@ -26,8 +26,8 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-import discovery.picker as pk
-from discovery.synthetic import T_HI, T_LO, V_HI, V_LO
+import validation.picker as pk
+from physics.thermal_model import T_HI, T_LO, V_HI, V_LO
 from visualization.base import save_figure
 
 OUT = Path(__file__).resolve().parent.parent / "predictions" / "picker_demo"

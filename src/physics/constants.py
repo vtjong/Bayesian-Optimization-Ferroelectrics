@@ -26,16 +26,9 @@ An [ARCHIVAL] number is a PRIOR. Never treat one as a calibration of the current
   READOUT    the measured noise model of the in-loop permittivity readout.
 
 Measured data is NOT here: the peak-temperature table is read from ``data/flash_temp_table.csv``
-so that file stays the single source of truth.
+so that file stays the single source of truth, and the paths to it live in ``paths.py``.
 """
 
-from pathlib import Path
-
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-FLASH_TABLE_CSV = DATA_DIR / "flash_temp_table.csv"
-MEASURED_TRACE_CSV = (
-    DATA_DIR / "measured_transient.csv"
-)  # not yet available; see run_thermal_check
 
 # --- PHYSICAL ------------------------------------------------------------------------------
 KB_EV = 8.617333e-5  # Boltzmann constant (eV/K)

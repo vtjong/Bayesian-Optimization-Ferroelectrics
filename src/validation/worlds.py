@@ -35,8 +35,8 @@ from typing import Callable
 
 import numpy as np
 
-from .constants import CELSIUS_TO_KELVIN, KB_EV, T_REF_MS
-from .synthetic import FLASH, FLASH_T, FLASH_V, T_HI, V_HI, V_LO
+from physics.constants import CELSIUS_TO_KELVIN, KB_EV, T_REF_MS
+from physics.thermal_model import FLASH, FLASH_T, FLASH_V, T_HI, V_HI, V_LO
 
 _SD_GRID = None
 
@@ -52,7 +52,7 @@ def _interp_sd():
     if _SD_GRID is None:
         from scipy.interpolate import RegularGridInterpolator
 
-        from .thermal_gp import build
+        from physics.thermal_gp import build
 
         gp = build()
         # The grid MUST contain the measured node coordinates, or the interpolated sd never sees

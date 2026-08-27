@@ -35,8 +35,8 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.kinetics import EA_EV, build_ensemble, theta_kelvin, trace_times
-from discovery.synthetic import (
+from physics.kinetics import EA_EV, build_ensemble, theta_kelvin, trace_times
+from physics.thermal_model import (
     FLASH,
     FLASH_T,
     FLASH_TMAX,

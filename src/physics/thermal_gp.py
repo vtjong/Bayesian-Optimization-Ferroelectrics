@@ -52,8 +52,10 @@ from scipy.optimize import curve_fit
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
-from .constants import DATA_DIR, T_ROOM_C
-from .synthetic import FLASH_T, FLASH_TMAX, FLASH_V, T_HI, T_LO, V_HI, V_LO
+from paths import DATA_DIR
+
+from .constants import T_ROOM_C
+from .thermal_model import FLASH_T, FLASH_TMAX, FLASH_V, T_HI, T_LO, V_HI, V_LO
 
 BOLOMETER_XLSX = DATA_DIR / "Bolometer_readings_PulseForge.xlsx"
 BOLOMETER_SHEET = "Combined"

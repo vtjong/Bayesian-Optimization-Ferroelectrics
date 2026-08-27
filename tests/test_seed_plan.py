@@ -7,8 +7,7 @@ seed was replaced: it satisfied none of the last three.
 import numpy as np
 import pytest
 
-from discovery.constants import T_TRANSITION_REF_C
-from run_flash_plan import (
+from campaign.plan import (
     N_DRAWN,
     N_REPLICATES,
     SEED_SIZE,
@@ -16,6 +15,7 @@ from run_flash_plan import (
     T_SEARCH_LO,
     make_plan,
 )
+from physics.constants import T_TRANSITION_REF_C
 
 LADDER_ISO_TOL_C = 2.0  # how tightly the ladder rungs must share one peak temperature
 SATURATED_X = 0.98  # above this every hypothesis agrees the film is fully crystalline

@@ -6,7 +6,7 @@ at varying peak temperature -- i.e. the very measurement the campaign's iso-Tmax
 to make. It is worth fitting before spending new film.
 
 MODEL. The boundary is linear in ln t (this is the closed-form consequence of an Arrhenius budget;
-see discovery.kinetics), so
+see physics.kinetics), so
 
     P(crystallized)  =  sigmoid( s * [ Tmax - T0 + theta * ln(t / t_ref) ] )
 
@@ -55,7 +55,7 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import CELSIUS_TO_KELVIN, KB_EV
+from physics.constants import CELSIUS_TO_KELVIN, KB_EV
 from visualization.base import save_figure
 
 ROOT = Path(__file__).resolve().parent.parent

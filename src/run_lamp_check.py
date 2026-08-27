@@ -52,8 +52,8 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import T_ROOM_C
-from discovery.synthetic import FLASH_T, FLASH_TMAX, FLASH_V
+from physics.constants import T_ROOM_C
+from physics.thermal_model import FLASH_T, FLASH_TMAX, FLASH_V
 from visualization.base import save_figure
 
 ROOT = Path(__file__).resolve().parent.parent

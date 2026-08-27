@@ -26,7 +26,7 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-import discovery.picker as pk
+import validation.picker as pk
 from visualization.base import save_figure
 
 OUT = Path(__file__).resolve().parent.parent / "predictions" / "seed_budget"

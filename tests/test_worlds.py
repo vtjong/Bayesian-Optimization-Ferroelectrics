@@ -15,8 +15,8 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from discovery.synthetic import FLASH, FLASH_T, FLASH_V  # noqa: E402
-from discovery.worlds import INTERP_SIGMAS, sample_world  # noqa: E402
+from physics.thermal_model import FLASH, FLASH_T, FLASH_V  # noqa: E402
+from validation.worlds import INTERP_SIGMAS, sample_world  # noqa: E402
 
 N_WORLDS = 40
 # The GP's posterior sd at a measured node, times the licence a world is given, plus room for the

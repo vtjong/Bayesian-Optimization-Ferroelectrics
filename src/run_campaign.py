@@ -10,7 +10,7 @@ if not writes the next batch as a plan plus a blank results sheet in the same fo
 WHAT IT WILL NOT DO. It will not fit anything to a results sheet that is ambiguous. A blank cell is
 never read as a zero, a value on a row not marked measured is an error, and an unfilled sheet fails
 loudly rather than reading as a batch of not-run specimens. Those rules are enforced upstream in
-``discovery.results`` and every one of them is a regression test against a defect already present
+``campaign.results`` and every one of them is a regression test against a defect already present
 in this project's archival data.
 
 WHAT THE STOPPING RULE IS, AND WHAT IT IS NOT. The campaign stops when the surrogate's own boundary
@@ -30,18 +30,18 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.acquire import (
+from active_learning.acquisition import (
     DEFAULT_ACQUISITION,
     binary_entropy,
-    boundary_conditions,
     p_crystalline,
     select_batch,
 )
-from discovery.evaluate import supported_grid
-from discovery.results import CONTROL_INDEX, PLAN_KEY, blank_template, load, unfired
-from discovery.surrogate import BoundarySurrogate
-from discovery.synthetic import FLASH
-from run_flash_plan import T_SEARCH_HI, T_SEARCH_LO
+from active_learning.surrogate import BoundarySurrogate
+from campaign.plan import T_SEARCH_HI, T_SEARCH_LO
+from campaign.reporting import boundary_conditions
+from campaign.results import CONTROL_INDEX, PLAN_KEY, blank_template, load, unfired
+from physics.thermal_model import FLASH
+from validation.evaluate import supported_grid
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"

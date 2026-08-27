@@ -38,7 +38,7 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import (
+from physics.constants import (
     AVRAMI_N,
     EA_EV,
     NOISE_BOUNDARY,
@@ -47,8 +47,8 @@ from discovery.constants import (
     T_TRANSITION_LO_C,
     T_TRANSITION_SIGMA_C,
 )
-from discovery.kinetics import build_ensemble
-from discovery.synthetic import SHAPES
+from physics.kinetics import build_ensemble
+from physics.thermal_model import SHAPES
 
 ROOT = Path(__file__).resolve().parent.parent
 WIDE_INTERVAL = 0.6  # a predictive interval wider than this means "we cannot call this condition"
@@ -68,7 +68,7 @@ def predictive_draws(v: np.ndarray, t: np.ndarray, n_draws: int, seed: int) -> n
     shapes = list(SHAPES)
     out = np.empty((n_draws, len(v)))
     # The thermal-interpolation term is imported lazily: it fits a GP on first use.
-    from discovery.thermal_gp import build
+    from physics.thermal_gp import build
 
     gp_t = build()
     _, sd_t = gp_t.predict(v, t)

@@ -51,9 +51,9 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 
-from .constants import NOISE_BOUNDARY, NOISE_FLOOR
-from .kinetics import DEFAULT_MODEL, BoundaryModel, build_ensemble
-from .synthetic import FLASH_T, T_HI, V_HI, V_LO
+from physics.constants import NOISE_BOUNDARY, NOISE_FLOOR
+from physics.kinetics import DEFAULT_MODEL, BoundaryModel, build_ensemble
+from physics.thermal_model import FLASH_T, T_HI, V_HI, V_LO
 
 # Boundary search is restricted to flash times the measured table actually supports.
 T_SEARCH_LO = float(FLASH_T[1])
