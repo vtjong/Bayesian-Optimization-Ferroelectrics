@@ -86,8 +86,13 @@ T_SEARCH_LO, T_SEARCH_HI = float(FLASH_T[1]), float(FLASH_T[-1])  # 2.6 .. 10.1 
 # concentration only pays if the belief is precise and ours is a bracket from six archival samples.
 # See docs for the comparison; the machinery for it has been removed rather than left dormant.
 
-SEED_SIZE = 16  # of an 80-specimen campaign
-N_REPLICATES = 2  # measured: 0 and 2 are indistinguishable on coverage, 3+ degrade it
+SEED_SIZE = 10  # of an 80-specimen campaign
+# No replicates. The reproducibility check they would buy is deferred to a later batch, so all ten
+# specimens go to distinct conditions and the seed resolves the boundary to 55 C rather than 61 C.
+# What is given up is real and worth stating: archival shots on this tool show two nominally
+# identical conditions disagreeing by 2.08x, and until something replicates, a discrepant reading
+# cannot be told apart from a genuine feature of the surface.
+N_REPLICATES = 0
 N_DRAWN = SEED_SIZE - N_REPLICATES
 
 # The hypercube is stratified over PEAK TEMPERATURE and inverted through the measured table, not

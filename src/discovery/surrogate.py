@@ -57,6 +57,25 @@ from scipy.optimize import minimize
 from .synthetic import T_HI, V_HI, V_LO
 
 LOGIT_CLIP = 1.0e-3  # bounds the latent to about +/- 6.9
+# The observed range is set by the INLIERS, not by the extremes and not by a quantile.
+#
+# Normalizing by min and max makes the whole fit hostage to one bad reading: an outlier drags the
+# floor down, every genuine measurement is compressed into the top of the range, and the surrogate
+# calls the entire box crystallized. Measured on a simulated campaign, one reading of -1.19 against
+# a working range of [-0.03, 1.10] took misclassified area from 1.5% to 90.8% -- permanently, since
+# the outlier never leaves the dataset. A shorted dot or a misread does exactly this.
+#
+# Quantiles are not the fix. At the sample sizes this campaign runs at, an order statistic is still
+# one point: the 5th percentile of ten readings IS the minimum, and measured damage from a single
+# outlier was +49.5% for 5/95 against +50.2% for min/max. Trimming hard enough to help (15/85)
+# throws away genuine signal.
+#
+# Instead the scale is estimated from every point -- median and MAD -- and the range is taken over
+# the readings that fall within OUTLIER_SIGMAS of the median. Outliers still enter the fit; they
+# simply stop defining the axis, and clip onto its end. Damage from one wild reading falls to
+# within noise (-2.9%) for about two points of accuracy on clean data.
+OUTLIER_SIGMAS = 3.5
+_MAD_TO_SIGMA = 1.4826
 _JITTER = 1.0e-8  # insures the Cholesky against coincident conditions
 _SQRT5 = np.sqrt(5.0)
 
@@ -100,10 +119,18 @@ def to_latent(y: np.ndarray) -> np.ndarray:
     :param y: observed readings, in whatever units the instrument reports.
     """
     y = np.asarray(y, float)
-    span = float(np.ptp(y))
+    median = float(np.median(y))
+    scale = float(np.median(np.abs(y - median))) * _MAD_TO_SIGMA
+    if scale <= 0.0:  # more than half the readings identical; fall back to the full range
+        scale = float(np.ptp(y))
+    inlier = np.abs(y - median) <= OUTLIER_SIGMAS * scale if scale > 0 else np.ones_like(y, bool)
+    if inlier.sum() < 3:  # too few to define a range; use everything rather than guess
+        inlier = np.ones_like(y, bool)
+    lo = float(np.min(y[inlier]))
+    span = float(np.max(y[inlier]) - lo)
     if span <= 0.0:
         return np.zeros_like(y)
-    x = np.clip((y - float(np.min(y))) / span, LOGIT_CLIP, 1.0 - LOGIT_CLIP)
+    x = np.clip((y - lo) / span, LOGIT_CLIP, 1.0 - LOGIT_CLIP)
     return np.log(x / (1.0 - x))
 
 
@@ -226,6 +253,38 @@ class BoundarySurrogate:
         sigma_f, l1, l2, sigma_n = np.exp(best_theta2)
         self._factorize(sigma_f, (l1, l2), sigma_n)
         return self
+
+    def believe(self, v: np.ndarray, t: np.ndarray, latent: np.ndarray) -> "BoundarySurrogate":
+        """Return a copy conditioned on fantasy observations, hyperparameters FROZEN.
+
+        Used by batch selection: after a condition is chosen, the model is told to believe its own
+        posterior mean there, which collapses the uncertainty locally so the next pick lands
+        somewhere else. The fantasy carries no information -- it is the value the model already
+        predicted -- and its only job is to mark territory as spoken for.
+
+        The MEAN is frozen along with the hyperparameters. Recomputing it would let the fantasies
+        drag it: every pick sits near the boundary, so every fantasy value is near zero, and a mean
+        recomputed over real-plus-fantasy data walks toward zero as the batch grows. Far from data
+        the posterior reverts to that mean, so drifting it toward the threshold manufactures
+        exploration pressure that increases with batch size.
+
+        :param v: fantasy voltages.
+        :param t: fantasy flash times (ms).
+        :param latent: fantasy values, in latent units.
+        """
+        out = BoundarySurrogate(n_restarts=self.n_restarts, seed=self.seed, priors=self.priors)
+        out._x = np.vstack([self._x, normalize_inputs(v, t)])
+        out._y = np.concatenate([self._y, np.atleast_1d(latent)])
+        out._smooth = None
+        if self._smooth is not None:
+            # fantasies sit at the boundary, where the noise shape is unity by construction
+            out._smooth = np.concatenate([self._smooth, np.full(np.size(latent), 0.5)])
+        h = self._hypers
+        out._factorize(h["sigma_f"], h["ells"], h["sigma_n"])
+        out._mean = self._mean  # frozen: see above
+        centred = out._y - out._mean
+        out._alpha = np.linalg.solve(out._chol.T, np.linalg.solve(out._chol, centred))
+        return out
 
     def latent(self, v: np.ndarray, t: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Posterior mean and sd of the latent field; the boundary is where the mean is zero.

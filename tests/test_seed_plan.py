@@ -5,6 +5,7 @@ seed was replaced: it satisfied none of the last three.
 """
 
 import numpy as np
+import pytest
 
 from discovery.constants import T_TRANSITION_REF_C
 from run_flash_plan import (
@@ -52,10 +53,19 @@ class TestDesignInvariants:
         assert len(set(drawn)) == len(drawn)
 
     def test_replicates_match_a_drawn_condition(self, seed_plan):
+        """Vacuous while N_REPLICATES is 0, and kept so it bites the moment any are added."""
         pairs = list(zip(seed_plan["V"].astype(int), np.round(seed_plan["t"], 1)))
         drawn = {p for p, b in zip(pairs, seed_plan["block"]) if b == "L"}
         reps = [p for p, b in zip(pairs, seed_plan["block"]) if b == "R"]
-        assert reps and all(p in drawn for p in reps)
+        assert len(reps) == N_REPLICATES
+        assert all(p in drawn for p in reps)
+
+    def test_every_condition_is_distinct_when_nothing_is_replicated(self, seed_plan):
+        """With no replicates, a repeated condition can only be a snapping collision."""
+        if N_REPLICATES:
+            pytest.skip("replicates are deliberate repeats")
+        pairs = list(zip(seed_plan["V"].astype(int), np.round(seed_plan["t"], 1)))
+        assert len(set(pairs)) == len(pairs)
 
     def test_reproducible_for_a_fixed_seed(self):
         a, b = make_plan(n_core=N_DRAWN, seed=7), make_plan(n_core=N_DRAWN, seed=7)
@@ -85,6 +95,8 @@ class TestTheDesignDoesNotBetOnTheBracket:
             )
 
     def test_replicates_are_spread_not_stacked(self, seed_plan):
-        """Two replicates at the same temperature ask the same question twice."""
+        """Replicates at the same temperature ask the same question twice."""
         tm = np.array([t for t, b in zip(seed_plan["tmax"], seed_plan["block"]) if b == "R"])
+        if len(tm) < 2:
+            pytest.skip("fewer than two replicates")
         assert abs(tm[0] - tm[1]) > 20.0, "replicates landed in the same regime"
