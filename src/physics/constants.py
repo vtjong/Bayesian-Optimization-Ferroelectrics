@@ -1,32 +1,28 @@
 """Named constants for the crystallization-boundary campaign.
 
-Every number the models depend on lives here, grouped by what kind of claim it makes. The grouping
-is the point: a physical constant, a measured quantity, a campaign prior, and a numerical tuning
-knob carry very different authority, and code that mixes them makes it impossible to tell which
-results would move if a number were wrong.
+Grouped by what kind of claim each number makes, because a physical constant, a quantity inverted
+from measurements, an eyeball fit to a figure, and a numerical tuning knob carry very different
+authority, and code that mixes them makes it impossible to tell which results would move if one
+were wrong.
 
   PHYSICAL   exact or standard; never fitted.
-  PRIOR      campaign assumptions with real uncertainty. Anything derived from these inherits it.
-
-PROVENANCE AND VINTAGE. Numbers derived from the ARCHIVAL sample set (KHM005/KHM006 flash shots,
-the FE_HZCO RTA series, the PulseForge bolometer runs) are marked [ARCHIVAL]. Those films are not
-1:1 with the current ones, so only SOME quantities carry over:
-
-  * transferable  -- the transition width and the DIMENSIONLESS tilt ratio theta/T50 = kB*T50/Ea.
-                     These describe the crystallization mechanism, not the batch, and theta/T50 is
-                     additionally invariant to any constant rescaling of the temperature axis.
-  * NOT transferable -- the onset temperature, the readout floor, and the noise model. Onset is set
-                     by seeding density, interface chemistry and thickness; a vacuum break alone is
-                     documented to move it ~200 C on nominally identical stacks.
-
-An [ARCHIVAL] number is a PRIOR. Never treat one as a calibration of the current films.
-  SHAPE      parameters of the candidate cooling laws. Provenance is recorded per group.
-  NUMERICAL  quadrature and root-find settings. Chosen for convergence; results must not depend
-             on them (``run_model_checks.py`` verifies this).
-  READOUT    the measured noise model of the in-loop permittivity readout.
+  PRIOR      empty, deliberately. See the note below.
+  MEASURED   inverted from delivered-fluence data. Read the extrapolation limits before relying
+             on them at long pulse widths.
+  SHAPE      parameters of the candidate cooling laws. Some are eyeball fits to a figure and say
+             so; they are the least defensible numbers in this file.
+  READOUT    empty, deliberately. See the note below.
+  NUMERICAL  root-find settings. Chosen for convergence; results must not depend on them.
 
 Measured data is NOT here: the peak-temperature table is read from ``data/flash_temp_table.csv``
-so that file stays the single source of truth, and the paths to it live in ``paths.py``.
+so that file stays the single source of truth, and the paths to it live in ``paths.py``. Note that
+the table's VALUES are simulation output, not measurements -- see ``thermal_model``.
+
+ARCHIVAL NUMBERS HAVE BEEN REMOVED RATHER THAN MARKED. An earlier version of this file annotated
+quantities derived from the KHM005/KHM006 shots and the FE_HZCO RTA series as [ARCHIVAL] and warned
+that only some carry over. That warning was correct and was ignored: the transition prior built
+from those films drove a seed that returned ten crystallized specimens. Marking a number as
+untrustworthy does not stop it being used, so the untrustworthy ones are now simply absent.
 """
 
 
@@ -57,11 +53,9 @@ T_ROOM_C = 25.0  # ambient the film returns to between shots
 #
 # These numbers matter more than any other in the model. The lamp does NOT deliver fixed energy
 # per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width, an
-# intrinsic ~2 ms timescale sitting inside the 2.6-10.1 ms design range. That timescale breaks the
+# intrinsic ~2 ms timescale sitting inside the 0.1-10.1 ms design range. That timescale breaks the
 # self-similarity of pure conduction and reduces the predicted boundary tilt relative to a top-hat
-# drive. For the tilts this implementation actually produces, see the ensemble table printed by
-# run_flash_plan.py -- they depend on EA_EV and on the dwell range quoted, so no single figure
-# belongs in a comment.
+# drive.
 #
 # TWO LIMITS ON THESE NUMBERS. The bolometer rows they invert span V in [620, 799] V and
 # t in [0.5, 5.0] ms, while the design box is V in [506, 716] and t in [0.1, 10.1] -- so the
@@ -100,9 +94,7 @@ RAMP_TAU_SLOW_MS = 40.0
 # these films and in the units they are actually read in.
 
 # --- NUMERICAL -----------------------------------------------------------------------------
-# The Arrhenius integrand is concentrated within kB*T^2/Ea of the peak -- a fraction of a
-# millisecond for the diffusion shape -- so the quadrature grid is dense there and sparse in the
-# tail. Sizes are set for convergence, not for speed.
-
+# Settings for inverting the peak-temperature surface for a voltage. Chosen for convergence;
+# no reported result may depend on either.
 BISECT_ITERS = 80  # bisection steps; 80 halvings is exact to machine precision here
 V_SCAN_POINTS = 1024  # dense scan locating the spline's true max in V (it is not monotone there)

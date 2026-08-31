@@ -166,7 +166,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.plan.exists():
-        raise SystemExit(f"no seed plan at {args.plan}; run src/run_flash_plan.py first")
+        raise SystemExit(f"no plan at {args.plan}; generate one from src/seed.py first")
     plan = pd.read_csv(args.plan)
 
     if args.template:
