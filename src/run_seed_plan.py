@@ -80,7 +80,7 @@ def build_seed_blocks(
             label=SEED_BLOCK_LABEL,
             voltage_v=voltage_v,
             pulse_width_ms=pulse_width_ms,
-            note=("prespecified maximin Latin hypercube over the " "full settable range"),
+            note=("prespecified maximin Latin hypercube over the full settable range"),
             annotations=thermal_annotations(
                 voltage_v,
                 pulse_width_ms,
@@ -99,9 +99,7 @@ def build_seed_blocks(
             label=BRIDGE_BLOCK_LABEL,
             voltage_v=bridge_voltage_v,
             pulse_width_ms=bridge_pulse_width_ms,
-            note=(
-                "pilot bridge: refire of the lowest-fluence pilot " "condition that crystallized"
-            ),
+            note=("pilot bridge: refire of the lowest-fluence pilot condition that crystallized"),
             annotations=thermal_annotations(
                 bridge_voltage_v,
                 bridge_pulse_width_ms,
@@ -153,14 +151,11 @@ def main() -> int:
             ),
         )
     )
-    print(
-        f"\n  seed drawn with RNG_SEED = {seed.RNG_SEED}, "
-        f"{seed.MAXIMIN_DRAWS} candidates scored"
-    )
-    print("  simulated temperatures are a band across thermal models, " "for reading only")
+    print(f"\n  seed drawn with RNG_SEED = {seed.RNG_SEED}, {seed.MAXIMIN_DRAWS} candidates scored")
+    print("  simulated temperatures are a band across thermal models, for reading only")
     print(f"\n  plan    -> {args.plan}")
     print(f"  results -> {args.results}")
-    print("  the results sheet carries an as-deposited reference at index 0; " "do not flash it")
+    print("  the results sheet carries an as-deposited reference at index 0; do not flash it")
 
     return 0
 

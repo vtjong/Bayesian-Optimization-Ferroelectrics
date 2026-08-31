@@ -1,25 +1,19 @@
 """Assembly and serialization of a fabrication plan.
 
-A plan is an ordered set of flash conditions to be fabricated, grouped into
-blocks that record why each condition is in the batch. Blocks carry no meaning
-to the surrogate; they exist so that a reader, and the results loader, can tell
-a seed condition from a bridge condition from a never-flashed reference.
-
-Conditions arrive already snapped to instrument resolution. This module does
-not choose them, does not filter them, and evaluates no physical quantity. It
-assigns indices, concatenates, and writes.
+A plan is an ordered set of flash conditions grouped into blocks that record
+why each condition is in the batch. Blocks carry no meaning to the surrogate;
+they distinguish, for example, seed conditions from bridge conditions.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-#: Column names written to the plan CSV. These are a data contract with the
-#: laboratory and with ``campaign.results``; changing one invalidates every
-#: sheet already in circulation.
+# Plan CSV schema. These names are a data contract with the laboratory and with
+# ``campaign.results``; changing one invalidates sheets already in circulation.
 INDEX_COLUMN = "index"
 BLOCK_COLUMN = "block"
 VOLTAGE_COLUMN = "voltage_V"
@@ -36,139 +30,155 @@ PLAN_COLUMNS = (
     NOTE_COLUMN,
 )
 
-#: First index assigned to a fabricated condition. Index 0 is reserved for the
-#: never-flashed reference, which ``campaign.results.blank_template`` inserts.
+# Index 0 is reserved for the never-flashed reference inserted into the results
+# sheet by ``campaign.results.blank_template``.
 FIRST_CONDITION_INDEX = 1
 
 
 @dataclass(frozen=True, slots=True)
 class ConditionBlock:
-    """A group of conditions sharing a label and a reason for being fired.
+    """Conditions included in the plan for the same experimental reason.
 
     :param label: Short block label recorded in the plan, such as ``"S"``.
     :param voltage_v: Flash voltages in V.
     :param pulse_width_ms: Pulse widths in ms.
-    :param note: Why these conditions are in the batch. Written to every row.
-    :param annotations: Extra columns keyed by name, one value per condition.
-        Reporting only; nothing downstream reads them.
+    :param note: Reason these conditions are included, written to every row.
+    :param annotations: Optional reporting columns with one value per condition.
     """
 
     label: str
     voltage_v: np.ndarray
     pulse_width_ms: np.ndarray
     note: str = ""
-    annotations: dict[str, np.ndarray] = field(default_factory=dict)
+    annotations: Mapping[str, np.ndarray] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Reject a block whose columns disagree on length.
+        """Validate the block's condition and annotation columns.
 
-        :raises ValueError: If any array length differs from the voltages.
+        :raises ValueError: If a condition array is not one-dimensional, column
+            lengths differ, or an annotation uses a reserved plan column name.
         """
-        size = np.asarray(self.voltage_v).size
+        voltage_v = np.asarray(self.voltage_v)
+        pulse_width_ms = np.asarray(self.pulse_width_ms)
 
-        if np.asarray(self.pulse_width_ms).size != size:
+        if voltage_v.ndim != 1:
+            raise ValueError(f"block {self.label!r}: voltage_v must be one-dimensional")
+        if pulse_width_ms.ndim != 1:
+            raise ValueError(f"block {self.label!r}: pulse_width_ms must be one-dimensional")
+        if len(pulse_width_ms) != len(voltage_v):
             raise ValueError(
-                f"block {self.label!r}: {size} voltages against "
-                f"{np.asarray(self.pulse_width_ms).size} pulse widths"
+                f"block {self.label!r}: {len(voltage_v)} voltages against "
+                f"{len(pulse_width_ms)} pulse widths"
             )
 
         for name, values in self.annotations.items():
-            if np.asarray(values).size != size:
+            if name in PLAN_COLUMNS:
+                raise ValueError(
+                    f"block {self.label!r}: annotation {name!r} conflicts with a plan column"
+                )
+
+            values = np.asarray(values)
+            if values.ndim != 1:
+                raise ValueError(
+                    f"block {self.label!r}: annotation {name!r} must be one-dimensional"
+                )
+            if len(values) != len(voltage_v):
                 raise ValueError(
                     f"block {self.label!r}: annotation {name!r} has "
-                    f"{np.asarray(values).size} values for {size} conditions"
+                    f"{len(values)} values for {len(voltage_v)} conditions"
                 )
 
     def __len__(self) -> int:
         """Return the number of conditions in the block."""
-        return int(np.asarray(self.voltage_v).size)
+        return len(self.voltage_v)
 
 
-def build_plan(blocks: Sequence[ConditionBlock], readout_kind: str) -> pd.DataFrame:
-    """Assemble blocks into a plan, numbering conditions in the order given.
+def build_plan(
+    blocks: Iterable[ConditionBlock],
+    readout_kind: str,
+) -> pd.DataFrame:
+    """Assemble condition blocks into an indexed fabrication plan.
 
-    Duplicate setpoints are permitted and deliberate: a bridge condition repeats
-    a setpoint already fired in an earlier batch, which is how a run-to-run
-    difference is separated from a process dependence.
+    Duplicate setpoints are permitted. For example, a bridge condition may
+    deliberately repeat a condition fired in an earlier fabrication batch.
 
-    :param blocks: Condition blocks, written in this order.
-    :param readout_kind: Instrument reading recorded per condition, such as
-        ``"eps_r"``. Constant across the plan so one sheet is read one way.
-    :return: Plan with one row per condition.
+    :param blocks: Condition blocks in plan order.
+    :param readout_kind: Instrument reading recorded for every condition.
+    :return: Plan with one row per fabricated condition.
     :raises ValueError: If no block contains a condition.
     """
-    frames = []
+    frames: list[pd.DataFrame] = []
+
     for block in blocks:
-        if not len(block):
+        if not block:
             continue
 
-        frame = pd.DataFrame(
-            {
-                BLOCK_COLUMN: np.full(len(block), block.label),
-                VOLTAGE_COLUMN: np.asarray(block.voltage_v),
-                PULSE_WIDTH_COLUMN: np.asarray(block.pulse_width_ms),
-                READOUT_KIND_COLUMN: np.full(len(block), readout_kind),
-                NOTE_COLUMN: np.full(len(block), block.note),
-            }
+        frames.append(
+            pd.DataFrame(
+                {
+                    BLOCK_COLUMN: block.label,
+                    VOLTAGE_COLUMN: block.voltage_v,
+                    PULSE_WIDTH_COLUMN: block.pulse_width_ms,
+                    READOUT_KIND_COLUMN: readout_kind,
+                    NOTE_COLUMN: block.note,
+                    **block.annotations,
+                }
+            )
         )
-        for name, values in block.annotations.items():
-            frame[name] = np.asarray(values)
-
-        frames.append(frame)
 
     if not frames:
         raise ValueError("a plan needs at least one condition")
 
     plan = pd.concat(frames, ignore_index=True)
-    plan.insert(0, INDEX_COLUMN, np.arange(len(plan)) + FIRST_CONDITION_INDEX)
+    plan.insert(
+        0,
+        INDEX_COLUMN,
+        np.arange(
+            FIRST_CONDITION_INDEX,
+            FIRST_CONDITION_INDEX + len(plan),
+        ),
+    )
 
-    ordered = [column for column in PLAN_COLUMNS if column in plan.columns]
-    extra = [column for column in plan.columns if column not in ordered]
+    extra_columns = [column for column in plan.columns if column not in PLAN_COLUMNS]
 
-    return plan[ordered + extra]
+    return plan[[*PLAN_COLUMNS, *extra_columns]]
 
 
 def write_plan(path: Path, plan: pd.DataFrame) -> Path:
-    """Write a plan to CSV, refusing to overwrite an existing file.
+    """Write a fabrication plan without permitting replacement.
 
-    A plan is fixed before firing and is the record of what was intended, so
-    silently replacing one would destroy the only evidence of what a batch was
-    supposed to be.
+    A plan records the conditions fixed before firing. Exclusive creation makes
+    replacement impossible even if another process creates the destination
+    between checking and writing.
 
     :param path: Destination CSV path.
     :param plan: Plan to write.
-    :return: The path written.
+    :return: Path of the written plan.
     :raises FileExistsError: If the destination already exists.
     """
-    if path.exists():
-        raise FileExistsError(
-            f"{path} already exists; a fired plan is a record and is not rewritten"
-        )
-
     path.parent.mkdir(parents=True, exist_ok=True)
-    plan.to_csv(path, index=False)
+
+    with path.open("x", encoding="utf-8", newline="") as destination:
+        plan.to_csv(destination, index=False)
 
     return path
 
 
-def describe_plan(plan: pd.DataFrame, annotations: Iterable[str] = ()) -> str:
-    """Render a plan as a fixed-width table for reading in a terminal.
+def describe_plan(
+    plan: pd.DataFrame,
+    annotations: Iterable[str] = (),
+) -> str:
+    """Render selected plan columns as a fixed-width terminal table.
 
     :param plan: Plan to render.
-    :param annotations: Extra columns to include after the setpoints.
-    :return: The rendered table.
+    :param annotations: Optional annotation columns to display.
+    :return: Fixed-width representation of the plan.
     """
-    shown = [INDEX_COLUMN, BLOCK_COLUMN, VOLTAGE_COLUMN, PULSE_WIDTH_COLUMN]
-    shown += [name for name in annotations if name in plan.columns]
-
-    widths = {
-        column: max(len(column), plan[column].astype(str).str.len().max()) for column in shown
-    }
-    header = "  ".join(column.rjust(widths[column]) for column in shown)
-
-    rows = [
-        "  ".join(str(row[column]).rjust(widths[column]) for column in shown)
-        for _, row in plan.iterrows()
+    columns = [
+        INDEX_COLUMN,
+        BLOCK_COLUMN,
+        VOLTAGE_COLUMN,
+        PULSE_WIDTH_COLUMN,
+        *[name for name in annotations if name in plan.columns],
     ]
-
-    return "\n".join([header, *rows])
+    return plan[columns].to_string(index=False)

@@ -25,7 +25,6 @@ from those films drove a seed that returned ten crystallized specimens. Marking 
 untrustworthy does not stop it being used, so the untrustworthy ones are now simply absent.
 """
 
-
 # --- PHYSICAL ------------------------------------------------------------------------------
 KB_EV = 8.617333e-5  # Boltzmann constant (eV/K)
 T_ROOM_C = 25.0  # ambient the film returns to between shots

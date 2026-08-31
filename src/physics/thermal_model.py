@@ -510,6 +510,7 @@ def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
     """Temperature trace from the default ``FLASH`` model (see ``TableThermalModel.trace``)."""
     return FLASH.trace(v, t, n)
 
+
 # --- how far apart the available thermal models are ----------------------------------------
 # There is no measured peak temperature anywhere in this project, so a single number from this
 # module is a model output with no error bar. What CAN be bounded is the spread between the

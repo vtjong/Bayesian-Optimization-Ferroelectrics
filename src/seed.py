@@ -166,8 +166,7 @@ def make_seed(
 
     if best_voltage_v is None or best_pulse_width_ms is None:
         raise RuntimeError(
-            f"no realization produced {n} distinct settable conditions "
-            f"across {maximin_draws} draws"
+            f"no realization produced {n} distinct settable conditions across {maximin_draws} draws"
         )
 
     order = np.lexsort((best_voltage_v, best_pulse_width_ms))

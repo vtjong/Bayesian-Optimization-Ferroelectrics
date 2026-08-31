@@ -288,8 +288,10 @@ def main() -> int:
     moved = _report_stability(gp, v, t, y, vv, tt)
 
     entropy = mean_boundary_entropy(gp, vv, tt)
-    print(f"\n=== convergence proxy ===\n  mean boundary entropy {entropy:.4f} nats "
-          f"(saturates at {np.log(2):.3f}; tolerance {ENTROPY_TOLERANCE})")
+    print(
+        f"\n=== convergence proxy ===\n  mean boundary entropy {entropy:.4f} nats "
+        f"(saturates at {np.log(2):.3f}; tolerance {ENTROPY_TOLERANCE})"
+    )
     settled = entropy < ENTROPY_TOLERANCE and np.isfinite(moved) and moved < STABILITY_TOLERANCE
     if settled:
         print("  Both the entropy proxy and the between-cycle movement are below tolerance.")
@@ -298,9 +300,7 @@ def main() -> int:
 
     if args.no_propose:
         return 0
-    bv, bt = select_batch(
-        gp, v, t, args.batch, T_LO, T_HI, args.acquisition, seed=args.seed
-    )
+    bv, bt = select_batch(gp, v, t, args.batch, T_LO, T_HI, args.acquisition, seed=args.seed)
     index = len(_plans())
     path = _write_batch(bv, bt, index)
     print(f"\n=== proposed next: {args.batch} conditions by {args.acquisition} ===")

@@ -143,11 +143,7 @@ def _nearest_distance(cand: np.ndarray, taken: np.ndarray) -> np.ndarray:
     """Distance from each candidate to the closest already-spoken-for condition."""
     if taken.size == 0:
         return np.full(cand.shape[0], np.inf)
-    d2 = (
-        np.sum(cand**2, 1)[:, None]
-        + np.sum(taken**2, 1)[None, :]
-        - 2.0 * cand @ taken.T
-    )
+    d2 = np.sum(cand**2, 1)[:, None] + np.sum(taken**2, 1)[None, :] - 2.0 * cand @ taken.T
     return np.sqrt(np.maximum(d2.min(axis=1), 0.0))
 
 
