@@ -143,43 +143,6 @@ def _report_replicates(res) -> None:
     print("  chemistry, thickness, positioning. It is a sentinel, not a variance estimate.")
 
 
-def _report_ladder(res) -> None:
-    """The headline: does the readout move along an iso-Tmax level as pulse width changes?"""
-    lad = res.table[res.measured & res.table["block"].isin(["A", "D"])]
-    if lad.empty:
-        print("\n=== ladder contrast ===\n  no ladder shot has a usable reading yet")
-        return
-    print("\n=== ladder contrast: readout ALONG each iso-Tmax level ===")
-    # Rungs are grouped by CLUSTERING peak temperature, not by rounding it. The generator holds
-    # rungs on a level to within 2 C and keeps levels at least 6 C apart, so a 3 C threshold
-    # separates levels cleanly -- whereas rounding splits a level whose rungs straddle an integer
-    # (460.4 and 461.3 are one level, and rounding reports them as two with no contrast).
-    temps = np.sort(lad["pred_Tmax_C"].to_numpy(float))
-    edges = np.where(np.diff(temps) > LEVEL_CLUSTER_C)[0]
-    groups = np.split(temps, edges + 1)
-    for grp in groups:
-        centre = float(np.mean(grp))
-        on = lad[np.abs(lad["pred_Tmax_C"] - centre) <= LEVEL_CLUSTER_C].sort_values("time_ms")
-        by_t = on.groupby("time_ms")[READOUT_COLUMN].agg(["mean", "size"])
-        if len(by_t) < 2:
-            print(f"  {centre:.0f} C: only t = {list(by_t.index)} ms measured -- no contrast yet")
-            continue
-        lo, hi = by_t.iloc[0], by_t.iloc[-1]
-        swing = float(hi["mean"] - lo["mean"])
-        # Difference of two means over unequal specimen counts.
-        spread = 1.0 / lo["size"] + 1.0 / hi["size"]
-        se = _sigma_n(np.mean([lo["mean"], hi["mean"]])) * np.sqrt(spread)
-        z = swing / se if se > 0 else 0.0
-        print(
-            f"  {centre:.0f} C: {lo['mean']:.3f} at {by_t.index[0]:.1f} ms "
-            f"(n={int(lo['size'])}) -> {hi['mean']:.3f} at {by_t.index[-1]:.1f} ms "
-            f"(n={int(hi['size'])})   swing {swing:+.3f}  ({z:+.1f} sigma)"
-        )
-    print("  A swing consistent with zero at BOTH levels supports a pure peak-temperature")
-    print("  threshold. A consistent non-zero swing means the boundary is tilted, and the")
-    print("  campaign's remaining 64 specimens have to map a folded surface rather than a contour.")
-
-
 def _report_crosscheck(res) -> None:
     """The independent PUND reading, where it exists -- the proxy's only external check here."""
     d = res.table[res.measured]
@@ -226,7 +189,6 @@ def main() -> int:
         print("\nNothing measured yet; no contrast to report.")
         return 0
     _report_replicates(res)
-    _report_ladder(res)
     _report_crosscheck(res)
 
     specimens = res.table.loc[res.measured, SPECIMEN_COLUMN].astype(str).str.strip()

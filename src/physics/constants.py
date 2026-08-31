@@ -83,7 +83,9 @@ T_REF_MS = 5.1  # flash time at which the bracket was observed (a measured table
 # s > 0.183 /C and hence
 #   n*Ea  =  s * kB * Tc^2 / (2 ln2)  >  5.90 eV      (Tc = 447 C)
 # which at n = 2.5 is Ea > 2.36 eV. Three independent off-tool lines agree on the magnitude:
-#   [ARCHIVAL] graded 2Pr fit of the KHM005/6 flash shots  -> Ea ~ 2.0 eV  (run_tilt_prior.py)
+#   [ARCHIVAL] graded 2Pr fit of the KHM005/6 flash shots  -> Ea ~ 2.0 eV. Retired: that set is
+#              the earlier Sinteron at 2-3 kV, not this tool, and its temperature column spans
+#              342-916 C from an unrecorded source. It cannot constrain this campaign.
 #   [ARCHIVAL] JMAK refit of the FE_HZCO 350 C RTA isotherm -> Ea ~ 2.0-2.2 eV, n ~ 1.8
 #   literature, in-situ XRD crystallization of HfO2        -> Ea ~ 2.6 +/- 0.5 eV
 # 2.5 eV clears the on-tool bound at n = 2.5 (n*Ea = 6.25 eV) and reproduces a 23 C model width
@@ -119,7 +121,9 @@ AVRAMI_N = 2.5
 # truncated at the commanded pulse width. Obtained by jointly inverting two independent integral
 # measurements we already own: the delivered fluence E(V,t) in
 # data/Bolometer_readings_PulseForge.xlsx, and the peak-temperature table (which measures
-# INT q(s)/sqrt(t-s) ds). Reproduce with: python src/run_lamp_check.py
+# INT q(s)/sqrt(t-s) ds). The script that fitted it has been retired: it compared the table
+# against constant candidate scale factors, and the live disagreement between the two thermal
+# simulations of this tool is not constant -- it grows with pulse width and reverses in sign.
 #
 # These numbers matter more than any other in the model. The lamp does NOT deliver fixed energy
 # per shot and its irradiance is NOT a top hat: fluence rises sublinearly with pulse width, an
