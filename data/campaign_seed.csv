@@ -1,0 +1,12 @@
+index,block,voltage_V,time_ms,readout,note,sim_Tmax_lo_C,sim_Tmax_hi_C
+1,S,611.0,0.1,eps_r,prespecified maximin Latin hypercube over the full settable range,129.9,231.1
+2,S,561.0,0.2,eps_r,prespecified maximin Latin hypercube over the full settable range,123.0,216.7
+3,S,623.0,0.4,eps_r,prespecified maximin Latin hypercube over the full settable range,202.2,362.6
+4,S,689.0,0.4,eps_r,prespecified maximin Latin hypercube over the full settable range,253.5,458.1
+5,S,662.0,1.0,eps_r,prespecified maximin Latin hypercube over the full settable range,348.2,627.7
+6,S,510.0,1.2,eps_r,prespecified maximin Latin hypercube over the full settable range,219.6,393.9
+7,S,716.0,1.9,eps_r,prespecified maximin Latin hypercube over the full settable range,521.4,946.7
+8,S,538.0,3.9,eps_r,prespecified maximin Latin hypercube over the full settable range,326.2,589.8
+9,S,644.0,4.3,eps_r,prespecified maximin Latin hypercube over the full settable range,449.3,810.6
+10,S,590.0,8.5,eps_r,prespecified maximin Latin hypercube over the full settable range,321.3,580.5
+11,B,572.0,4.4,eps_r,pilot bridge: refire of the lowest-fluence pilot condition that crystallized,355.6,642.3
