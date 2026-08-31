@@ -10,11 +10,10 @@ report would partly be an echo of that model rather than independent evidence ab
 Keeping the box here lets both sides depend on it while neither depends on the other, and
 ``tests/test_layering.py`` enforces that.
 
-The measured grid is read from the table CSV because its axes ARE the box -- the campaign is
-deliberately never extrapolated past the conditions the tool was characterized at. The peak
-temperatures in that file are loaded here too, since re-parsing the same CSV in two places is how
-two readers drift apart, but nothing in this module interprets them; that is ``synthetic.py``'s
-job.
+The grid is read from the table CSV because its axes ARE the box -- the campaign is deliberately
+never extrapolated past the conditions the tool was characterized at. The peak temperatures in
+that file are SIMULATED, not measured; they are loaded here only because re-parsing the same CSV
+in two places is how two readers drift apart, and nothing in this module interprets them.
 """
 
 from typing import Tuple
@@ -31,16 +30,18 @@ _T_DECIMALS = int(round(-np.log10(T_STEP_MS)))
 
 
 def load_flash_table(path=FLASH_TABLE_CSV) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read the measured peak-temperature table; returns ``(voltages, times, tmax_table)``.
+    """Read the simulated peak-temperature table; returns ``(voltages, times, tmax_table)``.
 
-    The CSV is the single source of truth for this measurement -- it is deliberately NOT mirrored
-    as a literal in the source, so the two cannot drift apart. Header cells are ``V=<volts>`` and
+    The grid AXES are the design box -- the conditions the tool was characterized at -- and that
+    is all this module uses. The temperature VALUES are simulation output, not measurements, and
+    are interpreted only in ``physics``. The CSV is not mirrored as a literal in the source so the
+    two cannot drift apart. Header cells are ``V=<volts>`` and
     row labels ``t=<milliseconds>``.
 
     :param path: path to the table CSV.
     """
     if not path.exists():
-        raise FileNotFoundError(f"measured flash table not found at {path}")
+        raise FileNotFoundError(f"flash table not found at {path}")
     rows = [line.split(",") for line in path.read_text().strip().splitlines() if line.strip()]
     voltages = np.array([float(c.strip().removeprefix("V=")) for c in rows[0][1:]], float)
     times = np.array([float(r[0].strip().removeprefix("t=")) for r in rows[1:]], float)
@@ -129,3 +130,23 @@ def min_separation(v: np.ndarray, t: np.ndarray) -> float:
     d = np.sqrt(((p[:, None, :] - p[None, :, :]) ** 2).sum(-1))
     np.fill_diagonal(d, np.inf)
     return float(d.min())
+
+# Resolution of the dense mesh used to score a fitted boundary over the box. Not a design
+# parameter -- it only sets how finely a reported misclassified area is integrated. Named
+# MESH_* rather than GRID_* because GRID_V/GRID_T above are the table's own axes.
+MESH_V, MESH_T = 90, 70
+
+
+def supported_grid(t_lo: float = T_LO, t_hi: float = T_HI) -> Tuple[np.ndarray, np.ndarray]:
+    """Dense ``(V, t)`` mesh over the settable box, for scoring and plotting.
+
+    Defaults span the instrument's full range. Passing a narrower window is a deliberate act and
+    should be justified where it is done: a restricted mesh silently confines every score and every
+    reported boundary to that window.
+
+    :param t_lo: shortest flash time to mesh (ms).
+    :param t_hi: longest flash time to mesh (ms).
+    """
+    v = np.linspace(V_LO, V_HI, MESH_V)
+    t = np.geomspace(t_lo, t_hi, MESH_T)
+    return np.meshgrid(v, t)

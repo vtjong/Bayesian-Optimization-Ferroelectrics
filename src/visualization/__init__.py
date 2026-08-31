@@ -3,7 +3,6 @@
 Modules:
 --------
 - base: shared plotting foundation (BasePlotter, PlotStyle, save_figure)
-- concepts: figures for the interactive learning app (personal tooling, not committed)
 - structures: HfO2 crystal-structure rendering (personal tooling, not committed; needs the
   optional pymatgen/ase extras in requirements-viz.txt)
 

@@ -1,12 +1,17 @@
 """Flash-lamp thermal model for FLA HZO: (voltage, time) -> peak temperature and trace.
 
-Peak temperature is a MEASURED table Tmax(V, t) read from ``data/flash_temp_table.csv``, bicubic
-spline interpolated. Temperature peaks in t near 2.6-3 ms, so Tmax is RE-ENTRANT in (V, t) and a
-Tmax level set folds -- it cannot be written t = f(V).
+Peak temperature is a SIMULATED table Tmax(V, t) read from ``data/flash_temp_table.csv``, bicubic
+spline interpolated. That file is byte-identical to the CERA table in the group's pipeline, whose
+own docstring calls it a synthetic dataset; no instrument, date or uncertainty is recorded with it,
+and the error on it is not established. Nothing in this module is a measurement of temperature.
+Temperature peaks in t near 2.6-3 ms, so Tmax is RE-ENTRANT in (V, t) and a Tmax level set folds --
+it cannot be written t = f(V). A second simulation of the same tool disagrees with this one on the
+SIGN of dT/dt at fixed voltage, so even that re-entrance is a property of this table rather than an
+established fact about the instrument.
 
-The temperature TRACE is not measured. It is asserted by a normalized pulse shape, and because
-activated kinetics integrate the trace, that assertion decides the crystallization boundary's
-geometry. ``SHAPES`` holds the candidate cooling laws; see ``PulseShape``.
+The temperature TRACE is likewise not measured. It is asserted by a normalized pulse shape, and
+because activated kinetics integrate the trace, that assertion decides the crystallization
+boundary's geometry. ``SHAPES`` holds the candidate cooling laws; see ``PulseShape``.
 
 The forward model is a ``ThermalModel`` (Protocol); ``TableThermalModel`` is the table-backed
 implementation and ``FLASH`` the default instance, so swapping the model does not touch callers.
@@ -223,10 +228,12 @@ class DiffusionPulse:
 
 @dataclass(frozen=True)
 class LampDrivenPulse:
-    """PHYSICS DEFAULT: measured lamp irradiance driving semi-infinite substrate conduction.
+    """PHYSICS DEFAULT: fitted lamp irradiance driving semi-infinite substrate conduction.
 
-    Same conduction physics as ``DiffusionPulse``, but the source term is the MEASURED lamp
-    envelope rather than a top hat. Surface temperature follows Duhamel's integral,
+    Same conduction physics as ``DiffusionPulse``, but the source term is a lamp envelope fitted
+    to the measured delivered fluence rather than a top hat. The fluence is measured; the
+    envelope is a two-exponential fit to it, and the temperature it drives is simulated.
+    Surface temperature follows Duhamel's integral,
 
         T(tau) - T_room  ~  INT_0^min(tau, t) q(s) / sqrt(tau - s) ds
 
@@ -342,7 +349,7 @@ class ThermalModel(Protocol):
 
 
 class TableThermalModel:
-    """Peak temperature from a MEASURED (voltage x time) table, scaled by a normalized pulse shape.
+    """Peak temperature from a SIMULATED (voltage x time) table, scaled by a normalized shape.
 
     Smoothly interpolates the tabulated peak temperatures (bicubic spline) and applies the supplied
     normalized trace shape, scaled per shot by that shot's Tmax. Whether the crystallization
@@ -466,8 +473,9 @@ def thermal_model(shape: PulseShape) -> TableThermalModel:
     return TableThermalModel(FLASH_V, FLASH_T, FLASH_TMAX, shape=shape)
 
 
-# Named ensemble members. They share the MEASURED Tmax table and differ only in the trace shape,
-# so comparing them isolates the one thing we have never measured: the cooling law.
+# Named ensemble members. They share the same simulated Tmax table and differ only in the trace
+# shape, so comparing them isolates the cooling law -- which, like the table itself, is asserted
+# rather than measured.
 SHAPES: Dict[str, PulseShape] = {
     "isoT": FrozenPulse(),  # width-independent -> zero tilt (the null hypothesis)
     "ramp": RampPulse(),  # empirical two-exponential transient -> ~13 C tilt
@@ -484,7 +492,8 @@ def default_shape() -> PulseShape:
     return SHAPES[DEFAULT_SHAPE]
 
 
-# Default forward model = the measured Tmax table driven by the MEASURED lamp envelope.
+# Default forward model = the simulated Tmax table driven by a lamp envelope fitted to the
+# measured delivered fluence. The fluence is measured; the temperature it is converted into is not.
 # Module-level tmax/_trace wrap it so existing callers keep a stable import.
 FLASH = thermal_model(default_shape())
 

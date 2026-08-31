@@ -24,8 +24,6 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 
 FORWARD = "physics"  # turns a condition into a predicted outcome
 LEARNER = "active_learning"  # chooses what to fire next
-# Simulated ground truths. A learner that reaches these is being scored against its own answer key.
-TRUTHS = ("validation.worlds", "validation.adversarial")
 
 
 def _module_name(path: Path) -> str:
@@ -90,13 +88,6 @@ def test_the_learner_cannot_reach_the_forward_model(module):
         "our own thermal model rather than evidence about the film. If the physics is needed to "
         "PRESENT a result, put that step in campaign.reporting instead."
     )
-
-
-@pytest.mark.parametrize("module", _modules_in(LEARNER))
-def test_the_learner_cannot_reach_a_simulated_truth(module):
-    """Scoring a learner against a world it can read is not a measurement of anything."""
-    leaked = {d for d in _closure(module) if d.startswith(TRUTHS)}
-    assert not leaked, f"{module} can reach {sorted(leaked)} -- it can read its own answer key"
 
 
 @pytest.mark.parametrize("module", _modules_in(FORWARD))

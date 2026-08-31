@@ -7,7 +7,7 @@ cooling law with the onset temperature.
 
 import numpy as np
 import pytest
-from conftest import LADDER_HI_MS, LADDER_LO_MS
+from conftest import DWELL_HI_MS, DWELL_LO_MS, ISO_LO_MS, LINEAR_HI_MS, LINEAR_LO_MS
 
 from physics.constants import (
     AVRAMI_N,
@@ -89,16 +89,16 @@ class TestTilt:
                 lo, hi = (lo, mid) if inside else (mid, hi)
             return 0.5 * (lo + hi)
 
-        assert abs(boundary(LADDER_LO_MS) - boundary(LADDER_HI_MS)) < 1e-6
+        assert abs(boundary(DWELL_LO_MS) - boundary(DWELL_HI_MS)) < 1e-6
 
     def test_diffusion_matches_the_closed_form(self, ensemble):
         """t_eff proportional to t implies tilt = theta * ln(t2 / t1) with no free parameters."""
-        predicted = theta_kelvin(T_TRANSITION_REF_C) * np.log(LADDER_HI_MS / LADDER_LO_MS)
-        measured = ensemble["diffusion"].tilt_c(LADDER_LO_MS, LADDER_HI_MS)
+        predicted = theta_kelvin(T_TRANSITION_REF_C) * np.log(LINEAR_HI_MS / LINEAR_LO_MS)
+        measured = ensemble["diffusion"].tilt_c(LINEAR_LO_MS, LINEAR_HI_MS)
         assert abs(measured - predicted) < TILT_TOL_C
 
     def test_ensemble_is_ordered_by_tilt(self, ensemble):
-        tilts = {k: m.tilt_c(LADDER_LO_MS, LADDER_HI_MS) for k, m in ensemble.items()}
+        tilts = {k: m.tilt_c(DWELL_LO_MS, DWELL_HI_MS) for k, m in ensemble.items()}
         assert tilts["isoT"] < tilts["ramp"] < tilts["diffusion"]
         assert abs(tilts["diffusion"] - tilts["rect"]) < TILT_TOL_C
 
@@ -106,7 +106,7 @@ class TestTilt:
         """More dwell buys crystallization at a lower peak temperature."""
         for name in ("ramp", "diffusion", "rect"):
             model = ensemble[name]
-            assert model.boundary_tmax(LADDER_HI_MS) < model.boundary_tmax(LADDER_LO_MS), name
+            assert model.boundary_tmax(DWELL_HI_MS) < model.boundary_tmax(DWELL_LO_MS), name
 
 
 class TestSharpness:
@@ -130,8 +130,8 @@ class TestDisagreement:
 
     def test_large_on_the_iso_tmax_ladder(self, ensemble):
         """The short-pulse rung is where the hypotheses separate most."""
-        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_TRANSITION_REF_C, LADDER_LO_MS)
-        spread = disagreement(ensemble, np.array([v]), np.array([LADDER_LO_MS]))
+        v = thermal_model(SHAPES["isoT"]).voltage_for_tmax(T_TRANSITION_REF_C, ISO_LO_MS)
+        spread = disagreement(ensemble, np.array([v]), np.array([ISO_LO_MS]))
         assert spread[0] > 0.3
 
 
@@ -139,21 +139,21 @@ class TestNumericalStability:
     def test_boundary_is_stable_under_finer_quadrature(self):
         """The NUMERICAL constants are tuning knobs; results must not depend on them."""
         model = KineticBoundary(thermal_model(SHAPES["diffusion"]), ea_ev=EA_EV, n=AVRAMI_N)
-        coarse = model.boundary_tmax(LADDER_LO_MS)
+        coarse = model.boundary_tmax(DWELL_LO_MS)
 
         shape = SHAPES["diffusion"]
         tau = np.unique(
             np.concatenate(
                 [
-                    np.linspace(0.0, 3.0 * LADDER_LO_MS, 400_000),
-                    np.geomspace(3.0 * LADDER_LO_MS, shape.duration_ms, 40_000),
+                    np.linspace(0.0, 3.0 * DWELL_LO_MS, 400_000),
+                    np.geomspace(3.0 * DWELL_LO_MS, shape.duration_ms, 40_000),
                 ]
             )
         )
         target = (-np.log(0.5)) ** (1.0 / AVRAMI_N) / model.nu
 
         def budget(tmax_c: float) -> float:
-            t_k = T_ROOM_C + (tmax_c - T_ROOM_C) * shape(tau, LADDER_LO_MS) + CELSIUS_TO_KELVIN
+            t_k = T_ROOM_C + (tmax_c - T_ROOM_C) * shape(tau, DWELL_LO_MS) + CELSIUS_TO_KELVIN
             return float(np.trapezoid(np.exp(-EA_EV / (KB_EV * t_k)), tau))
 
         lo, hi = 100.0, 1200.0

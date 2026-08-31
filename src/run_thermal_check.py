@@ -1,7 +1,7 @@
 """Validate the thermal forward model T(V, t) before it feeds the crystallization campaign.
 
 The model factorizes as ``T(tau; V, t) = T_room + (Tmax(V, t) - T_room) * g(tau; t)``. Only the
-first factor is measured. Tmax comes from a 5x6 table of measured peak temperatures; the SHAPE
+first factor is simulated. Tmax comes from a 5x6 table of SIMULATED peak temperatures; the SHAPE
 g(tau; t) is asserted, and the assertion is load-bearing, because activated kinetics integrate the
 trace. A shape that ignores the commanded pulse width forces the crystallization boundary to be a
 plain Tmax level set; one that tracks it does not. This script checks what can be checked and says

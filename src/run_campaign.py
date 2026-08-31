@@ -37,11 +37,10 @@ from active_learning.acquisition import (
     select_batch,
 )
 from active_learning.surrogate import BoundarySurrogate
-from campaign.plan import T_SEARCH_HI, T_SEARCH_LO
 from campaign.reporting import boundary_conditions
 from campaign.results import CONTROL_INDEX, PLAN_KEY, blank_template, load, unfired
+from design_space import T_HI, T_LO, supported_grid
 from physics.thermal_model import FLASH
-from validation.evaluate import supported_grid
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -177,7 +176,7 @@ def mean_boundary_entropy(gp: BoundarySurrogate, vv: np.ndarray, tt: np.ndarray)
 
 def _report_boundary(gp: BoundarySurrogate) -> np.ndarray:
     """Where the surrogate puts the boundary, as peak temperature against flash time."""
-    v, t, tm = boundary_conditions(gp, T_SEARCH_LO, T_SEARCH_HI)
+    v, t, tm = boundary_conditions(gp, T_LO, T_HI)
     if v.size == 0:
         print("\n=== boundary ===\n  no boundary inside the box: the surface is one-sided")
         print("  Every condition fired so far is on the same side. Fire hotter or colder before")
@@ -278,7 +277,7 @@ def main() -> int:
         print("  boundary below should not be trusted. Add conditions before proposing again.")
 
     _report_lift(y, control)
-    vv, tt = supported_grid(T_SEARCH_LO, T_SEARCH_HI)
+    vv, tt = supported_grid(T_LO, T_HI)
     _report_boundary(gp)
     moved = _report_stability(gp, v, t, y, vv, tt)
 
@@ -294,7 +293,7 @@ def main() -> int:
     if args.no_propose:
         return 0
     bv, bt = select_batch(
-        gp, v, t, args.batch, T_SEARCH_LO, T_SEARCH_HI, args.acquisition, seed=args.seed
+        gp, v, t, args.batch, T_LO, T_HI, args.acquisition, seed=args.seed
     )
     index = len(_plans())
     path = _write_batch(bv, bt, index)
