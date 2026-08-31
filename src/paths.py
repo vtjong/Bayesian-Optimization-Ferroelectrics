@@ -13,5 +13,8 @@ so the file and the code cannot drift apart.
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-FLASH_TABLE_CSV = DATA_DIR / "flash_temp_table.csv"
+FLASH_TABLE_CSV = DATA_DIR / "flash_temp_table.csv"  # the CERA surface; the design box comes
+# from its axes. A second, independent simulation of the same tool on the same 30 nodes, used
+# only to bound how far apart the available thermal models are.
+FLASH_TABLE_SKR_CSV = DATA_DIR / "flash_temp_table_skr.csv"
 MEASURED_TRACE_CSV = DATA_DIR / "measured_transient.csv"  # not yet available

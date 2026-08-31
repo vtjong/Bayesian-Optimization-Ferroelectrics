@@ -14,15 +14,17 @@ import numpy as np
 
 from active_learning.surrogate import BoundarySurrogate
 from design_space import V_HI, V_LO
-from physics.thermal_model import FLASH
+from physics.thermal_model import tmax_envelope
 
 
 def boundary_conditions(gp: BoundarySurrogate, t_lo: float, t_hi: float, n: int = 240) -> tuple:
-    """Where the fitted surface currently puts the boundary, as ``(V, t, Tmax)`` along it.
+    """Where the fitted surface puts the boundary: ``(V, t, Tmax_lo, Tmax_hi)`` along it.
 
-    Reported at each supported flash time by bisecting the latent mean in voltage, which is what a
-    reader wants to see: the boundary as a curve in the controls, and the peak temperature it
-    implies.
+    Found by bisecting the latent mean in voltage at each flash time, which is what a reader
+    wants to see -- the boundary as a curve in the controls the operator sets. The temperature
+    is returned as the envelope of the available simulations rather than a point: the boundary
+    itself is located WITHOUT any thermal model, and attaching one number to it afterwards would
+    imply a precision that no measurement of this tool supports.
 
     :param gp: fitted surrogate.
     :param t_lo: shortest supported flash time (ms).
@@ -47,4 +49,7 @@ def boundary_conditions(gp: BoundarySurrogate, t_lo: float, t_hi: float, n: int 
         out_t.append(float(t))
     v = np.array(out_v)
     t = np.array(out_t)
-    return v, t, (FLASH.tmax(v, t) if v.size else np.array([]))
+    if not v.size:
+        return v, t, np.array([]), np.array([])
+    lo, hi = tmax_envelope(v, t)
+    return v, t, lo, hi

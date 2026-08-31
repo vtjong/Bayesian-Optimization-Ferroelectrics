@@ -33,7 +33,9 @@ from design_space import (
     T_LO,
     V_HI,
     V_LO,
+    load_flash_table,
 )
+from paths import FLASH_TABLE_SKR_CSV
 
 from .constants import (
     BISECT_ITERS,
@@ -507,3 +509,32 @@ def tmax(V: np.ndarray, t: np.ndarray) -> np.ndarray:
 def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
     """Temperature trace from the default ``FLASH`` model (see ``TableThermalModel.trace``)."""
     return FLASH.trace(v, t, n)
+
+# --- how far apart the available thermal models are ----------------------------------------
+# There is no measured peak temperature anywhere in this project, so a single number from this
+# module is a model output with no error bar. What CAN be bounded is the spread between the
+# simulations of this tool that exist. Two of them cover the whole box on the same 30 nodes: the
+# CERA surface above, and a second, hotter one loaded here.
+#
+# This is a MODEL-SPREAD band, not a confidence interval. Three simulations are not a distribution
+# and the truth may lie outside. What supports it is one empirical check: a third, independently
+# produced simulation of the same tool -- ten conditions computed by a colleague with different
+# substrate assumptions -- falls inside this band at all ten, and that third model agrees with the
+# lower edge at short pulses and approaches the upper edge at long ones. So the band is not merely
+# two arbitrary curves; it brackets the disagreement actually observed.
+_SKR_V, _SKR_T, _SKR_TMAX = load_flash_table(FLASH_TABLE_SKR_CSV)
+_SKR = TableThermalModel(_SKR_V, _SKR_T, _SKR_TMAX, shape=default_shape())
+
+
+def tmax_envelope(V: np.ndarray, t: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Lowest and highest peak temperature the available simulations give, in deg C.
+
+    Report this rather than ``tmax`` wherever a temperature is shown to a reader. A point value
+    understates what is known by roughly a factor of two in temperature rise.
+
+    :param V: flash voltages.
+    :param t: flash times (ms).
+    """
+    a = np.asarray(FLASH.tmax(V, t), float)
+    b = np.asarray(_SKR.tmax(V, t), float)
+    return np.minimum(a, b), np.maximum(a, b)

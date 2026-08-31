@@ -40,7 +40,7 @@ from active_learning.surrogate import BoundarySurrogate
 from campaign.reporting import boundary_conditions
 from campaign.results import CONTROL_INDEX, PLAN_KEY, blank_template, load, unfired
 from design_space import T_HI, T_LO, supported_grid
-from physics.thermal_model import FLASH
+from physics.thermal_model import tmax_envelope
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -176,17 +176,19 @@ def mean_boundary_entropy(gp: BoundarySurrogate, vv: np.ndarray, tt: np.ndarray)
 
 def _report_boundary(gp: BoundarySurrogate) -> np.ndarray:
     """Where the surrogate puts the boundary, as peak temperature against flash time."""
-    v, t, tm = boundary_conditions(gp, T_LO, T_HI)
+    v, t, tm_lo, tm_hi = boundary_conditions(gp, T_LO, T_HI)
     if v.size == 0:
         print("\n=== boundary ===\n  no boundary inside the box: the surface is one-sided")
         print("  Every condition fired so far is on the same side. Fire hotter or colder before")
         print("  reading anything else here.")
         return np.array([])
     print("\n=== where the boundary sits now ===")
-    print(f"  {'t (ms)':>8s} {'V':>8s} {'Tmax':>9s}")
+    print(f"  {'t (ms)':>8s} {'V':>8s}   simulated Tmax")
     for i in np.linspace(0, v.size - 1, min(6, v.size)).astype(int):
-        print(f"  {t[i]:8.1f} {v[i]:8.0f} {tm[i]:8.0f} C")
-    print(f"  peak temperature along the boundary: {tm.min():.0f} - {tm.max():.0f} C")
+        print(f"  {t[i]:8.1f} {v[i]:8.0f}   {tm_lo[i]:6.0f} - {tm_hi[i]:6.0f} C")
+    print("  the boundary in the controls is what is measured; the temperatures are a band across")
+    print("  the available simulations of this tool, which differ by about 2x in rise.")
+    tm = tm_lo
     if tm.max() - tm.min() > 15.0:
         print("  It is NOT a constant-temperature contour -- the boundary moves with dwell, which")
         print("  is the campaign's central question. Treat as provisional until replicated.")
@@ -229,7 +231,11 @@ def _write_batch(v: np.ndarray, t: np.ndarray, index: int) -> Path:
             "block": ["P"] * v.size,
             "voltage_V": v.astype(int),
             "time_ms": t,
-            "pred_Tmax_C": np.round(FLASH.tmax(v, t), 1),
+            # Two columns, not one: there is no measured temperature for this tool, and the
+            # available simulations of it differ by roughly a factor of two in rise. A single
+            # pred_Tmax_C column would state a precision nothing supports.
+            "sim_Tmax_lo_C": np.round(tmax_envelope(v, t)[0], 1),
+            "sim_Tmax_hi_C": np.round(tmax_envelope(v, t)[1], 1),
             "readout": "eps_r",
             "note": [f"proposed, cycle {index}"] * v.size,
         }
@@ -299,7 +305,8 @@ def main() -> int:
     path = _write_batch(bv, bt, index)
     print(f"\n=== proposed next: {args.batch} conditions by {args.acquisition} ===")
     for a, b in zip(bv, bt):
-        print(f"  {int(a):4d} V  {b:5.1f} ms   -> Tmax {FLASH.tmax(a, b):.0f} C")
+        lo, hi = tmax_envelope(np.array([a]), np.array([b]))
+        print(f"  {int(a):4d} V  {b:5.1f} ms   -> simulated Tmax {lo[0]:.0f} - {hi[0]:.0f} C")
     print(f"\nSaved -> {path.relative_to(ROOT)} and its blank results sheet")
     return 0
 
