@@ -17,7 +17,6 @@ if str(SRC) not in sys.path:
 import seed as seed_module  # noqa: E402
 from design_space import T_HI, T_LO  # noqa: E402
 from physics.constants import T_TRANSITION_REF_C  # noqa: E402
-from physics.kinetics import build_ensemble  # noqa: E402
 from physics.thermal_model import FLASH  # noqa: E402
 
 # The dwell interval the tilt is quoted over. Taken from the instrument's full settable range
@@ -52,12 +51,6 @@ ISO_LO_MS, ISO_HI_MS = _reachable_window(T_TRANSITION_REF_C)
 # boundary moves ~89 C and theta varies ~28%, and the identity misses by 6.6 C. It is therefore
 # checked over the reachable window, a 5.6x ratio, where the linearization is sound.
 LINEAR_LO_MS, LINEAR_HI_MS = ISO_LO_MS, ISO_HI_MS
-
-
-@pytest.fixture(scope="session")
-def ensemble() -> dict:
-    """The boundary hypotheses, built once for the whole session."""
-    return build_ensemble()
 
 
 @pytest.fixture(scope="session")

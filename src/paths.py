@@ -14,4 +14,4 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 FLASH_TABLE_CSV = DATA_DIR / "flash_temp_table.csv"
-MEASURED_TRACE_CSV = DATA_DIR / "measured_transient.csv"  # not yet available; see run_thermal_check
+MEASURED_TRACE_CSV = DATA_DIR / "measured_transient.csv"  # not yet available
