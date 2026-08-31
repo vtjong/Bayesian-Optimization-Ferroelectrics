@@ -32,89 +32,19 @@ so that file stays the single source of truth, and the paths to it live in ``pat
 
 # --- PHYSICAL ------------------------------------------------------------------------------
 KB_EV = 8.617333e-5  # Boltzmann constant (eV/K)
-CELSIUS_TO_KELVIN = 273.15
 T_ROOM_C = 25.0  # ambient the film returns to between shots
 
 # --- PRIOR ---------------------------------------------------------------------------------
-# [MEASURED, campaign tool] WHERE THE PROXY CHANGES REGIME -- not a crystallization onset.
+# There is deliberately no transition-temperature prior here. The previous one, a 435-459 C bracket
+# with a 447 C midpoint, does not survive its own provenance: it came from six shots on the earlier
+# Sinteron at 2-3 kV rather than this tool, it was labelled by 2*Qsw, which measures ferroelectric
+# switching rather than crystallinity, and the temperatures assigned to those shots were computed by
+# the same CERA table the bracket was then used to vouch for. The seed fired against it returned ten
+# crystallized specimens at conditions the bracket put well below onset.
 #
-# What was actually observed, in Bolometer_readings_PulseForge.xlsx, is a pair of adjacent voltage
-# settings at t = 5.0 ms:
-#
-#     650 V  ->  low  ferroelectric-switching response
-#     670 V  ->  high ferroelectric-switching response
-#
-# Inverting the campaign's own peak-temperature table puts those two conditions at 434.7 C and
-# 458.7 C. So the defensible claim is a BRACKET on where the electrical response transitions, and
-# that bracket -- not its midpoint -- is what the design is entitled to rely on.
-#
-# THIS IS NOT A MEASURED CRYSTALLIZATION ONSET. The readout is 2*Qsw/(U+|D|), a ferroelectric
-# switching figure of merit. It is phase-sensitive, it is not calibrated against total crystalline
-# fraction, and the repo's own RTA series shows a comparable readout that is NON-MONOTONE in
-# thermal severity. Calling 447 C "the onset" would assert more than the data supports, in exactly
-# the way the earlier 380 C figure did.
-#
-# T_TRANSITION_REF_C is the bracket midpoint, used ONLY as a reference coordinate for placing seed
-# conditions and for anchoring the kinetic ensemble. The design is built to be robust to its being
-# wrong: the ladder levels are chosen by MINIMAX over the whole prior rather than optimised at the
-# midpoint, and because the bracket is read through the same table the design inverts, a rescaling
-# of the temperature axis leaves every commanded voltage unchanged.
-T_TRANSITION_LO_C = 434.7  # hottest specimen still in the low-response regime
-T_TRANSITION_HI_C = 458.7  # coldest specimen in the high-response regime
-# Rounded to a whole degree deliberately. This is a design COORDINATE, not a measurement, and the
-# bracket endpoints are themselves spline inversions of a 5x6 table -- carrying 446.7 would assert
-# a tenth of a degree of precision that nothing here supports.
-T_TRANSITION_REF_C = round(0.5 * (T_TRANSITION_LO_C + T_TRANSITION_HI_C))  # 447 C
-#
-# Wider than the 12 C half-bracket, because the bracket is not the only uncertainty: n = 6, all at
-# one flash time; a single voltage step brackets it, so 24 C is a SAMPLING RESOLUTION rather than a
-# measured width; the readout is a switching figure of merit rather than crystallinity; and
-# KHM009/KHM010 may not be the stack about to be run.
-T_TRANSITION_SIGMA_C = 25.0
-T_REF_MS = 5.1  # flash time at which the bracket was observed (a measured table row)
-
-# Activated-kinetics parameters. Together they SET the transition width, so they must be stated
-# rather than absorbed into a hardcoded sharpness.
-#
-# The same six campaign-tool samples that fix the transition bracket bound the product n*Ea from
-# below, because
-# they fix the onset and the width on one temperature scale at once. The readout climbs from 0.044
-# to 1.447 between 434.7 C and 458.7 C, so the 10-90% transition fits inside 24 C, giving
-# s > 0.183 /C and hence
-#   n*Ea  =  s * kB * Tc^2 / (2 ln2)  >  5.90 eV      (Tc = 447 C)
-# which at n = 2.5 is Ea > 2.36 eV. Three independent off-tool lines agree on the magnitude:
-#   [ARCHIVAL] graded 2Pr fit of the KHM005/6 flash shots  -> Ea ~ 2.0 eV. Retired: that set is
-#              the earlier Sinteron at 2-3 kV, not this tool, and its temperature column spans
-#              342-916 C from an unrecorded source. It cannot constrain this campaign.
-#   [ARCHIVAL] JMAK refit of the FE_HZCO 350 C RTA isotherm -> Ea ~ 2.0-2.2 eV, n ~ 1.8
-#   literature, in-situ XRD crystallization of HfO2        -> Ea ~ 2.6 +/- 0.5 eV
-# 2.5 eV clears the on-tool bound at n = 2.5 (n*Ea = 6.25 eV) and reproduces a 23 C model width
-# against the 24 C measured bracket. That agreement is weaker than it looks: 24 C is the spacing
-# between the 650 V and 670 V settings that bracket the onset, so it is a SAMPLING RESOLUTION, and
-# the same six points are equally consistent with a much sharper transition. The bound is a floor
-# on n*Ea, not a measurement of it.
-#
-# The literature figure is one study -- isothermal in-situ XRD on ion-beam-sputtered UNDOPED HfO2 at
-# 15-50 nm and 550-650 C -- not a spread across studies, so applying it to 10 nm ALD HZO between
-# TiN at millisecond timescales is a substantial extrapolation.
-#
-# The bound holds only if the readout tracks crystalline fraction through the transition. A figure
-# of merit that saturates before the film does would make the transition look sharper than it is,
-# so 24 C is an upper bound on the width for the PROXY and Ea inherits that. It is a floor, not an
-# estimate.
-#
-# The tilt scales as 1/Ea, so no measured tilt should be quoted without stating the Ea it assumes.
-EA_EV = 2.5  # activation energy (eV); on-tool bound Ea > 2.36 at n = 2.5, literature 2.6 +/- 0.5
-# Avrami exponent. In JMAK n = d/m + a (m = 1 interface-controlled, 2 diffusion-controlled;
-# a = 0 site-saturated, 1 continuous nucleation). The empirical support for 2.5 is the repo's own
-# 350 C RTA isotherm, which gives n = 2.2-2.6, and the in-situ XRD literature, which reports n ~ 2
-# for HfO2. Note that no clean mechanism gives exactly 2.5 in a 10 nm film -- d/m + a = 2.5 would
-# be 3-D diffusion-controlled growth with continuous nucleation, and HfO2 crystallization is
-# polymorphic and interface-controlled. Treat 2.5 as an empirical fit, not a mechanism.
-#
-# n MATTERS FOR THE Ea FLOOR: the bound is on the PRODUCT n*Ea > 5.90 eV, so EA_EV = 2.5 clears it
-# only for n >= 2.36. At n = 2.0 the floor is Ea > 2.95 eV, above the literature centre.
-AVRAMI_N = 2.5
+# What replaced it is a measurement rather than a prior: the lowest delivered fluence among the
+# pilot conditions observed to crystallize. That number lives with the pilot data, not here, because
+# it is an observation and not an assumption.
 
 # --- MEASURED ------------------------------------------------------------------------------
 # Lamp irradiance envelope q(s) = LAMP_A*exp(-s/LAMP_TAU_FAST) + (1-LAMP_A)*exp(-s/LAMP_TAU_SLOW),
@@ -163,22 +93,16 @@ RAMP_A_SLOW = 0.23
 RAMP_TAU_SLOW_MS = 40.0
 
 # --- READOUT -------------------------------------------------------------------------------
-# Permittivity proxy, calibrated against archival PUND data. Noise is heteroscedastic and largest
-# mid-transition, where the film is a phase mixture: sigma_n(f) = FLOOR + BOUNDARY * f * (1 - f),
-# peaking at ~0.095 at f = 1/2.
-NOISE_FLOOR = 0.02
-NOISE_BOUNDARY = 0.30
+# There is deliberately no noise model here. The previous one (sigma_n = 0.02 + 0.30*f*(1-f)) was
+# calibrated against archival PUND data on different films, which this file's own provenance notes
+# list as NOT transferable, and it was written in crystalline-fraction units while the instrument
+# reports permittivity with an uncalibrated zero and gain. A replacement must be calibrated on
+# these films and in the units they are actually read in.
 
 # --- NUMERICAL -----------------------------------------------------------------------------
 # The Arrhenius integrand is concentrated within kB*T^2/Ea of the peak -- a fraction of a
 # millisecond for the diffusion shape -- so the quadrature grid is dense there and sparse in the
 # tail. Sizes are set for convergence, not for speed.
-QUAD_NEAR_POINTS = 4000  # samples across the near-peak window
-QUAD_FAR_POINTS = 1200  # log-spaced samples across the decaying tail
-QUAD_NEAR_WINDOW_PULSES = 3.0  # near-peak window, in multiples of the pulse width
-QUAD_TAU_MIN_MS = 1e-3  # lower bound of the log-spaced tail grid
 
 BISECT_ITERS = 80  # bisection steps; 80 halvings is exact to machine precision here
 V_SCAN_POINTS = 1024  # dense scan locating the spline's true max in V (it is not monotone there)
-BISECT_TMAX_LO_C = 100.0  # bracket for inverting a fraction to a peak temperature
-BISECT_TMAX_HI_C = 1200.0

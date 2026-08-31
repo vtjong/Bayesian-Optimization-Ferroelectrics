@@ -52,7 +52,6 @@ from .constants import (
     RAMP_TAU_FAST_MS,
     RAMP_TAU_SLOW_MS,
     T_ROOM_C,
-    T_TRANSITION_REF_C,
     TRACE_DURATION_MS,
     V_SCAN_POINTS,
 )
@@ -78,7 +77,6 @@ __all__ = [
     "ThermalModel",
     "T_HI",
     "T_LO",
-    "T_TRANSITION_REF_C",
     "T_ROOM",
     "V_HI",
     "V_LO",

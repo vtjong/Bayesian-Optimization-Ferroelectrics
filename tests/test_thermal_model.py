@@ -5,8 +5,12 @@ import pytest
 
 from design_space import load_flash_table
 from paths import FLASH_TABLE_CSV
-from physics.constants import T_REF_MS
 from physics.thermal_model import FLASH, FLASH_T, FLASH_TMAX, FLASH_V, SHAPES, tmax
+
+# A representative pulse width to evaluate a shape at. It is a measured table row, but
+# nothing here depends on which row: these tests check that every shape peaks at 1 and
+# decays, which must hold at any width.
+REF_MS = 5.1
 
 NODE_TOL_C = 1e-6  # spline must interpolate a measured node to well below readout precision
 PEAK_TOL = 1e-3  # |max(g) - 1| for a shape normalized to a unit peak
@@ -83,24 +87,24 @@ class TestPulseShapes:
     def test_normalized_to_unit_peak(self, name):
         shape = SHAPES[name]
         tau = np.linspace(0.0, shape.duration_ms, 200_000)
-        assert abs(shape(tau, T_REF_MS).max() - 1.0) < PEAK_TOL
+        assert abs(shape(tau, REF_MS).max() - 1.0) < PEAK_TOL
 
     @pytest.mark.parametrize("name", sorted(SHAPES))
     def test_bounded_and_causal(self, name):
         shape = SHAPES[name]
         tau = np.linspace(-5.0, shape.duration_ms, 20_000)
-        g = shape(tau, T_REF_MS)
+        g = shape(tau, REF_MS)
         assert np.all(g >= 0.0) and np.all(g <= 1.0 + PEAK_TOL)
         assert np.all(g[tau < 0] == 0.0), "no heating before the pulse"
 
     def test_diffusion_returns_toward_room_temperature(self):
         shape = SHAPES["diffusion"]
-        assert float(shape(np.array([shape.duration_ms]), T_REF_MS)[0]) < PLATEAU_CUTOFF
+        assert float(shape(np.array([shape.duration_ms]), REF_MS)[0]) < PLATEAU_CUTOFF
 
     def test_legacy_shape_keeps_its_unphysical_plateau(self):
         """Documents the known-wrong boundary condition retained for reproducibility."""
         shape = SHAPES["isoT"]
-        assert float(shape(np.array([shape.duration_ms]), T_REF_MS)[0]) > PLATEAU_CUTOFF
+        assert float(shape(np.array([shape.duration_ms]), REF_MS)[0]) > PLATEAU_CUTOFF
 
     def test_only_the_legacy_shape_ignores_pulse_width(self):
         """The property that decides whether the boundary can carry a tilt at all."""
