@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Plan CSV schema. These names are a data contract with the laboratory and with
+# Plan CSV schema. These names are a data contract with the
 # ``campaign.results``; changing one invalidates sheets already in circulation.
 INDEX_COLUMN = "index"
 BLOCK_COLUMN = "block"
