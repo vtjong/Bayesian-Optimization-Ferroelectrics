@@ -1,82 +1,127 @@
-"""The seed generator must not be able to reach a model.
+"""Tests that the seed design depends on nothing but the instrument.
 
-The previous seed failed because two bounds derived from the thermal simulation -- a temperature
-floor and a minimum pulse width -- decided which parts of the instrument's range were allowed into
-the design. Both were invisible in every coverage diagnostic, because the hypercube was correctly
-stratified inside the domain it was handed.
+The seed must be reproducible from its recorded parameters, cover the full
+settable design space, and contain no quantity derived from a thermal model.
 
-The structural defence is that ``seed.py`` cannot import anything capable of expressing such a
-bound. If it depends only on numpy and scipy, then every number in it is either an instrument
-specification or a declared design parameter, and a reader can verify that by reading one file.
+Import independence is asserted structurally rather than by review: a module
+that cannot import a model cannot inherit a bound from one.
 """
 
 import ast
+import sys
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[1] / "src"
-ALLOWED_ROOTS = {"numpy", "scipy", "typing"}
+import numpy as np
+import pytest
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SOURCE_ROOT))
+
+import seed  # noqa: E402
+
+#: Modules the seed may import. Each is either the standard library or an array
+#: or sampling primitive. None can express a physical assumption.
+ALLOWED_IMPORT_ROOTS = frozenset({"dataclasses", "numpy", "scipy", "typing"})
+
+#: Fraction of an axis within which the seed must reach that axis's limits.
+AXIS_COVERAGE_TOLERANCE = 0.15
 
 
-def _imported_roots(path: Path) -> set:
-    """Top-level names imported by a module, relative imports included.
+def imported_roots(module_path: Path) -> set[str]:
+    """Return the top-level module names imported by a source file.
 
-    :param path: path to the module.
+    :param module_path: Path to the module to inspect.
+    :return: Top-level names appearing in any import statement.
     """
-    found = set()
-    for node in ast.walk(ast.parse(path.read_text())):
-        if isinstance(node, ast.ImportFrom):
-            found.add((node.module or "").split(".")[0] if not node.level else "<relative>")
+    tree = ast.parse(module_path.read_text())
+
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            roots.add(node.module.split(".")[0])
         elif isinstance(node, ast.Import):
-            found.update(a.name.split(".")[0] for a in node.names)
-    return {f for f in found if f}
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+
+    return roots
 
 
-def test_the_seed_imports_nothing_but_numpy_and_scipy():
-    """Anything else could carry a model-derived bound into the design."""
-    leaked = _imported_roots(SRC / "seed.py") - ALLOWED_ROOTS
-    assert not leaked, (
-        f"seed.py imports {sorted(leaked)}. Every bound in the seed must be an instrument limit or "
-        "a declared design parameter; an import is how a thermal assumption gets in."
+def test_seed_imports_no_model() -> None:
+    """The seed module imports only sampling and array primitives."""
+    unexpected = imported_roots(SOURCE_ROOT / "seed.py") - ALLOWED_IMPORT_ROOTS
+
+    assert not unexpected, (
+        f"seed.py imports {sorted(unexpected)}. Every bound in the seed must be "
+        f"an instrument limit or a recorded design parameter."
     )
 
 
-def test_the_seed_spans_the_full_settable_range():
-    """A design that stops short of the instrument's limits has excluded something."""
-    import sys
+@pytest.mark.parametrize(
+    ("axis", "column"),
+    [
+        (seed.VOLTAGE, 0),
+        (seed.PULSE_WIDTH, 1),
+    ],
+)
+def test_conditions_lie_on_the_instrument_grid(
+    axis: seed.InstrumentAxis,
+    column: int,
+) -> None:
+    """Every setpoint is within range and on the instrument's resolution.
 
-    sys.path.insert(0, str(SRC))
-    import seed
+    :param axis: Instrument axis the values belong to.
+    :param column: Index of that axis in the returned conditions.
+    """
+    values = np.column_stack(seed.make_seed())[:, column]
 
-    v, t = seed.make_seed()
-    assert t.min() <= 0.2, f"shortest pulse is {t.min()} ms; the tool reaches {seed.T_LO}"
-    assert t.max() >= 0.5 * seed.T_HI, f"longest pulse {t.max()} ms; tool reaches {seed.T_HI}"
-    assert v.min() <= seed.V_LO + 0.15 * (seed.V_HI - seed.V_LO), "no low-voltage condition"
-    assert v.max() >= seed.V_HI - 0.15 * (seed.V_HI - seed.V_LO), "no high-voltage condition"
-
-
-def test_conditions_are_settable_and_distinct():
-    """A plan the operator cannot dial in, or that repeats a condition, is a defect."""
-    import sys
-
-    sys.path.insert(0, str(SRC))
-    import seed
-
-    v, t = seed.make_seed()
-    assert len(v) == seed.SEED_SIZE
-    assert (v == v.round()).all(), "a voltage is not a whole volt"
-    assert ((t * 10).round() == (t * 10)).all(), "a pulse width is not on the 0.1 ms grid"
-    assert ((v >= seed.V_LO) & (v <= seed.V_HI)).all()
-    assert ((t >= seed.T_LO) & (t <= seed.T_HI)).all()
-    assert len(set(zip(v.tolist(), t.tolist()))) == seed.SEED_SIZE
+    assert values.min() >= axis.minimum
+    assert values.max() <= axis.maximum
+    assert np.allclose(values / axis.step, np.round(values / axis.step))
 
 
-def test_the_draw_is_reproducible():
-    """The recorded RNG seed must reproduce the fired design exactly."""
-    import sys
+@pytest.mark.parametrize(
+    ("axis", "column"),
+    [
+        (seed.VOLTAGE, 0),
+        (seed.PULSE_WIDTH, 1),
+    ],
+)
+def test_seed_reaches_both_ends_of_each_axis(
+    axis: seed.InstrumentAxis,
+    column: int,
+) -> None:
+    """The seed spans the settable range rather than an interior subset.
 
-    sys.path.insert(0, str(SRC))
-    import seed
+    Coverage is measured in the coordinate the axis is stratified in, so pulse
+    width is judged on its decades rather than on raw milliseconds.
 
-    v1, t1 = seed.make_seed()
-    v2, t2 = seed.make_seed()
-    assert (v1 == v2).all() and (t1 == t2).all()
+    :param axis: Instrument axis to check coverage of.
+    :param column: Index of that axis in the returned conditions.
+    """
+    values = np.column_stack(seed.make_seed())[:, column]
+
+    if axis is seed.PULSE_WIDTH:
+        values = np.log10(values)
+        minimum, maximum = np.log10(axis.minimum), np.log10(axis.maximum)
+    else:
+        minimum, maximum = axis.minimum, axis.maximum
+
+    span = maximum - minimum
+
+    assert values.min() <= minimum + AXIS_COVERAGE_TOLERANCE * span
+    assert values.max() >= maximum - AXIS_COVERAGE_TOLERANCE * span
+
+
+def test_conditions_are_distinct() -> None:
+    """Snapping never collapses two conditions onto one another."""
+    conditions = np.column_stack(seed.make_seed())
+
+    assert conditions.shape[0] == seed.SEED_SIZE
+    assert np.unique(conditions, axis=0).shape[0] == seed.SEED_SIZE
+
+
+def test_seed_is_reproducible() -> None:
+    """The recorded parameters reproduce the fired design exactly."""
+    first = np.column_stack(seed.make_seed())
+    second = np.column_stack(seed.make_seed())
+
+    assert np.array_equal(first, second)

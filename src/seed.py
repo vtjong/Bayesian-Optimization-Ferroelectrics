@@ -1,104 +1,174 @@
-"""Seed conditions for the flash-anneal campaign.
+"""Prespecified seed design for the flash-anneal campaign.
 
-A Latin hypercube over the instrument's full settable range, and nothing else. No bound in this
-module is derived from a thermal model: the only inputs are the voltage and pulse-width limits of
-the tool and its setting resolution.
+The seed covers the instrument's full settable design space. Voltage is
+Latin-hypercube stratified linearly and pulse width is stratified uniformly
+in log10 space.
 
-That is deliberate. The previous seed carried two bounds that came from the thermal simulation
-rather than the instrument -- a 350 C lower bound on simulated peak temperature, and a 2.6 ms
-minimum pulse width inherited from the interval where the temperature table interpolates poorly.
-Each was a claim about where the answer is not, made before looking. Between them they removed the
-region the transition turned out to occupy, and all ten specimens came back on one side. Measured
-against a full-range draw, the pulse-width restriction cost a factor of eleven in the lowest
-delivered fluence the design could reach and the temperature floor cost a further 13%; which
-coordinate the hypercube was stratified in changed the result by about 2%.
-
-TIME IS DRAWN LOG-UNIFORMLY. The window spans two decades, so a linear draw places about 90% of
-conditions above 1 ms and leaves the short-pulse region -- the only part of the box that reaches low
-fluence -- effectively unsampled. Measured on a ten-point draw: linear scaling puts one condition
-below 1 ms, log scaling puts four.
-
-THE DRAW IS SELECTED, NOT RE-ROLLED. A single hypercube realization can leave two conditions close
-together. The realization used is the most separated of a fixed number of draws, under a fixed
-criterion, both declared here before drawing. That makes the selection a rule rather than a
-preference. What must never happen is re-running with a new seed because a draw looks unappealing;
-that is the same error as the floor, applied to whole designs instead of one bound.
-
-Delivered fluence and simulated peak temperature are computed elsewhere, AFTER the draw, to describe
-what it covers. Neither influences it. ``tests/test_seed_independence.py`` asserts that this module
-imports nothing but numpy and scipy.
+Candidate designs are snapped to instrument resolution. Designs containing
+duplicate setpoints after snapping are discarded, and the candidate with the
+largest minimum pairwise distance in normalized ``(voltage, log10 pulse)``
+coordinates is selected.
 """
 
-from typing import Tuple
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.stats import qmc
 
-V_LO, V_HI = 506.0, 716.0  # flash voltage limits (V)
-T_LO, T_HI = 0.1, 10.1  # flash time limits (ms)
-V_STEP = 1.0  # tool setting resolution, volts
-T_STEP = 0.1  # tool setting resolution, milliseconds
+
+@dataclass(frozen=True, slots=True)
+class InstrumentAxis:
+    """Settable range for one instrument control.
+
+    :param minimum: Minimum settable value.
+    :param maximum: Maximum settable value.
+    :param step: Instrument setting resolution.
+    """
+
+    minimum: float
+    maximum: float
+    step: float
+
+
+VOLTAGE = InstrumentAxis(
+    minimum=506.0,
+    maximum=716.0,
+    step=1.0,
+)
+
+PULSE_WIDTH = InstrumentAxis(
+    minimum=0.1,
+    maximum=10.1,
+    step=0.1,
+)
 
 SEED_SIZE = 10
-RNG_SEED = 20260831  # fixed before the draw; changing it requires a new record
-MAXIMIN_DRAWS = 400  # realizations scored; the most separated is kept
+RNG_SEED = 20260831
+MAXIMIN_DRAWS = 400
 
 
-def to_conditions(unit: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Map unit-square points onto settable ``(voltage, pulse width)``.
+def unit_to_setpoints(unit: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Map unit-square points to instrument setpoints.
 
-    Voltage scales linearly. Time scales in log10 and is then exponentiated, so both decades of the
-    window receive equal sampling density. Both are snapped to what the tool can be set to, so a
-    design can never ask for a value the operator cannot dial in.
+    Voltage is mapped linearly. Pulse width is mapped linearly in ``log10``
+    space so that the Latin hypercube stratifies pulse-width decades rather
+    than raw milliseconds.
 
-    :param unit: points in the unit square, shape ``(n, 2)``.
+    Both quantities are then snapped to instrument resolution.
+
+    :param unit: Unit-square points with shape ``(n, 2)``.
+    :return: Flash voltages in V and pulse widths in ms.
     """
-    scaled = qmc.scale(unit, [V_LO, np.log10(T_LO)], [V_HI, np.log10(T_HI)])
-    voltage = np.round(scaled[:, 0] / V_STEP) * V_STEP
-    time_ms = np.round(10.0**scaled[:, 1] / T_STEP) * T_STEP
-    return voltage, np.clip(np.round(time_ms, 1), T_LO, T_HI)
+    voltage_v = VOLTAGE.minimum + unit[:, 0] * (VOLTAGE.maximum - VOLTAGE.minimum)
 
+    log_pulse_min = np.log10(PULSE_WIDTH.minimum)
+    log_pulse_max = np.log10(PULSE_WIDTH.maximum)
+    log_pulse_width = log_pulse_min + unit[:, 1] * (log_pulse_max - log_pulse_min)
+    pulse_width_ms = 10.0**log_pulse_width
 
-def separation(voltage: np.ndarray, time_ms: np.ndarray) -> float:
-    """Smallest pairwise distance in normalized ``(V, log t)`` -- the maximin criterion.
+    voltage_v = np.round(voltage_v / VOLTAGE.step) * VOLTAGE.step
+    pulse_width_ms = np.round(pulse_width_ms / PULSE_WIDTH.step) * PULSE_WIDTH.step
 
-    Distances are taken in the coordinates the surrogate itself uses, so a design that looks well
-    spread by this measure is well spread to the kernel. Raw units would be unusable: voltage spans
-    210 while time spans two decades, so a raw metric would be almost entirely voltage.
-
-    :param voltage: flash voltages.
-    :param time_ms: flash times (ms).
-    """
-    x = np.column_stack(
-        [
-            (voltage - V_LO) / (V_HI - V_LO),
-            (np.log10(time_ms) - np.log10(T_LO)) / (np.log10(T_HI) - np.log10(T_LO)),
-        ]
+    pulse_width_ms = np.clip(
+        np.round(pulse_width_ms, 1),
+        PULSE_WIDTH.minimum,
+        PULSE_WIDTH.maximum,
     )
-    d = np.sqrt(((x[:, None, :] - x[None, :, :]) ** 2).sum(-1))
-    np.fill_diagonal(d, np.inf)
-    return float(d.min())
+
+    return voltage_v, pulse_width_ms
 
 
-def make_seed(n: int = SEED_SIZE, rng_seed: int = RNG_SEED) -> Tuple[np.ndarray, np.ndarray]:
-    """Draw the seed, returned sorted by pulse width.
+def to_design_coordinates(
+    voltage_v: np.ndarray,
+    pulse_width_ms: np.ndarray,
+) -> np.ndarray:
+    """Map instrument setpoints to normalized surrogate coordinates.
 
-    Realizations that snap two conditions onto one another are skipped -- the only rejection this
-    module performs. There is no floor, no band and no informative range.
+    The surrogate operates in normalized ``(voltage, log10 pulse width)``
+    coordinates. The same coordinates are used to evaluate seed separation.
 
-    :param n: number of conditions.
-    :param rng_seed: base RNG seed; realization ``k`` uses ``rng_seed + k``.
+    :param voltage_v: Flash voltages in V.
+    :param pulse_width_ms: Pulse widths in ms.
+    :return: Normalized coordinates with shape ``(n, 2)``.
     """
-    best = None
-    for k in range(MAXIMIN_DRAWS):
-        voltage, time_ms = to_conditions(qmc.LatinHypercube(d=2, seed=rng_seed + k).random(n))
-        if len(set(zip(voltage.tolist(), time_ms.tolist()))) < n:
+    voltage_coordinate = (voltage_v - VOLTAGE.minimum) / (VOLTAGE.maximum - VOLTAGE.minimum)
+
+    log_pulse_min = np.log10(PULSE_WIDTH.minimum)
+    log_pulse_max = np.log10(PULSE_WIDTH.maximum)
+    pulse_coordinate = (np.log10(pulse_width_ms) - log_pulse_min) / (log_pulse_max - log_pulse_min)
+
+    return np.column_stack((voltage_coordinate, pulse_coordinate))
+
+
+def minimum_separation(
+    voltage_v: np.ndarray,
+    pulse_width_ms: np.ndarray,
+) -> float:
+    """Return the minimum pairwise distance between seed conditions.
+
+    Distance is measured in the normalized coordinates used by the surrogate,
+    making this the maximin criterion used to select among candidate designs.
+
+    :param voltage_v: Flash voltages in V.
+    :param pulse_width_ms: Pulse widths in ms.
+    :return: Minimum normalized pairwise distance.
+    """
+    coordinates = to_design_coordinates(voltage_v, pulse_width_ms)
+
+    distances = np.linalg.norm(
+        coordinates[:, None, :] - coordinates[None, :, :],
+        axis=2,
+    )
+    np.fill_diagonal(distances, np.inf)
+
+    return float(distances.min())
+
+
+def make_seed(
+    n: int = SEED_SIZE,
+    rng_seed: int = RNG_SEED,
+    maximin_draws: int = MAXIMIN_DRAWS,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Select the prespecified maximin Latin-hypercube seed.
+
+    Each candidate is generated from a deterministic RNG seed, mapped onto
+    instrument setpoints, and rejected only if snapping produces duplicate
+    conditions. Among the remaining candidates, the design with the largest
+    minimum separation is retained.
+
+    :param n: Number of experimental conditions.
+    :param rng_seed: Base RNG seed. Candidate ``k`` uses ``rng_seed + k``.
+    :param maximin_draws: Number of candidate Latin hypercubes to evaluate.
+    :return: Voltages and pulse widths sorted by pulse width, then voltage.
+    :raises RuntimeError: If every candidate contains duplicate setpoints.
+    """
+    best_score = -np.inf
+    best_voltage_v = None
+    best_pulse_width_ms = None
+
+    for draw_index in range(maximin_draws):
+        unit = qmc.LatinHypercube(
+            d=2,
+            seed=rng_seed + draw_index,
+        ).random(n)
+
+        voltage_v, pulse_width_ms = unit_to_setpoints(unit)
+
+        conditions = np.column_stack((voltage_v, pulse_width_ms))
+        if np.unique(conditions, axis=0).shape[0] != n:
             continue
-        score = separation(voltage, time_ms)
-        if best is None or score > best[0]:
-            best = (score, voltage, time_ms)
-    if best is None:
-        raise RuntimeError(f"no realization of {n} distinct settable conditions in {MAXIMIN_DRAWS}")
-    _, voltage, time_ms = best
-    order = np.argsort(time_ms)
-    return voltage[order], time_ms[order]
+
+        score = minimum_separation(voltage_v, pulse_width_ms)
+        if score > best_score:
+            best_score = score
+            best_voltage_v = voltage_v
+            best_pulse_width_ms = pulse_width_ms
+
+    if best_voltage_v is None or best_pulse_width_ms is None:
+        raise RuntimeError(
+            f"no realization produced {n} distinct settable conditions "
+            f"across {maximin_draws} draws"
+        )
+
+    order = np.lexsort((best_voltage_v, best_pulse_width_ms))
+    return best_voltage_v[order], best_pulse_width_ms[order]
