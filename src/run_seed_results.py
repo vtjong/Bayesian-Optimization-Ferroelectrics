@@ -39,8 +39,7 @@ import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from discovery.constants import NOISE_BOUNDARY, NOISE_FLOOR
-from discovery.results import (
+from campaign.results import (
     ACTUAL_T_COLUMN,
     ACTUAL_V_COLUMN,
     CROSSCHECK_COLUMN,
@@ -111,73 +110,35 @@ def _report_coverage(res) -> None:
         print("  no longer on its iso-Tmax level and must not be read along the level.")
 
 
-def _sigma_n(f: float) -> float:
-    """Readout noise at fraction ``f``, from the calibrated heteroscedastic model."""
-    f = float(np.clip(f, 0.0, 1.0))
-    return NOISE_FLOOR + NOISE_BOUNDARY * f * (1.0 - f)
-
-
 def _report_replicates(res) -> None:
-    """Block D against block A: the first test that (V, t) describes the experiment completely."""
+    """Repeated conditions side by side -- the first test that (V, t) describes the experiment.
+
+    Reports the difference and does NOT judge it. Judging needs a readout noise model. The one this
+    script used was calibrated on archival PUND data from different films, which this repo's own
+    provenance notes list as non-transferable, and it was written in crystalline-fraction units
+    while the instrument reports permittivity. Any permittivity clipped to f = 1, collapsing sigma
+    to its floor of 0.02, so a difference of order 1 was tested against a threshold of 0.057 and
+    EVERY pair came back discrepant regardless of the data. Printing the numbers without a verdict
+    is the honest version until a noise model calibrated on these films exists.
+    """
     d = res.table[res.measured]
     dup = d[d.duplicated(subset=["voltage_V", "time_ms"], keep=False)]
     if dup.empty:
         print("\n=== replicates ===\n  no replicate pair has two usable readings yet")
         return
     print("\n=== replicates: same commanded condition, different specimen ===")
-    print(f"  {'V':>5s} {'t':>5s} {'A':>9s} {'D':>9s} {'diff':>9s} {'SE(diff)':>9s}  verdict")
+    print(f"  {'V':>5s} {'t':>5s} {'first':>9s} {'second':>9s} {'diff':>9s}   relative")
     for (v, t), g in dup.groupby(["voltage_V", "time_ms"]):
         vals = g[READOUT_COLUMN].to_numpy(float)
         if len(vals) < 2:
             continue
-        # The comparison is between two INDEPENDENT single measurements, so the difference has
-        # standard error sigma_n*sqrt(2), not sigma_n. Testing against 2*sigma_n instead would
-        # flag roughly half of all honest replicate pairs as discrepant.
-        se = _sigma_n(np.mean(vals)) * np.sqrt(2.0)
         diff = float(np.abs(vals[0] - vals[-1]))
-        verdict = "consistent" if diff <= 2.0 * se else "DISCREPANT -- replicate further"
-        print(
-            f"  {v:5.0f} {t:5.1f} {vals[0]:9.3f} {vals[-1]:9.3f} {diff:9.3f} {se:9.3f}  {verdict}"
-        )
-    print("  A discrepant pair means a variable outside (V, t) is in play -- film batch, interface")
+        scale = float(np.abs(np.mean(vals)))
+        rel = diff / scale if scale > 0 else float("nan")
+        print(f"  {v:5.0f} {t:5.1f} {vals[0]:9.3f} {vals[-1]:9.3f} {diff:9.3f}   {rel:7.1%}")
+    print("  No verdict is offered: see the docstring. A large difference means a variable outside")
+    print("  (V, t) is in play -- film batch, interface")
     print("  chemistry, thickness, positioning. It is a sentinel, not a variance estimate.")
-
-
-def _report_ladder(res) -> None:
-    """The headline: does the readout move along an iso-Tmax level as pulse width changes?"""
-    lad = res.table[res.measured & res.table["block"].isin(["A", "D"])]
-    if lad.empty:
-        print("\n=== ladder contrast ===\n  no ladder shot has a usable reading yet")
-        return
-    print("\n=== ladder contrast: readout ALONG each iso-Tmax level ===")
-    # Rungs are grouped by CLUSTERING peak temperature, not by rounding it. The generator holds
-    # rungs on a level to within 2 C and keeps levels at least 6 C apart, so a 3 C threshold
-    # separates levels cleanly -- whereas rounding splits a level whose rungs straddle an integer
-    # (460.4 and 461.3 are one level, and rounding reports them as two with no contrast).
-    temps = np.sort(lad["pred_Tmax_C"].to_numpy(float))
-    edges = np.where(np.diff(temps) > LEVEL_CLUSTER_C)[0]
-    groups = np.split(temps, edges + 1)
-    for grp in groups:
-        centre = float(np.mean(grp))
-        on = lad[np.abs(lad["pred_Tmax_C"] - centre) <= LEVEL_CLUSTER_C].sort_values("time_ms")
-        by_t = on.groupby("time_ms")[READOUT_COLUMN].agg(["mean", "size"])
-        if len(by_t) < 2:
-            print(f"  {centre:.0f} C: only t = {list(by_t.index)} ms measured -- no contrast yet")
-            continue
-        lo, hi = by_t.iloc[0], by_t.iloc[-1]
-        swing = float(hi["mean"] - lo["mean"])
-        # Difference of two means over unequal specimen counts.
-        spread = 1.0 / lo["size"] + 1.0 / hi["size"]
-        se = _sigma_n(np.mean([lo["mean"], hi["mean"]])) * np.sqrt(spread)
-        z = swing / se if se > 0 else 0.0
-        print(
-            f"  {centre:.0f} C: {lo['mean']:.3f} at {by_t.index[0]:.1f} ms "
-            f"(n={int(lo['size'])}) -> {hi['mean']:.3f} at {by_t.index[-1]:.1f} ms "
-            f"(n={int(hi['size'])})   swing {swing:+.3f}  ({z:+.1f} sigma)"
-        )
-    print("  A swing consistent with zero at BOTH levels supports a pure peak-temperature")
-    print("  threshold. A consistent non-zero swing means the boundary is tilted, and the")
-    print("  campaign's remaining 64 specimens have to map a folded surface rather than a contour.")
 
 
 def _report_crosscheck(res) -> None:
@@ -205,7 +166,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.plan.exists():
-        raise SystemExit(f"no seed plan at {args.plan}; run src/run_flash_plan.py first")
+        raise SystemExit(f"no plan at {args.plan}; generate one from src/seed.py first")
     plan = pd.read_csv(args.plan)
 
     if args.template:
@@ -226,7 +187,6 @@ def main() -> int:
         print("\nNothing measured yet; no contrast to report.")
         return 0
     _report_replicates(res)
-    _report_ladder(res)
     _report_crosscheck(res)
 
     specimens = res.table.loc[res.measured, SPECIMEN_COLUMN].astype(str).str.strip()

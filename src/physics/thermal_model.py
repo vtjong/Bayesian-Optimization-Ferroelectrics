@@ -1,12 +1,17 @@
 """Flash-lamp thermal model for FLA HZO: (voltage, time) -> peak temperature and trace.
 
-Peak temperature is a MEASURED table Tmax(V, t) read from ``data/flash_temp_table.csv``, bicubic
-spline interpolated. Temperature peaks in t near 2.6-3 ms, so Tmax is RE-ENTRANT in (V, t) and a
-Tmax level set folds -- it cannot be written t = f(V).
+Peak temperature is a SIMULATED table Tmax(V, t) read from ``data/flash_temp_table.csv``, bicubic
+spline interpolated. That file is byte-identical to the CERA table in the group's pipeline, whose
+own docstring calls it a synthetic dataset; no instrument, date or uncertainty is recorded with it,
+and the error on it is not established. Nothing in this module is a measurement of temperature.
+Temperature peaks in t near 2.6-3 ms, so Tmax is RE-ENTRANT in (V, t) and a Tmax level set folds --
+it cannot be written t = f(V). A second simulation of the same tool disagrees with this one on the
+SIGN of dT/dt at fixed voltage, so even that re-entrance is a property of this table rather than an
+established fact about the instrument.
 
-The temperature TRACE is not measured. It is asserted by a normalized pulse shape, and because
-activated kinetics integrate the trace, that assertion decides the crystallization boundary's
-geometry. ``SHAPES`` holds the candidate cooling laws; see ``PulseShape``.
+The temperature TRACE is likewise not measured. It is asserted by a normalized pulse shape, and
+because activated kinetics integrate the trace, that assertion decides the crystallization
+boundary's geometry. ``SHAPES`` holds the candidate cooling laws; see ``PulseShape``.
 
 The forward model is a ``ThermalModel`` (Protocol); ``TableThermalModel`` is the table-backed
 implementation and ``FLASH`` the default instance, so swapping the model does not touch callers.
@@ -20,9 +25,20 @@ from typing import Dict, Protocol, Tuple, runtime_checkable
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
 
+from design_space import (
+    GRID_T,
+    GRID_TMAX,
+    GRID_V,
+    T_HI,
+    T_LO,
+    V_HI,
+    V_LO,
+    load_flash_table,
+)
+from paths import FLASH_TABLE_SKR_CSV
+
 from .constants import (
     BISECT_ITERS,
-    FLASH_TABLE_CSV,
     KB_EV,
     LAMP_A,
     LAMP_QUAD_NODES,
@@ -38,7 +54,6 @@ from .constants import (
     RAMP_TAU_FAST_MS,
     RAMP_TAU_SLOW_MS,
     T_ROOM_C,
-    T_TRANSITION_REF_C,
     TRACE_DURATION_MS,
     V_SCAN_POINTS,
 )
@@ -64,7 +79,6 @@ __all__ = [
     "ThermalModel",
     "T_HI",
     "T_LO",
-    "T_TRANSITION_REF_C",
     "T_ROOM",
     "V_HI",
     "V_LO",
@@ -74,31 +88,9 @@ __all__ = [
 ]
 
 
-def load_flash_table(path=FLASH_TABLE_CSV) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read the measured peak-temperature table; returns ``(voltages, times, tmax_table)``.
-
-    The CSV is the single source of truth for this measurement -- it is deliberately NOT mirrored
-    as a literal in the source, so the two cannot drift apart. Header cells are ``V=<volts>`` and
-    row labels ``t=<milliseconds>``.
-
-    :param path: path to the table CSV.
-    """
-    if not path.exists():
-        raise FileNotFoundError(f"measured flash table not found at {path}")
-    rows = [line.split(",") for line in path.read_text().strip().splitlines() if line.strip()]
-    voltages = np.array([float(c.strip().removeprefix("V=")) for c in rows[0][1:]], float)
-    times = np.array([float(r[0].strip().removeprefix("t=")) for r in rows[1:]], float)
-    table = np.array([[float(c) for c in r[1:]] for r in rows[1:]], float)
-    if table.shape != (times.size, voltages.size):
-        raise ValueError(f"table shape {table.shape} does not match axes in {path}")
-    return voltages, times, table
-
-
-FLASH_V, FLASH_T, FLASH_TMAX = load_flash_table()
-
-# Design box = the extent of the measured grid; the model is never extrapolated beyond it.
-V_LO, V_HI = float(FLASH_V[0]), float(FLASH_V[-1])
-T_LO, T_HI = float(FLASH_T[0]), float(FLASH_T[-1])
+# The measured grid and the box it defines both live in design_space, which owns them because
+# both the thermal model and the learner need the box while neither may reach the other.
+FLASH_V, FLASH_T, FLASH_TMAX = GRID_V, GRID_T, GRID_TMAX
 
 
 @runtime_checkable
@@ -236,10 +228,12 @@ class DiffusionPulse:
 
 @dataclass(frozen=True)
 class LampDrivenPulse:
-    """PHYSICS DEFAULT: measured lamp irradiance driving semi-infinite substrate conduction.
+    """PHYSICS DEFAULT: fitted lamp irradiance driving semi-infinite substrate conduction.
 
-    Same conduction physics as ``DiffusionPulse``, but the source term is the MEASURED lamp
-    envelope rather than a top hat. Surface temperature follows Duhamel's integral,
+    Same conduction physics as ``DiffusionPulse``, but the source term is a lamp envelope fitted
+    to the measured delivered fluence rather than a top hat. The fluence is measured; the
+    envelope is a two-exponential fit to it, and the temperature it drives is simulated.
+    Surface temperature follows Duhamel's integral,
 
         T(tau) - T_room  ~  INT_0^min(tau, t) q(s) / sqrt(tau - s) ds
 
@@ -355,7 +349,7 @@ class ThermalModel(Protocol):
 
 
 class TableThermalModel:
-    """Peak temperature from a MEASURED (voltage x time) table, scaled by a normalized pulse shape.
+    """Peak temperature from a SIMULATED (voltage x time) table, scaled by a normalized shape.
 
     Smoothly interpolates the tabulated peak temperatures (bicubic spline) and applies the supplied
     normalized trace shape, scaled per shot by that shot's Tmax. Whether the crystallization
@@ -479,8 +473,9 @@ def thermal_model(shape: PulseShape) -> TableThermalModel:
     return TableThermalModel(FLASH_V, FLASH_T, FLASH_TMAX, shape=shape)
 
 
-# Named ensemble members. They share the MEASURED Tmax table and differ only in the trace shape,
-# so comparing them isolates the one thing we have never measured: the cooling law.
+# Named ensemble members. They share the same simulated Tmax table and differ only in the trace
+# shape, so comparing them isolates the cooling law -- which, like the table itself, is asserted
+# rather than measured.
 SHAPES: Dict[str, PulseShape] = {
     "isoT": FrozenPulse(),  # width-independent -> zero tilt (the null hypothesis)
     "ramp": RampPulse(),  # empirical two-exponential transient -> ~13 C tilt
@@ -497,7 +492,8 @@ def default_shape() -> PulseShape:
     return SHAPES[DEFAULT_SHAPE]
 
 
-# Default forward model = the measured Tmax table driven by the MEASURED lamp envelope.
+# Default forward model = the simulated Tmax table driven by a lamp envelope fitted to the
+# measured delivered fluence. The fluence is measured; the temperature it is converted into is not.
 # Module-level tmax/_trace wrap it so existing callers keep a stable import.
 FLASH = thermal_model(default_shape())
 
@@ -513,3 +509,32 @@ def tmax(V: np.ndarray, t: np.ndarray) -> np.ndarray:
 def _trace(v: float, t: float, n: int = 240) -> Tuple[np.ndarray, np.ndarray]:
     """Temperature trace from the default ``FLASH`` model (see ``TableThermalModel.trace``)."""
     return FLASH.trace(v, t, n)
+
+# --- how far apart the available thermal models are ----------------------------------------
+# There is no measured peak temperature anywhere in this project, so a single number from this
+# module is a model output with no error bar. What CAN be bounded is the spread between the
+# simulations of this tool that exist. Two of them cover the whole box on the same 30 nodes: the
+# CERA surface above, and a second, hotter one loaded here.
+#
+# This is a MODEL-SPREAD band, not a confidence interval. Three simulations are not a distribution
+# and the truth may lie outside. What supports it is one empirical check: a third, independently
+# produced simulation of the same tool -- ten conditions computed by a colleague with different
+# substrate assumptions -- falls inside this band at all ten, and that third model agrees with the
+# lower edge at short pulses and approaches the upper edge at long ones. So the band is not merely
+# two arbitrary curves; it brackets the disagreement actually observed.
+_SKR_V, _SKR_T, _SKR_TMAX = load_flash_table(FLASH_TABLE_SKR_CSV)
+_SKR = TableThermalModel(_SKR_V, _SKR_T, _SKR_TMAX, shape=default_shape())
+
+
+def tmax_envelope(V: np.ndarray, t: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Lowest and highest peak temperature the available simulations give, in deg C.
+
+    Report this rather than ``tmax`` wherever a temperature is shown to a reader. A point value
+    understates what is known by roughly a factor of two in temperature rise.
+
+    :param V: flash voltages.
+    :param t: flash times (ms).
+    """
+    a = np.asarray(FLASH.tmax(V, t), float)
+    b = np.asarray(_SKR.tmax(V, t), float)
+    return np.minimum(a, b), np.maximum(a, b)

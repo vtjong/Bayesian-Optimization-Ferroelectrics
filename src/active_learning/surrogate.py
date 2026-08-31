@@ -54,7 +54,7 @@ from typing import Tuple
 import numpy as np
 from scipy.optimize import minimize
 
-from .synthetic import T_HI, V_HI, V_LO
+from design_space import normalize
 
 LOGIT_CLIP = 1.0e-3  # bounds the latent to about +/- 6.9
 # The observed range is set by the INLIERS, not by the extremes and not by a quantile.
@@ -92,21 +92,6 @@ N_RESTARTS = 6
 # Caps the per-point variance inflation. At the logit clip the raw factor would be ~1e6, which is
 # numerically pointless -- a rail point carries no information either way -- so it is bounded.
 MAX_NOISE_INFLATION = 40.0
-
-
-def normalize_inputs(v: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Map ``(V, t)`` to the unit box, with time in log10.
-
-    The kernel measures distance and raw units are unusable: voltage spans 210 while flash time
-    spans two decades, so a raw metric would be ~99% voltage. Log time additionally makes the
-    boundary geometry closer to isotropic.
-
-    :param v: flash voltages.
-    :param t: flash times (ms).
-    """
-    x = (np.asarray(v, float) - V_LO) / (V_HI - V_LO)
-    lo, hi = np.log10(0.1), np.log10(T_HI)
-    return np.column_stack([x, (np.log10(np.asarray(t, float)) - lo) / (hi - lo)])
 
 
 def to_latent(y: np.ndarray) -> np.ndarray:
@@ -219,7 +204,7 @@ class BoundarySurrogate:
         :param t: as-fired flash times (ms).
         :param y: observed readings.
         """
-        self._x = normalize_inputs(v, t)
+        self._x = normalize(v, t)
         self._y = to_latent(y)
         self._smooth = None  # first pass is homoscedastic; see the module note
 
@@ -273,7 +258,7 @@ class BoundarySurrogate:
         :param latent: fantasy values, in latent units.
         """
         out = BoundarySurrogate(n_restarts=self.n_restarts, seed=self.seed, priors=self.priors)
-        out._x = np.vstack([self._x, normalize_inputs(v, t)])
+        out._x = np.vstack([self._x, normalize(v, t)])
         out._y = np.concatenate([self._y, np.atleast_1d(latent)])
         out._smooth = None
         if self._smooth is not None:
@@ -292,7 +277,7 @@ class BoundarySurrogate:
         :param v: flash voltages.
         :param t: flash times (ms).
         """
-        q = normalize_inputs(v, t)
+        q = normalize(v, t)
         h = self._hypers
         cross = matern52(self._x, q, h["sigma_f"], h["ells"])
         mu = self._mean + cross.T @ self._alpha

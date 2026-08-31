@@ -109,7 +109,7 @@ def blank_template(plan: pd.DataFrame) -> pd.DataFrame:
     is expected to correct them where reality differed. Status is left empty deliberately: an
     unfilled sheet must fail validation rather than read as sixteen not-run specimens.
 
-    :param plan: the seed plan, as written by ``run_flash_plan``.
+    :param plan: the fired plan, in the CSV's column names.
     """
     out = pd.DataFrame({PLAN_KEY: np.concatenate([[CONTROL_INDEX], plan[PLAN_KEY].to_numpy()])})
     out[SPECIMEN_COLUMN] = ""

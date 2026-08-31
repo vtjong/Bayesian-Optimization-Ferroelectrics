@@ -3,16 +3,22 @@
 import numpy as np
 import pytest
 
-from discovery.constants import FLASH_TABLE_CSV, T_REF_MS
-from discovery.synthetic import (
+from design_space import load_flash_table
+from paths import FLASH_TABLE_CSV
+from physics.thermal_model import (
     FLASH,
     FLASH_T,
     FLASH_TMAX,
     FLASH_V,
     SHAPES,
-    load_flash_table,
     tmax,
+    tmax_envelope,
 )
+
+# A representative pulse width to evaluate a shape at. It is a measured table row, but
+# nothing here depends on which row: these tests check that every shape peaks at 1 and
+# decays, which must hold at any width.
+REF_MS = 5.1
 
 NODE_TOL_C = 1e-6  # spline must interpolate a measured node to well below readout precision
 PEAK_TOL = 1e-3  # |max(g) - 1| for a shape normalized to a unit peak
@@ -89,24 +95,24 @@ class TestPulseShapes:
     def test_normalized_to_unit_peak(self, name):
         shape = SHAPES[name]
         tau = np.linspace(0.0, shape.duration_ms, 200_000)
-        assert abs(shape(tau, T_REF_MS).max() - 1.0) < PEAK_TOL
+        assert abs(shape(tau, REF_MS).max() - 1.0) < PEAK_TOL
 
     @pytest.mark.parametrize("name", sorted(SHAPES))
     def test_bounded_and_causal(self, name):
         shape = SHAPES[name]
         tau = np.linspace(-5.0, shape.duration_ms, 20_000)
-        g = shape(tau, T_REF_MS)
+        g = shape(tau, REF_MS)
         assert np.all(g >= 0.0) and np.all(g <= 1.0 + PEAK_TOL)
         assert np.all(g[tau < 0] == 0.0), "no heating before the pulse"
 
     def test_diffusion_returns_toward_room_temperature(self):
         shape = SHAPES["diffusion"]
-        assert float(shape(np.array([shape.duration_ms]), T_REF_MS)[0]) < PLATEAU_CUTOFF
+        assert float(shape(np.array([shape.duration_ms]), REF_MS)[0]) < PLATEAU_CUTOFF
 
     def test_legacy_shape_keeps_its_unphysical_plateau(self):
         """Documents the known-wrong boundary condition retained for reproducibility."""
         shape = SHAPES["isoT"]
-        assert float(shape(np.array([shape.duration_ms]), T_REF_MS)[0]) > PLATEAU_CUTOFF
+        assert float(shape(np.array([shape.duration_ms]), REF_MS)[0]) > PLATEAU_CUTOFF
 
     def test_only_the_legacy_shape_ignores_pulse_width(self):
         """The property that decides whether the boundary can carry a tilt at all."""
@@ -133,3 +139,43 @@ class TestTraceAssembly:
         _, short = FLASH.trace(674.0, 2.6)
         _, long = FLASH.trace(674.0, 10.1)
         assert not np.allclose(short, long)
+
+
+class TestModelSpread:
+    """The reported temperature is a band across simulations, not a point.
+
+    There is no measured peak temperature for this tool. A single number would state a precision
+    nothing supports, and the previous seed failed partly because one such number was trusted.
+    """
+
+    def test_the_envelope_brackets_an_independent_third_simulation(self):
+        """The check that makes the band evidence rather than two arbitrary curves.
+
+        A colleague's independent simulation of the same tool, with different substrate
+        assumptions, was run at ten conditions. Every one falls inside the envelope. If a change
+        to either table breaks this, the band has stopped describing the real disagreement.
+        """
+        v = np.array([709, 655, 691, 572, 641, 674, 605, 626, 647, 669], float)
+        t = np.array([2.8, 3.2, 3.6, 4.4, 4.9, 5.6, 5.9, 6.8, 8.7, 9.5])
+        third = np.array(
+            [561.3, 496.1, 577.9, 406.8, 533.6, 620.7, 505.0, 560.3, 626.1, 676.7]
+        )
+        lo, hi = tmax_envelope(v, t)
+        assert np.all((third >= lo) & (third <= hi)), (
+            "the envelope no longer contains the independent simulation it was justified by"
+        )
+
+    def test_the_envelope_is_wide_enough_to_be_honest(self):
+        """A band that collapses onto one model is not reporting the disagreement."""
+        v = np.linspace(506, 716, 12)
+        t = np.geomspace(0.1, 10.1, 12)
+        lo, hi = tmax_envelope(v, t)
+        rise_ratio = (hi - 25.0) / (lo - 25.0)
+        assert rise_ratio.min() > 1.5, f"envelope collapsed to {rise_ratio.min():.2f}x in rise"
+
+    def test_the_lower_edge_is_the_default_surface(self):
+        """Callers reading only the low edge get the CERA surface, unchanged."""
+        v = np.array([632.0, 674.0])
+        t = np.array([5.1, 2.6])
+        lo, _ = tmax_envelope(v, t)
+        assert np.allclose(lo, tmax(v, t))

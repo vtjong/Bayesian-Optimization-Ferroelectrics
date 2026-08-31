@@ -48,8 +48,9 @@ from typing import Callable, Dict, Tuple
 import numpy as np
 from scipy.stats import norm
 
-from .surrogate import BoundarySurrogate, normalize_inputs
-from .synthetic import FLASH, V_HI, V_LO
+from design_space import V_HI, V_LO, normalize, snap_all
+
+from .surrogate import BoundarySurrogate
 
 # No candidate within this distance of an existing or pending condition may be chosen. In the
 # normalized box 0.04 is about 8 V or 0.08 of a decade in time -- comfortably inside the tool's
@@ -132,9 +133,8 @@ def candidate_pool(t_lo: float, t_hi: float, n: int = N_CANDIDATES, seed: int = 
     """
     rng = np.random.default_rng(seed)
     u = rng.uniform(size=(n, 2))
-    v = np.round(V_LO + u[:, 0] * (V_HI - V_LO))
     lo, hi = np.log10(t_lo), np.log10(t_hi)
-    t = np.round(10.0 ** (lo + u[:, 1] * (hi - lo)), 1)
+    v, t = snap_all(V_LO + u[:, 0] * (V_HI - V_LO), 10.0 ** (lo + u[:, 1] * (hi - lo)))
     keep = (t >= t_lo) & (t <= t_hi)
     return v[keep], t[keep]
 
@@ -181,10 +181,10 @@ def select_batch(
     """
     score_fn = ACQUISITIONS[acquisition]
     cand_v, cand_t = candidate_pool(t_lo, t_hi, seed=seed)
-    cand = normalize_inputs(cand_v, cand_t)
+    cand = normalize(cand_v, cand_t)
 
     scratch = gp
-    taken = normalize_inputs(np.asarray(fired_v, float), np.asarray(fired_t, float))
+    taken = normalize(np.asarray(fired_v, float), np.asarray(fired_t, float))
     picked_v, picked_t = [], []
     for _ in range(k):
         mu, sd = scratch.latent(cand_v, cand_t)
@@ -204,36 +204,3 @@ def select_batch(
             np.array([cand_v[j]]), np.array([cand_t[j]]), scratch.latent(cand_v[j], cand_t[j])[0]
         )
     return np.array(picked_v), np.array(picked_t)
-
-
-def boundary_conditions(gp: BoundarySurrogate, t_lo: float, t_hi: float, n: int = 240) -> tuple:
-    """Where the fitted surface currently puts the boundary, as ``(V, t, Tmax)`` along it.
-
-    Reported at each supported flash time by bisecting the latent mean in voltage, which is what a
-    reader wants to see: the boundary as a curve in the controls, and the peak temperature it
-    implies.
-
-    :param gp: fitted surrogate.
-    :param t_lo: shortest supported flash time (ms).
-    :param t_hi: longest supported flash time (ms).
-    :param n: how many flash times to report.
-    """
-    times = np.geomspace(t_lo, t_hi, n)
-    out_v, out_t = [], []
-    for t in times:
-        lo, hi = V_LO, V_HI
-        if gp.latent(np.array([lo]), np.array([t]))[0][0] > 0:
-            continue  # already crystallized at the coldest voltage
-        if gp.latent(np.array([hi]), np.array([t]))[0][0] < 0:
-            continue  # never crystallized at this flash time
-        for _ in range(40):
-            mid = 0.5 * (lo + hi)
-            if gp.latent(np.array([mid]), np.array([t]))[0][0] < 0:
-                lo = mid
-            else:
-                hi = mid
-        out_v.append(0.5 * (lo + hi))
-        out_t.append(float(t))
-    v = np.array(out_v)
-    t = np.array(out_t)
-    return v, t, (FLASH.tmax(v, t) if v.size else np.array([]))

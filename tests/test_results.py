@@ -13,7 +13,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from discovery.results import (  # noqa: E402
+from campaign.results import (  # noqa: E402
     ACTUAL_T_COLUMN,
     ACTUAL_V_COLUMN,
     CONTROL_INDEX,
@@ -35,11 +35,12 @@ def plan(seed_plan):
     """The committed plan in the CSV's own column names."""
     return pd.DataFrame(
         {
-            PLAN_KEY: np.arange(1, len(seed_plan["V"]) + 1),
+            PLAN_KEY: np.arange(1, len(seed_plan["voltage_v"]) + 1),
             "block": seed_plan["block"],
-            "voltage_V": seed_plan["V"],
-            "time_ms": seed_plan["t"],
-            "pred_Tmax_C": np.round(seed_plan["tmax"], 1),
+            "voltage_V": seed_plan["voltage_v"],
+            "time_ms": seed_plan["pulse_width_ms"],
+            "sim_Tmax_lo_C": np.round(seed_plan["tmax_low_c"], 1),
+            "sim_Tmax_hi_C": np.round(seed_plan["tmax_high_c"], 1),
             READOUT_KIND_COLUMN: "eps_r",
             "note": seed_plan["note"],
         }
