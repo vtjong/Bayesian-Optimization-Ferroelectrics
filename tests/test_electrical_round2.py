@@ -84,8 +84,8 @@ class TestNothingIsSilentlyDropped:
         capacitors, samples = round2
         assert len(capacitors) == 112
         assert sorted(samples["state"].unique()) == ["post1e6", "pris"]
-        bad = capacitors["problem"].fillna("").str.contains("error|Error")
-        assert not bad.any(), capacitors.loc[bad, ["sample", "cap", "state", "problem"]]
+        bad = capacitors["has_error"]
+        assert not bad.any(), capacitors.loc[bad, ["sample", "cap", "state", "issues"]]
 
     def test_endurance_cycle_zero_agrees_with_the_pristine_pund(self, round2):
         capacitors, _ = round2

@@ -114,7 +114,7 @@ def write_report(
         "pinching_index",
         "wake_ratio",
         "pulse_pattern",
-        "problem",
+        "issues",
         "outlier_flags",
     ]
     show = [c for c in show if c in cap.columns]

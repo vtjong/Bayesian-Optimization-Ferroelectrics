@@ -1,265 +1,347 @@
-"""Walk a round directory, find every PUND / P-V / endurance export, read Settings metadata.
+"""Find the Keithley exports of one round and group their runs per (capacitor, state).
 
-File naming seen so far (Keithley 4200A KTEI exports):
-    PUND_pris_RxCy_30um.xls          one run (sheet Data)                       Sample14
-    PUND_pris_1e6_RxCy_30um.xls      two runs: Data = initial (pristine),       Round 2
-                                     Append1 = after the 1e6-cycle endurance
-    PV_pris_RxCy_30um.xls / PV_pris_1e6_RxCy_30um.xls   same pattern
-    END_1e6_RxCy_30um.xls            pundEndurance: P/U/N/D charges vs cycle count
-    PV_1e6_RxCy_30um.xls             a stand-alone post-cycling P-V
+Nothing is opened here. A file name carries the measurement kind, the state token and the
+capacitor, and the folder carries the sample:
 
-Each run becomes one record (`RawFile`) with `state`: the file's own token for the
-initial run ("pris"), and "post<cycles>" for an Append sheet.  Nothing about the
-timing is assumed: dt, n and the instrument parameters are read from each file and
-recorded in `raw_index.csv`.
+    PUND_pris_RxCy_30um.xls         one run (sheet Data)
+    PUND_pris_1e6_RxCy_30um.xls     two runs: Data = pristine, Append1 = after 1e6 cycles
+    PV_pris_1e6_RxCy_30um.xls       same pattern; PV_1e6_RxCy_30um.xls is a post-cycling run alone
+    END_1e6_RxCy_30um.xls           endurance log, attached to the capacitor's pristine state
+
+Names the instrument operator typed by hand vary in case, separator and a trailing ``_x`` for
+a repeated measurement; all of those parse and are marked ``suspect`` so the QC report shows
+them. ``group_runs`` works on the runs ``workbook.read_workbook`` returns.
 """
 
 from __future__ import annotations
 
-import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pandas as pd
-
-FILE_RE = re.compile(
-    r"^(?P<kind>PUND|PV|END)_(?P<tag>[A-Za-z0-9_]+?)_(?P<cap>R\d+C\d+)_(?P<size>\d+)um\.xls$"
+from electrical.issues import (
+    IssueCode,
+    RoundLayoutError,
+    ValidationIssue,
+    warning,
 )
-CAP_RE = re.compile(r"R(?P<row>\d+)C(?P<col>\d+)")
-SAMPLE_RE = re.compile(r"(?i)sample\s*_?(?P<num>\d+)")
-CYCLES_RE = re.compile(r"(\d+e\d+|\d{3,})")
-EXPECTED_MODULE = {"PUND": "pundTest", "PV": "doubleSweepSeg", "END": "pundEndurance"}
+
+if TYPE_CHECKING:
+    from electrical.workbook import EnduranceTable, PundRun, PvRun, Run
+
+FILE_NAME_RE = re.compile(
+    r"^(?P<kind>PUND|PV|END)[_-](?P<tag>.+?)[_-](?P<cap>R\d+C\d+)[_-](?P<size>\d+)um"
+    r"(?P<suffix>[_-]x)?\.xls$",
+    re.IGNORECASE,
+)
+CAPACITOR_RE = re.compile(r"R(?P<row>\d+)C(?P<col>\d+)", re.IGNORECASE)
+SAMPLE_RE = re.compile(r"sample\s*_?(?P<number>\d+)", re.IGNORECASE)
+CYCLES_RE = re.compile(r"^(\d+e\d+|\d{3,})$", re.IGNORECASE)
+
+#: State token of the initial measurement on a never-cycled capacitor.
+PRISTINE_STATE = "pris"
+#: Folders that never hold exports.
+SKIPPED_FOLDERS = ("__MACOSX", "Analysis_Plots")
 
 
-@dataclass
-class RawFile:
-    path: str
-    kind: str  # "PUND" | "PV" | "END"
-    state: str  # "pris" | "post1e6" | ...
-    run: str  # sheet name holding this run: "Data", "Append1", ...
-    cap: str
+class MeasurementKind(Enum):
+    PUND = "PUND"
+    PV = "PV"
+    END = "END"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CapacitorId:
+    """Position of a capacitor on the die."""
+
     row: int
     col: int
-    size_um: int
-    sample: str
-    sample_num: int | None
-    cycles_tag: str | None = None
-    module: str | None = None
-    executed: datetime | None = None
-    params: dict = field(default_factory=dict)
-    n_points: int | None = None
-    dt_s: float | None = None
-    t_end_s: float | None = None
-    problems: list = field(default_factory=list)
 
-    def index_row(self):
-        return {
-            "sample": self.sample,
-            "sample_num": self.sample_num,
-            "cap": self.cap,
-            "row": self.row,
-            "col": self.col,
-            "kind": self.kind,
-            "state": self.state,
-            "run": self.run,
-            "size_um": self.size_um,
-            "module": self.module,
-            "executed": self.executed.isoformat() if self.executed else None,
-            "n_points": self.n_points,
-            "dt_s": self.dt_s,
-            "t_end_s": self.t_end_s,
-            "params": ";".join(f"{k}={v}" for k, v in self.params.items()),
-            "problems": ";".join(self.problems),
-            "path": self.path,
-        }
+    @property
+    def label(self) -> str:
+        """Return the ``RxCy`` label the files use."""
+        return f"R{self.row}C{self.col}"
 
 
-def _parse_dt(raw):
-    if not isinstance(raw, str):
-        return None
-    for fmt in ("%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
-        try:
-            return datetime.strptime(raw.strip(), fmt)
-        except ValueError:
-            pass
-    return None
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MeasurementFile:
+    """One export, as its name and folder describe it.
 
-
-def parse_settings(path: str) -> dict[str, dict]:
-    """{sheet: {"module", "executed", "params"}} from the Settings sheet.
-
-    The sheet holds one block per run, separated by '====' lines and titled
-    'Latest Run', 'Append 1 / Latest Run' or 'Initial Run'. 'Initial Run' is the
-    Data sheet; 'Append k' is sheet Appendk; a lone 'Latest Run' is Data.
+    :param path: The workbook.
+    :param kind: PUND, P-V or endurance.
+    :param state_token: Lower-case state token from the name (``"pris"``), or ``None``.
+    :param cycles_tag: Cycle count from the name (``"1e6"``), or ``None``.
+    :param capacitor: Capacitor the file belongs to.
+    :param side_um: Capacitor side length from the name, um.
+    :param sample_name: Folder name as written.
+    :param sample_key: Normalised sample key used for joins (``"sample16"``).
+    :param sample_number: Sample number from the folder name, or ``None``.
+    :param suspect: Whether the name departs from the instrument's own convention.
     """
-    s = pd.read_excel(path, sheet_name="Settings", engine="xlrd", header=None)
-    col0 = s[0].fillna("").astype(str).str.strip()
-    blocks, cur = [], None
-    for i in range(len(s)):
-        v = col0.iloc[i]
-        if v.startswith("===="):
-            continue
-        if v in ("Latest Run", "Initial Run") or v.startswith("Append"):
-            cur = {"title": v, "rows": []}
-            blocks.append(cur)
-            continue
-        if cur is not None:
-            cur["rows"].append(i)
-    out = {}
-    for b in blocks:
-        kv = {col0.iloc[i]: s.iloc[i, 1] for i in b["rows"]}
-        params = {
-            col0.iloc[i]: s.iloc[i, 3]
-            for i in b["rows"]
-            if str(s.iloc[i, 1]).strip() == "Input" and "size" not in col0.iloc[i]
-        }
-        m = re.match(r"Append\s*(\d+)", b["title"])
-        sheet = f"Append{m.group(1)}" if m else "Data"
-        out[sheet] = {
-            "module": str(kv.get("Module Name", "")).strip() or None,
-            "executed": _parse_dt(kv.get("Last Executed")),
-            "params": params,
-        }
-    return out
+
+    path: Path
+    kind: MeasurementKind
+    state_token: str | None
+    cycles_tag: str | None
+    capacitor: CapacitorId
+    side_um: int
+    sample_name: str
+    sample_key: str
+    sample_number: int | None
+    suspect: bool
 
 
-def read_data(path: str, sheet: str = "Data") -> pd.DataFrame:
-    """A run's sheet: header row + arrays; instrument scalars live on the first data row."""
-    return pd.read_excel(path, sheet_name=sheet, engine="xlrd")
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CapacitorRuns:
+    """The runs that describe one capacitor in one state, paired and checked.
+
+    :param sample_key: Normalised sample key.
+    :param sample_name: Folder name as written.
+    :param sample_number: Sample number, or ``None``.
+    :param capacitor: Capacitor on the die.
+    :param state: ``"pris"`` or ``"post<cycles>"``.
+    :param pund: The PUND run, if measured.
+    :param pv: The P-V run, if measured.
+    :param endurance: The endurance log, attached to the pristine state only.
+    :param issues: Pairing and naming findings for this capacitor-state.
+    """
+
+    sample_key: str
+    sample_name: str
+    sample_number: int | None
+    capacitor: CapacitorId
+    state: str
+    pund: PundRun | None = None
+    pv: PvRun | None = None
+    endurance: EnduranceTable | None = None
+    issues: tuple[ValidationIssue, ...] = field(default_factory=tuple)
+
+    @property
+    def runs(self) -> tuple[Run, ...]:
+        """Return the runs present, PUND then P-V then endurance."""
+        return tuple(run for run in (self.pund, self.pv, self.endurance) if run is not None)
 
 
-def scan(data_dir: str) -> list[RawFile]:
-    """Every PUND/PV/END run under data_dir (sample = the folder the file sits in)."""
+def sample_key(folder_name: str) -> str:
+    """Normalise a folder name for joins (``Sample 11`` -> ``sample11``).
+
+    A folder without a sample number keeps its whole name, lower-cased and without spaces.
+    """
+    match = SAMPLE_RE.search(folder_name)
+    if match:
+        return f"sample{int(match['number'])}"
+    return re.sub(r"\s+", "", folder_name).lower()
+
+
+def sample_number(folder_name: str) -> int | None:
+    """Return the sample number in a folder name, or ``None``."""
+    match = SAMPLE_RE.search(folder_name)
+    return int(match["number"]) if match else None
+
+
+def parse_file_name(path: Path) -> MeasurementFile | None:
+    """Describe an export from its name and folder, or return ``None`` for any other file."""
+    match = FILE_NAME_RE.match(path.name)
+    if match is None:
+        return None
+    capacitor_match = CAPACITOR_RE.match(match["cap"])
+    tokens = [token for token in re.split(r"[_-]", match["tag"]) if token]
+    cycles = [token for token in tokens if CYCLES_RE.match(token)]
+    states = [token for token in tokens if not CYCLES_RE.match(token)]
+    tidy = (
+        match["suffix"] is None
+        and "-" not in path.name
+        and match["kind"].isupper()
+        and match["cap"] == match["cap"].upper()
+        and all(token == token.lower() for token in tokens)
+    )
+    folder = path.parent.name
+    return MeasurementFile(
+        path=path,
+        kind=MeasurementKind(match["kind"].upper()),
+        state_token=states[0].lower() if states else None,
+        cycles_tag=cycles[0].lower() if cycles else None,
+        capacitor=CapacitorId(row=int(capacitor_match["row"]), col=int(capacitor_match["col"])),
+        side_um=int(match["size"]),
+        sample_name=folder,
+        sample_key=sample_key(folder),
+        sample_number=sample_number(folder),
+        suspect=not tidy,
+    )
+
+
+def find_measurement_files(data_dir: Path) -> list[MeasurementFile]:
+    """Return every export under ``data_dir``, sorted by sample, capacitor and name.
+
+    :param data_dir: A round folder (``Sample*/`` folders inside) or one sample folder.
+    :raises RoundLayoutError: If no export is found.
+    """
     found = []
-    for root, dirs, files in os.walk(data_dir):
-        dirs[:] = [d for d in dirs if not d.startswith("__MACOSX") and d != "Analysis_Plots"]
-        for f in sorted(files):
-            m = FILE_RE.match(f)
-            if not m:
-                continue
-            sample = os.path.basename(root)
-            sm = SAMPLE_RE.search(sample)
-            cm = CAP_RE.match(m["cap"])
-            tag = m["tag"]
-            cyc = CYCLES_RE.search(tag)
-            cycles_tag = cyc.group(1) if cyc else None
-            base_state = re.sub(r"_?(\d+e\d+|\d{3,})", "", tag).strip("_") or (
-                "cycled" if m["kind"] != "END" else "end"
-            )
-            path = os.path.join(root, f)
-            try:
-                settings = parse_settings(path)
-                sheets = pd.ExcelFile(path, engine="xlrd").sheet_names
-            except Exception as e:  # noqa: BLE001
-                rf = RawFile(
-                    path,
-                    m["kind"],
-                    base_state,
-                    "Data",
-                    m["cap"],
-                    int(cm["row"]),
-                    int(cm["col"]),
-                    int(m["size"]),
-                    sample,
-                    int(sm["num"]) if sm else None,
-                    cycles_tag,
-                )
-                rf.problems.append(f"read error: {type(e).__name__}: {e}")
-                found.append(rf)
-                continue
-            run_sheets = ["Data"] + sorted(s for s in sheets if s.startswith("Append"))
-            for sheet in run_sheets:
-                if m["kind"] == "END":
-                    state = f"endurance{cycles_tag or ''}"
-                elif sheet == "Data":
-                    # PV_1e6 (no 'pris' token) is itself a post-cycling run
-                    state = base_state if base_state not in ("cycled",) else f"post{cycles_tag}"
-                else:
-                    state = f"post{cycles_tag or sheet.lower()}"
-                rf = RawFile(
-                    path,
-                    m["kind"],
-                    state,
-                    sheet,
-                    m["cap"],
-                    int(cm["row"]),
-                    int(cm["col"]),
-                    int(m["size"]),
-                    sample,
-                    int(sm["num"]) if sm else None,
-                    cycles_tag,
-                )
-                meta = settings.get(sheet) or settings.get("Data") or {}
-                rf.module, rf.executed, rf.params = (
-                    meta.get("module"),
-                    meta.get("executed"),
-                    meta.get("params", {}),
-                )
-                try:
-                    d = read_data(path, sheet)
-                    tcol = "t" if "t" in d.columns else ("Time" if "Time" in d.columns else None)
-                    if tcol:
-                        t = d[tcol].astype(float).to_numpy()
-                        rf.n_points = len(t)
-                        rf.dt_s = float(pd.Series(t).diff().median())
-                        rf.t_end_s = float(t[-1])
-                    else:
-                        rf.n_points = len(d)
-                    if rf.module != EXPECTED_MODULE[m["kind"]]:
-                        rf.problems.append(f"unexpected module {rf.module}")
-                except Exception as e:  # noqa: BLE001
-                    rf.problems.append(f"read error: {type(e).__name__}: {e}")
-                found.append(rf)
-    # an Append run in a file whose name carries no cycle count takes the count from the
-    # capacitor's endurance file (PUND_pris_R9C11 + END_1e6_R9C11 -> post1e6)
-    tags = {}
-    for rf in found:
-        if rf.cycles_tag:
-            tags.setdefault((rf.sample, rf.cap), set()).add(rf.cycles_tag)
-    for rf in found:
-        if rf.state.startswith("postappend"):
-            t = tags.get((rf.sample, rf.cap), set())
-            if len(t) == 1:
-                rf.state = f"post{next(iter(t))}"
+    for path in sorted(data_dir.rglob("*.xls")):
+        if any(part in SKIPPED_FOLDERS for part in path.relative_to(data_dir).parts):
+            continue
+        parsed = parse_file_name(path)
+        if parsed is not None:
+            found.append(parsed)
+    if not found:
+        raise RoundLayoutError(f"no PUND, PV or END .xls export under {data_dir}")
+    found.sort(key=_file_order)
     return found
 
 
-def pair_by_capacitor(files: list[RawFile]) -> dict[tuple, dict]:
-    """{(sample, cap, state): {"PUND": RawFile, "PV": RawFile, "END": RawFile}}.
+def _file_order(file: MeasurementFile) -> tuple:
+    number = file.sample_number if file.sample_number is not None else float("inf")
+    return (number, file.sample_key, file.capacitor.row, file.capacitor.col, file.path.name)
 
-    Endurance records attach to the pristine state of the same capacitor.
+
+def run_state(run: Run) -> str:
+    """Name the state a run measured: ``pris``, ``post<cycles>``, or ``endurance<cycles>``.
+
+    A file without a state token, such as ``PV_1e6_RxCy``, is itself a post-cycling run. An
+    ``Append`` sheet in a file whose name carries no cycle count is ``post<sheet>`` until
+    ``group_runs`` resolves it from the capacitor's endurance log.
     """
-    pairs: dict[tuple, dict] = {}
-    for rf in files:
-        if rf.kind == "END":
-            continue
-        pairs.setdefault((rf.sample, rf.cap, rf.state), {})[rf.kind] = rf
-    for rf in files:
-        if rf.kind == "END":
-            key = next(
-                (k for k in pairs if k[0] == rf.sample and k[1] == rf.cap and k[2] == "pris"), None
+    file = run.source.file
+    cycles = file.cycles_tag
+    if file.kind is MeasurementKind.END:
+        return f"endurance{cycles or ''}"
+    if run.source.sheet == "Data":
+        return file.state_token if file.state_token else f"post{cycles}"
+    return f"post{cycles or run.source.sheet.lower()}"
+
+
+def run_states(runs: Iterable[Run]) -> list[tuple[Run, str]]:
+    """Pair every run with its state; ``post<sheet>`` is resolved from the endurance log."""
+    runs = list(runs)
+    endurance_cycles: dict[tuple[str, str], set[str]] = {}
+    for run in runs:
+        file = run.source.file
+        if file.kind is MeasurementKind.END and file.cycles_tag:
+            endurance_cycles.setdefault((file.sample_key, file.capacitor.label), set()).add(
+                file.cycles_tag
             )
-            if key is None:
-                key = (rf.sample, rf.cap, "pris")
-                pairs[key] = {}
-            pairs[key]["END"] = rf
-    for key, p in pairs.items():
-        if "PUND" not in p or "PV" not in p:
-            for rf in p.values():
-                rf.problems.append("unpaired (missing %s)" % ("PV" if "PV" not in p else "PUND"))
-        elif (
-            key[2] == "pris"
-            and p["PUND"].executed
-            and p["PV"].executed
-            and p["PUND"].executed < p["PV"].executed
-        ):
-            p["PUND"].problems.append("PUND ran before PV: preset state undefined")
-    return pairs
+    return [(run, _resolved_state(run, endurance_cycles)) for run in runs]
 
 
-def raw_index(files: list[RawFile]) -> pd.DataFrame:
-    df = pd.DataFrame([rf.index_row() for rf in files])
-    return df.sort_values(["sample_num", "sample", "row", "col", "kind", "run"]).reset_index(
-        drop=True
-    )
+def group_runs(runs: Iterable[Run]) -> list[CapacitorRuns]:
+    """Pair the PUND, P-V and endurance runs of every capacitor-state and record what is missing.
+
+    Two files claiming the same run are resolved in favour of the tidy name; a tidy pair is a
+    layout error, because neither can be chosen without the operator.
+
+    :param runs: Every run read from the round's workbooks.
+    :return: One record per (sample, capacitor, state), in sample and capacitor order.
+    :raises RoundLayoutError: If two tidy files describe the same run.
+    """
+    chosen: dict[tuple, Run] = {}
+    duplicates: dict[tuple, list[Run]] = {}
+    for run, state in run_states(runs):
+        file = run.source.file
+        if file.kind is MeasurementKind.END:
+            state = PRISTINE_STATE
+        key = (file.sample_key, file.capacitor.label, state, file.kind)
+        if key not in chosen:
+            chosen[key] = run
+            continue
+        other = chosen[key]
+        if not file.suspect and not other.source.file.suspect:
+            raise RoundLayoutError(
+                f"two files describe the same run {key[:3]}: {other.source.file.path.name} "
+                f"and {file.path.name}"
+            )
+        keep, drop = (
+            (run, other) if other.source.file.suspect and not file.suspect else (other, run)
+        )
+        chosen[key] = keep
+        duplicates.setdefault(key, []).append(drop)
+
+    groups: dict[tuple, dict] = {}
+    for (sample, capacitor, state, kind), run in chosen.items():
+        groups.setdefault((sample, capacitor, state), {})[kind] = run
+
+    records = []
+    for (sample, capacitor, state), by_kind in groups.items():
+        any_run = next(iter(by_kind.values()))
+        file = any_run.source.file
+        issues = []
+        where = {"sample_key": sample, "capacitor": capacitor, "state": state}
+        for kind in (MeasurementKind.PUND, MeasurementKind.PV):
+            if kind not in by_kind:
+                code = (
+                    IssueCode.UNPAIRED_PUND
+                    if kind is MeasurementKind.PUND
+                    else IssueCode.UNPAIRED_PV
+                )
+                issues.append(warning(code, f"no {kind.value} run for this state", **where))
+        for kind, run in by_kind.items():
+            if run.source.file.suspect:
+                issues.append(
+                    warning(
+                        IssueCode.SUSPECT_FILE_NAME,
+                        f"{run.source.file.path.name} departs from the usual naming",
+                        path=run.source.file.path,
+                        **where,
+                    )
+                )
+            for dropped in duplicates.get((sample, capacitor, state, kind), []):
+                issues.append(
+                    warning(
+                        IssueCode.DUPLICATE_RUN,
+                        f"{dropped.source.file.path.name} ignored in favour of "
+                        f"{run.source.file.path.name}",
+                        path=dropped.source.file.path,
+                        **where,
+                    )
+                )
+        if file.sample_number is None:
+            issues.append(
+                warning(
+                    IssueCode.NO_SAMPLE_NUMBER,
+                    f"folder {file.sample_name!r} names no sample",
+                    **where,
+                )
+            )
+        pund, pv = by_kind.get(MeasurementKind.PUND), by_kind.get(MeasurementKind.PV)
+        if state == PRISTINE_STATE and pund is not None and pv is not None:
+            pund_at, pv_at = pund.source.settings.executed_at, pv.source.settings.executed_at
+            if pund_at is not None and pv_at is not None and pund_at < pv_at:
+                issues.append(
+                    warning(
+                        IssueCode.PUND_BEFORE_PV,
+                        "PUND ran before the P-V sweep that presets the film",
+                        **where,
+                    )
+                )
+        records.append(
+            CapacitorRuns(
+                sample_key=sample,
+                sample_name=file.sample_name,
+                sample_number=file.sample_number,
+                capacitor=file.capacitor,
+                state=state,
+                pund=pund,
+                pv=pv,
+                endurance=by_kind.get(MeasurementKind.END),
+                issues=tuple(issues),
+            )
+        )
+    records.sort(key=_record_order)
+    return records
+
+
+def _resolved_state(run: Run, endurance_cycles: dict) -> str:
+    state = run_state(run)
+    file = run.source.file
+    if state.startswith("postappend"):
+        tags = endurance_cycles.get((file.sample_key, file.capacitor.label), set())
+        if len(tags) == 1:
+            return f"post{next(iter(tags))}"
+    return state
+
+
+def _record_order(record: CapacitorRuns) -> tuple:
+    number = record.sample_number if record.sample_number is not None else float("inf")
+    return (number, record.sample_key, record.capacitor.row, record.capacitor.col, record.state)

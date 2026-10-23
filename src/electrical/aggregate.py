@@ -115,7 +115,7 @@ def per_sample(cap: pd.DataFrame) -> pd.DataFrame:
             "n_capacitors": len(g),
             "n_switching": int(g["switching"].sum()),
             "frac_switching": float(g["switching"].mean()),
-            "n_problems": int(g["problem"].notna().sum()) if "problem" in g else 0,
+            "n_errors": int(g["has_error"].sum()) if "has_error" in g else 0,
         }
         for c in feats:
             x = g[c]
