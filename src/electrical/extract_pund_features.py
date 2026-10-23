@@ -1,4 +1,4 @@
-"""PUND features from one ``pundTest`` run.
+"""Extract PUND features: switched polarization, O / T charge split, coercive voltage, leakage, κ.
 
 The waveform is four trapezoid pulses P, U (+Vp) and N, D (-Vp), each rise / plateau / fall,
 with no preset pulse: the P-V sweep run just before leaves the film negatively poled. Every
@@ -23,9 +23,9 @@ import numpy as np
 from scipy.ndimage import median_filter
 from scipy.signal import savgol_filter
 
-from electrical.device import EPS0, T_HZO_M, area_cm2
-from electrical.issues import IssueCode, ValidationIssue, error, warning
-from electrical.workbook import InstrumentCharges, PundRun
+from electrical.convert_units import area_cm2, kappa_from_capacitance, uc_cm2_per_coulomb
+from electrical.flag_issues import Issue, IssueCode, error, warning
+from electrical.read_measurement_runs import InstrumentCharges, PundRun
 
 #: A pulse is a run of |median-filtered V| above this, lasting at least the minimum samples.
 PULSE_THRESHOLD_V = 0.15
@@ -46,11 +46,11 @@ DIP_SHOULDER_RISE = 1.02
 DIP_FLOOR_FRACTION = 0.15
 #: Where the split lands when a rule finds nothing, as a fraction of the ramp.
 SPLIT_FALLBACK_FRACTION = 0.65
-#: The group's crossover rule: smoothing and the window (after ramp start) for the dI/dt zero.
+#: The group's crossover rule: smoothing, and the window after ramp start for the dI/dt zero.
 CROSSOVER_SG_ORDER = 3
 CROSSOVER_SG_FRAME = 41
 CROSSOVER_WINDOW_S = (0.5e-6, 0.7e-6)
-#: The group's linear rule: smoothing and the windows for the dI/dt extrema the line joins.
+#: The group's linear rule: smoothing, and the windows for the dI/dt extrema the line joins.
 LINEAR_SG_ORDER = 3
 LINEAR_SG_FRAME = 21
 LINEAR_FIRST_WINDOW_S = (0.3e-6, 0.5e-6)
@@ -77,6 +77,15 @@ class SplitRule(Enum):
     DIP = "dip"
     CROSSOVER = "crossover"
     LINEAR = "linear"
+
+
+#: The ramps the O / T split is reported on, with the rules applied to each.
+SPLIT_LAYOUT = (
+    ("raw_n", (SplitRule.DIP, SplitRule.CROSSOVER, SplitRule.LINEAR)),
+    ("sub_n", (SplitRule.DIP, SplitRule.CROSSOVER, SplitRule.LINEAR)),
+    ("sub_p", (SplitRule.DIP,)),
+)
+SPLIT_KEYS = tuple(f"{ramp}_{rule.value}" for ramp, rules in SPLIT_LAYOUT for rule in rules)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -139,14 +148,6 @@ class PulseCharge:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class PulseCharges:
-    p: PulseCharge
-    u: PulseCharge
-    n: PulseCharge
-    d: PulseCharge
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class SwitchedPolarization:
     """Switched charge per area, by definition.
 
@@ -204,8 +205,8 @@ class SwitchingPeak:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Coercivity:
-    pos: SwitchingPeak
-    neg: SwitchingPeak
+    """Imprint and mean coercive voltage from the two switching peaks."""
+
     imprint_v: float
     vc_mean_v: float
 
@@ -224,7 +225,7 @@ class PundDielectric:
     """Capacitance from the non-switching ramps and the permittivity it implies.
 
     On a switching film the U ramp still carries some switching current, so ``kappa_pund``
-    reads high there; the Q-V slope in ``pv`` is the permittivity of record.
+    reads high there; the Q-V slope from the P-V sweep is the permittivity of record.
     """
 
     c_u_f: float
@@ -239,13 +240,18 @@ class PundFeatures:
 
     waveform: PundWaveform
     instrument: InstrumentCharges
-    charges: PulseCharges | None = None
+    charge_p: PulseCharge | None = None
+    charge_u: PulseCharge | None = None
+    charge_n: PulseCharge | None = None
+    charge_d: PulseCharge | None = None
     polarization: SwitchedPolarization | None = None
     splits: Mapping[str, RampSplit] = field(default_factory=dict)
+    peak_pos: SwitchingPeak | None = None
+    peak_neg: SwitchingPeak | None = None
     coercivity: Coercivity | None = None
     leakage: Leakage | None = None
     dielectric: PundDielectric | None = None
-    issues: tuple[ValidationIssue, ...] = field(default_factory=tuple)
+    issues: tuple[Issue, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -264,13 +270,15 @@ class PundTraces:
     v_neg_v: np.ndarray | None = None
 
 
-#: The split traces reported, as (column prefix, which ramp, which rules).
-SPLIT_LAYOUT = (
-    ("raw_n", (SplitRule.DIP, SplitRule.CROSSOVER, SplitRule.LINEAR)),
-    ("sub_n", (SplitRule.DIP, SplitRule.CROSSOVER, SplitRule.LINEAR)),
-    ("sub_p", (SplitRule.DIP,)),
-)
-SPLIT_KEYS = tuple(f"{trace}_{rule.value}" for trace, rules in SPLIT_LAYOUT for rule in rules)
+def switched_polarization(p, u, n, d, scale):
+    """Return (P - U), -(N - D) and their mean, each times ``scale``.
+
+    U and D repeat P and N on an already-switched film, so subtracting them removes the
+    dielectric and leakage charge and leaves what switched. Works on scalars and arrays.
+    """
+    positive = (p - u) * scale
+    negative = -(n - d) * scale
+    return positive, negative, 0.5 * (positive + negative)
 
 
 def segment_pulses(voltage_v: np.ndarray) -> tuple[Pulse, ...]:
@@ -303,47 +311,21 @@ def segment_pulses(voltage_v: np.ndarray) -> tuple[Pulse, ...]:
                 peak_v=peak_v,
             )
         )
-    signs = [p["sign"] for p in located]
-    pattern = {(1, 1, -1, -1): "PUND", (-1, -1, 1, 1): "NDPU"}
-    labels = None
-    if tuple(signs) in pattern:
-        labels = [PulseLabel(c) for c in pattern[tuple(signs)]]
-    elif len(signs) == 5 and tuple(signs[1:]) in pattern:
-        labels = [PulseLabel.PRESET, *(PulseLabel(c) for c in pattern[tuple(signs[1:])])]
-    if labels is None:
+    signs = tuple(p["sign"] for p in located)
+    patterns = {(1, 1, -1, -1): "PUND", (-1, -1, 1, 1): "NDPU"}
+    if signs in patterns:
+        labels = [PulseLabel(c) for c in patterns[signs]]
+    elif len(signs) == 5 and signs[1:] in patterns:
+        labels = [PulseLabel.PRESET, *(PulseLabel(c) for c in patterns[signs[1:]])]
+    else:
         labels = [PulseLabel.UNKNOWN] * len(located)
     return tuple(Pulse(label=label, **p) for label, p in zip(labels, located))
 
 
-def _trapz(y: np.ndarray, x: np.ndarray) -> float:
-    return float(np.trapezoid(y, x))
-
-
-def _smooth(current: np.ndarray, dt: float) -> np.ndarray:
-    w = max(5, int(round(SMOOTH_WINDOW_S / dt)) | 1)
-    w = min(w, len(current) - (1 - len(current) % 2))
-    return savgol_filter(current, w, SMOOTH_ORDER) if len(current) > w else current
-
-
-def _savgol(values: np.ndarray, frame: int, order: int) -> np.ndarray:
-    frame = min(frame, len(values) - (1 - len(values) % 2))
-    return savgol_filter(values, frame, order) if frame > order else values
-
-
-def _crossing_times(t: np.ndarray, d: np.ndarray, rising: bool) -> np.ndarray:
-    """Interpolated times where ``d`` crosses zero, upward (``rising``) or downward."""
-    if rising:
-        k = np.flatnonzero((d[:-1] < 0) & (d[1:] >= 0))
-    else:
-        k = np.flatnonzero((d[:-1] > 0) & (d[1:] <= 0))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return t[k] - d[k] * (t[k + 1] - t[k]) / (d[k + 1] - d[k])
-
-
 def split_ramp(
-    current: np.ndarray, t: np.ndarray, sign: int, dt: float, rule: SplitRule, area_cm2: float
+    current: np.ndarray, t: np.ndarray, sign: int, dt: float, rule: SplitRule, area: float
 ) -> RampSplit:
-    """Partition one ramp current into the charge before and after the main-peak / shoulder split.
+    """Split one ramp current into the charge before and after the main-peak / shoulder boundary.
 
     All three rules work on the positive-going lobe ``sign * current`` and integrate the raw
     current on either side of the split, as the group's scripts do.
@@ -379,8 +361,23 @@ def split_ramp(
         q_main_c=q_main,
         q_shoulder_c=q_shoulder,
         fraction_main=q_main / total if total != 0 else np.nan,
-        total_uc_cm2=abs(total) * 1e6 / area_cm2,
+        total_uc_cm2=abs(total) * uc_cm2_per_coulomb(area),
     )
+
+
+def _trapz(y: np.ndarray, x: np.ndarray) -> float:
+    return float(np.trapezoid(y, x))
+
+
+def _savgol(values: np.ndarray, frame: int, order: int) -> np.ndarray:
+    """Savitzky-Golay smoothing, the frame clamped to the largest odd length that fits."""
+    frame = min(frame, len(values) - (1 - len(values) % 2))
+    return savgol_filter(values, frame, order) if frame > order else values
+
+
+def _smooth(current: np.ndarray, dt: float) -> np.ndarray:
+    """Smooth a current over ``SMOOTH_WINDOW_S`` for peak finding and the dip rule."""
+    return _savgol(current, max(5, int(round(SMOOTH_WINDOW_S / dt)) | 1), SMOOTH_ORDER)
 
 
 def _dip_index(lobe: np.ndarray) -> int | None:
@@ -399,13 +396,14 @@ def _dip_index(lobe: np.ndarray) -> int | None:
 def _crossover_index(lobe: np.ndarray, t_rel: np.ndarray) -> int | None:
     smooth = _savgol(lobe, CROSSOVER_SG_FRAME, CROSSOVER_SG_ORDER)
     d = np.gradient(smooth, t_rel)
-    crossings = _crossing_times(t_rel, d, rising=True)
+    k = np.flatnonzero((d[:-1] < 0) & (d[1:] >= 0))  # lobe minima: dI/dt crosses zero upward
+    with np.errstate(divide="ignore", invalid="ignore"):
+        crossings = t_rel[k] - d[k] * (t_rel[k + 1] - t_rel[k]) / (d[k + 1] - d[k])
     lo, hi = CROSSOVER_WINDOW_S
     crossings = crossings[(crossings >= lo) & (crossings <= hi)]
     if len(crossings) == 0:
         return None
-    at_cross = np.interp(crossings, t_rel, smooth)
-    chosen = crossings[int(np.argmin(at_cross))]
+    chosen = crossings[int(np.argmin(np.interp(crossings, t_rel, smooth)))]
     return int(np.flatnonzero(t_rel >= chosen)[0])
 
 
@@ -428,19 +426,13 @@ def _linear_index(lobe: np.ndarray, t_rel: np.ndarray) -> int | None:
     return int(inside[0])
 
 
-def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
+def extract_pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
     """Reduce one PUND run to its features and the traces the QC report plots."""
     area = area_cm2(run.source.file.side_um)
-    area_m2 = area * 1e-4
-    uc = 1e6 / area  # C -> uC/cm^2
+    scale = uc_cm2_per_coulomb(area)
     t, voltage, current = run.time_s, run.voltage_v, run.current_a
     dt = run.dt_s
-    where = {
-        "sample_key": run.source.file.sample_key,
-        "capacitor": run.source.file.capacitor.label,
-        "path": run.source.file.path,
-        "location": run.source.sheet,
-    }
+    where = run.source.where()
 
     pulses = segment_pulses(voltage)
     by = {p.label: p for p in pulses}
@@ -482,24 +474,29 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
             whole_c=_trapz(corrected[pulse.whole], t[pulse.whole]),
         )
 
-    charges = PulseCharges(p=charge(p), u=charge(u), n=charge(n), d=charge(d))
+    qp, qu, qn, qd = charge(p), charge(u), charge(n), charge(d)
     inst = run.instrument
-    psw_pos = (charges.p.whole_c - charges.u.whole_c) * uc
-    psw_neg = -(charges.n.whole_c - charges.d.whole_c) * uc
-    psw = 0.5 * (psw_pos + psw_neg)
+    psw_pos, psw_neg, psw = switched_polarization(
+        qp.whole_c, qu.whole_c, qn.whole_c, qd.whole_c, scale
+    )
+    ramp_pos, ramp_neg, _ = switched_polarization(qp.rise_c, qu.rise_c, qn.rise_c, qd.rise_c, scale)
+    inst_pos, inst_neg, _ = switched_polarization(inst.p_c, inst.u_c, inst.n_c, inst.d_c, scale)
+    plateau_pos, plateau_neg, _ = switched_polarization(
+        qp.plateau_c, qu.plateau_c, qn.plateau_c, qd.plateau_c, scale
+    )
     polarization = SwitchedPolarization(
         psw_uc_cm2=psw,
         psw_pos_uc_cm2=psw_pos,
         psw_neg_uc_cm2=psw_neg,
         psw_asym_uc_cm2=psw_pos - psw_neg,
-        psw_pos_ramp_uc_cm2=(charges.p.rise_c - charges.u.rise_c) * uc,
-        psw_neg_ramp_uc_cm2=-(charges.n.rise_c - charges.d.rise_c) * uc,
-        psw_inst_uc_cm2=(inst.p_c - inst.u_c) * uc,
-        psw_inst_neg_uc_cm2=-(inst.n_c - inst.d_c) * uc,
-        psw_plateau_pos_uc_cm2=(charges.p.plateau_c - charges.u.plateau_c) * uc,
-        psw_plateau_neg_uc_cm2=-(charges.n.plateau_c - charges.d.plateau_c) * uc,
-        p_raw_n_ramp_uc_cm2=-charges.n.rise_c * uc,
-        p_raw_p_ramp_uc_cm2=charges.p.rise_c * uc,
+        psw_pos_ramp_uc_cm2=ramp_pos,
+        psw_neg_ramp_uc_cm2=ramp_neg,
+        psw_inst_uc_cm2=inst_pos,
+        psw_inst_neg_uc_cm2=inst_neg,
+        psw_plateau_pos_uc_cm2=plateau_pos,
+        psw_plateau_neg_uc_cm2=plateau_neg,
+        p_raw_n_ramp_uc_cm2=-qn.rise_c * scale,
+        p_raw_p_ramp_uc_cm2=qp.rise_c * scale,
         switching=bool(psw > SWITCHING_PSW_UC_CM2),
     )
 
@@ -525,12 +522,11 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
         return float(np.abs(i[m].mean()) / slew)
 
     c_u, c_d = ramp_capacitance(u), ramp_capacitance(d)
-    kappa_of = lambda c: float(c * T_HZO_M / (EPS0 * area_m2))  # noqa: E731
     dielectric = PundDielectric(
         c_u_f=c_u,
         c_d_f=c_d,
-        kappa_pund=kappa_of(np.nanmean([c_u, c_d])),
-        kappa_inst_u=kappa_of(inst.u_c / p.peak_v),
+        kappa_pund=kappa_from_capacitance(np.nanmean([c_u, c_d]), area),
+        kappa_inst_u=kappa_from_capacitance(inst.u_c / p.peak_v, area),
     )
 
     def subtracted(a: Pulse, b: Pulse):
@@ -561,12 +557,13 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
             current_a=float(lobe[k]), t_peak_s=float(tt[k]), coercive_v=float(vv[k])
         )
 
-    pos, neg = peak(isw_pos, t_rel_pos, v_pos, 1, p), peak(isw_neg, t_rel_neg, v_neg, -1, n)
+    peak_pos, peak_neg = (
+        peak(isw_pos, t_rel_pos, v_pos, 1, p),
+        peak(isw_neg, t_rel_neg, v_neg, -1, n),
+    )
     coercivity = Coercivity(
-        pos=pos,
-        neg=neg,
-        imprint_v=0.5 * (pos.coercive_v + neg.coercive_v),
-        vc_mean_v=0.5 * (pos.coercive_v - neg.coercive_v),
+        imprint_v=0.5 * (peak_pos.coercive_v + peak_neg.coercive_v),
+        vc_mean_v=0.5 * (peak_pos.coercive_v - peak_neg.coercive_v),
     )
 
     ramps = {
@@ -575,8 +572,8 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
         "sub_p": (isw_pos[: p.ramp.stop - p.ramp.start], t[p.ramp], 1),
     }
     splits = {
-        f"{trace}_{rule.value}": split_ramp(*ramps[trace], dt, rule, area)
-        for trace, rules in SPLIT_LAYOUT
+        f"{ramp}_{rule.value}": split_ramp(*ramps[ramp], dt, rule, area)
+        for ramp, rules in SPLIT_LAYOUT
         for rule in rules
     }
 
@@ -590,9 +587,14 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
     features = PundFeatures(
         waveform=waveform,
         instrument=inst,
-        charges=charges,
+        charge_p=qp,
+        charge_u=qu,
+        charge_n=qn,
+        charge_d=qd,
         polarization=polarization,
         splits=splits,
+        peak_pos=peak_pos,
+        peak_neg=peak_neg,
         coercivity=coercivity,
         leakage=leakage,
         dielectric=dielectric,

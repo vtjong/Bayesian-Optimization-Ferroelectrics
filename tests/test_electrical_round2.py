@@ -7,18 +7,16 @@ numbers the correlation study is built on.
 """
 
 import io
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from electrical.pipeline import process_round
-from electrical.report import flag_outliers
+from electrical.process_round import process_round
 from paths import SUMMARY_ROUNDS_1_2_CSV, round_raw_dir
 
-GOLDEN_DIR = (
-    __import__("pathlib").Path(__file__).resolve().parent / "data" / "electrical" / "golden"
-)
+GOLDEN_DIR = Path(__file__).resolve().parent / "data" / "electrical" / "golden"
 REGENERATE = "scripts/regenerate_electrical_golden.sh"
 
 #: The group's Sample14 line (n = 10, no capacitor switches), reproduced exactly.
@@ -30,8 +28,7 @@ SAMPLE14_KAPPA = (26.344252, 1.285783)
 @pytest.fixture(scope="module")
 def round2():
     result = process_round(round_raw_dir(2), 2)
-    capacitors = flag_outliers(result.capacitors)
-    return capacitors, result.samples
+    return result.capacitors, result.samples
 
 
 def _pristine(samples: pd.DataFrame, sample: str) -> pd.Series:

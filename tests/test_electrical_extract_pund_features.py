@@ -1,9 +1,15 @@
-"""Pulse finding and the three O / T split rules on synthetic currents shaped like the real ones."""
+"""Pulse finding, the Psw definition and the three O / T split rules, on synthetic signals."""
 
 import numpy as np
 import pytest
 
-from electrical.pund import PulseLabel, SplitRule, segment_pulses, split_ramp
+from electrical.extract_pund_features import (
+    PulseLabel,
+    SplitRule,
+    segment_pulses,
+    split_ramp,
+    switched_polarization,
+)
 
 AREA_CM2 = 9.0e-6
 DT_S = 5e-9
@@ -25,14 +31,15 @@ def trapezoid_train(signs, dt=DT_S, v_peak=3.0, rise=1e-6, plateau=1e-6, gap=1e-
     pieces = [np.zeros(int(lead / dt))]
     for sign in signs:
         ramp = np.linspace(0, v_peak, int(rise / dt), endpoint=False)
-        pieces += [
-            sign * ramp,
-            sign * np.full(int(plateau / dt), v_peak),
-            sign * ramp[::-1],
-            np.zeros(int(gap / dt)),
-        ]
+        flat = np.full(int(plateau / dt), v_peak)
+        pieces += [sign * ramp, sign * flat, sign * ramp[::-1], np.zeros(int(gap / dt))]
     v = np.concatenate(pieces)
     return np.arange(len(v)) * dt, v
+
+
+def test_switched_polarization_subtracts_the_non_switching_pulses():
+    positive, negative, mean = switched_polarization(5.0, 2.0, -6.0, -2.0, 10.0)
+    assert (positive, negative, mean) == (30.0, 40.0, 35.0)
 
 
 class TestPulseFinding:
@@ -74,13 +81,13 @@ class TestSplitRules:
         assert 0.55 < split.fraction_main < 0.8
         assert split.total_uc_cm2 == pytest.approx(abs(np.trapezoid(current, t)) * 1e6 / AREA_CM2)
 
-    def test_the_rules_agree_with_each_other_within_one_smoothing_frame(self):
+    def test_the_rules_agree_within_one_smoothing_frame(self):
         t, current = synthetic_n_ramp()
         times = [split_ramp(current, t, -1, DT_S, rule, AREA_CM2).t_split_s for rule in SplitRule]
         assert max(times) - min(times) < 41 * DT_S
 
     @pytest.mark.parametrize("rule", list(SplitRule))
-    def test_without_a_shoulder_the_split_falls_back_to_a_fixed_fraction(self, rule):
+    def test_without_a_shoulder_the_split_falls_back_or_lands_late(self, rule):
         t, current = synthetic_n_ramp(shoulder=False, noise=1e-6)
         split = split_ramp(current, t, -1, DT_S, rule, AREA_CM2)
         if split.found:  # the derivative rules can still find a zero on a smooth decay
@@ -88,7 +95,6 @@ class TestSplitRules:
         else:
             assert split.t_split_s == pytest.approx(9.0e-6 + 0.65e-6, abs=0.02e-6)
 
-    def test_a_too_short_ramp_is_the_fallback(self):
+    def test_a_too_short_ramp_falls_back(self):
         t, current = synthetic_n_ramp()
-        split = split_ramp(current[:5], t[:5], -1, DT_S, SplitRule.DIP, AREA_CM2)
-        assert not split.found
+        assert not split_ramp(current[:5], t[:5], -1, DT_S, SplitRule.DIP, AREA_CM2).found

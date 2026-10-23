@@ -1,20 +1,21 @@
-"""Wake-up and fatigue features from one ``pundEndurance`` log.
+"""Extract wake-up and fatigue features from one endurance log.
 
-The log is one row per cycle count (0, 1, 8, 52, ... 1e6) with the instrument's ramp-only
-P, U, N, D charges, so its Psw is the same definition as the group's sheet and the cycle-0
-row should agree with the pristine PUND run's ``psw_inst``.
+The log is one row per cycle count (0, 1, 8, 52, ... 1e6) with the instrument's ramp-only P,
+U, N, D charges, so its Psw is the definition behind the group's sheet and the cycle-0 row
+should agree with the pristine PUND run's ``psw_inst``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from electrical.device import area_cm2
-from electrical.issues import IssueCode, ValidationIssue, error
-from electrical.workbook import EnduranceTable
+from electrical.convert_units import area_cm2, uc_cm2_per_coulomb
+from electrical.extract_pund_features import switched_polarization
+from electrical.flag_issues import Issue, IssueCode, error
+from electrical.read_measurement_runs import EnduranceLog
 
 #: Ratios are not formed when the reference Psw is below this, uC/cm^2.
 WAKEUP_MIN_PSW_UC_CM2 = 0.5
@@ -24,9 +25,9 @@ WAKEUP_MIN_PSW_UC_CM2 = 0.5
 class EnduranceFeatures:
     """How the switched charge evolved with cycling.
 
-    ``wake_ratio`` is the final Psw over the pristine one, ``fatigue_ratio`` the final over
-    the maximum (1 means no fatigue), ``cycles_half_wakeup`` the log-interpolated cycle count
-    at half the total gain.
+    ``wake_ratio`` is the final Psw over the pristine one, ``fatigue_ratio`` the final over the
+    maximum (1 means no fatigue), ``cycles_half_wakeup`` the log-interpolated cycle count at half
+    the total gain.
     """
 
     n_iterations: int
@@ -41,7 +42,7 @@ class EnduranceFeatures:
     psw_gain_uc_cm2: float = np.nan
     cycles_half_wakeup: float = np.nan
     psw_asym_final_uc_cm2: float = np.nan
-    issues: tuple[ValidationIssue, ...] = field(default_factory=tuple)
+    issues: tuple[Issue, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -68,14 +69,14 @@ class EnduranceCurve:
         )
 
 
-def endurance_features(table: EnduranceTable) -> tuple[EnduranceFeatures, EnduranceCurve]:
+def extract_endurance_features(log: EnduranceLog) -> tuple[EnduranceFeatures, EnduranceCurve]:
     """Reduce one endurance log to its wake-up features and its Psw curve."""
-    uc = 1e6 / area_cm2(table.source.file.side_um)
-    ok = np.isfinite(table.cycles) & np.isfinite(table.p_c) & np.isfinite(table.u_c)
-    cycles = table.cycles[ok]
-    psw_pos = (table.p_c[ok] - table.u_c[ok]) * uc
-    psw_neg = -(table.n_c[ok] - table.d_c[ok]) * uc
-    psw = 0.5 * (psw_pos + psw_neg)
+    scale = uc_cm2_per_coulomb(area_cm2(log.source.file.side_um))
+    ok = np.isfinite(log.cycles) & np.isfinite(log.p_c) & np.isfinite(log.u_c)
+    cycles = log.cycles[ok]
+    psw_pos, psw_neg, psw = switched_polarization(
+        log.p_c[ok], log.u_c[ok], log.n_c[ok], log.d_c[ok], scale
+    )
     curve = EnduranceCurve(
         cycles=cycles, psw_pos_uc_cm2=psw_pos, psw_neg_uc_cm2=psw_neg, psw_uc_cm2=psw
     )
@@ -84,13 +85,10 @@ def endurance_features(table: EnduranceTable) -> tuple[EnduranceFeatures, Endura
         issue = error(
             IssueCode.ENDURANCE_TOO_SHORT,
             f"endurance table too short ({n} usable rows)",
-            sample_key=table.source.file.sample_key,
-            capacitor=table.source.file.capacitor.label,
-            path=table.source.file.path,
+            **log.source.where(),
         )
-        return EnduranceFeatures(
-            n_iterations=n, max_cycles=float(cycles.max()) if n else np.nan, issues=(issue,)
-        ), curve
+        max_cycles = float(cycles.max()) if n else np.nan
+        return EnduranceFeatures(n_iterations=n, max_cycles=max_cycles, issues=(issue,)), curve
 
     k = int(np.argmax(psw))
     first, last, best = float(psw[0]), float(psw[-1]), float(psw[k])

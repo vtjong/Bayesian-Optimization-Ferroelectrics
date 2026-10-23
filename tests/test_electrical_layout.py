@@ -1,4 +1,4 @@
-"""Each module of the feature pipeline owns one phase, and the boundaries stay where they are."""
+"""Each module of the electrical package owns one step, and the boundaries between them hold."""
 
 import ast
 from pathlib import Path
@@ -7,29 +7,34 @@ import pytest
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "electrical"
 
-#: Every module and the names a reader should expect to find in it.
+#: Every module, in reading order, and the names a reader should expect to find in it.
 OWNERSHIP = {
-    "device": ("EPS0", "T_HZO_M", "area_cm2"),
-    "issues": ("ValidationIssue", "IssueCode", "ElectricalError", "describe_issues"),
-    "locate": ("MeasurementFile", "CapacitorRuns", "parse_file_name", "group_runs"),
-    "workbook": ("PundRun", "PvRun", "EnduranceTable", "read_workbook", "parse_settings"),
-    "pund": ("PundFeatures", "SplitRule", "segment_pulses", "split_ramp", "pund_features"),
-    "pv": ("PvFeatures", "pv_features"),
-    "endurance": ("EnduranceFeatures", "endurance_features"),
-    "capacitor": ("CapacitorRecord", "CAPACITOR_COLUMNS", "capacitor_row", "capacitor_table"),
-    "aggregate": ("HEADLINE_FEATURES", "SAMPLE_COLUMNS", "per_sample"),
-    "accumulate": ("write_table", "update_campaign", "read_campaign"),
-    "report": ("flag_outliers", "build_report", "write_report"),
-    "pipeline": ("RoundResult", "process_round", "describe_round"),
+    "process_round": ("RoundResult", "process_round"),
+    "find_measurement_files": (
+        "MeasurementFile", "parse_file_name", "find_measurement_files", "sample_key",
+    ),
+    "read_keithley_export": (
+        "KeithleyExport", "read_keithley_export", "parse_settings", "read_numeric_column",
+    ),
+    "read_measurement_runs": (
+        "PundRun", "PvRun", "EnduranceLog", "read_runs", "assign_states", "group_runs",
+    ),
+    "extract_pund_features": (
+        "PundFeatures", "segment_pulses", "split_ramp", "switched_polarization",
+        "extract_pund_features",
+    ),
+    "extract_pv_features": ("PvFeatures", "extract_pv_features"),
+    "extract_endurance_features": ("EnduranceFeatures", "extract_endurance_features"),
+    "convert_units": ("area_cm2", "uc_cm2_per_coulomb", "kappa_from_capacitance"),
+    "build_feature_tables": (
+        "CAPACITOR_COLUMNS", "build_capacitor_table", "summarize_samples", "update_campaign_table",
+    ),
+    "flag_issues": ("Issue", "IssueCode", "describe_issues", "flag_outliers"),
+    "write_qc_report": ("build_qc_page", "write_qc_report"),
 }  # fmt: skip
-#: Imports that belong to exactly one module.
-EXCLUSIVE_IMPORTS = {
-    "matplotlib": "report",
-    "html": "report",
-    "tempfile": "accumulate",
-}
-#: Calls that belong to exactly one module.
-EXCLUSIVE_CALLS = {"read_excel": "workbook", "ExcelFile": "workbook", "to_csv": "accumulate"}
+#: Imports and calls that belong to exactly one module.
+EXCLUSIVE_IMPORTS = {"matplotlib": "write_qc_report", "html": "write_qc_report"}
+EXCLUSIVE_CALLS = {"read_excel": "read_keithley_export", "ExcelFile": "read_keithley_export"}
 
 
 def _modules() -> dict[str, ast.Module]:
@@ -48,8 +53,31 @@ def _defined_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def _imported_roots(tree: ast.Module) -> set[str]:
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            roots.add(node.module.split(".")[0])
+    return roots
+
+
+def _called_attributes(tree: ast.Module) -> set[str]:
+    return {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+
+
 def test_the_package_has_exactly_the_modules_it_documents():
     assert set(_modules()) == set(OWNERSHIP)
+
+
+def test_the_package_docstring_lists_every_module():
+    docstring = ast.get_docstring(ast.parse((PACKAGE / "__init__.py").read_text()))
+    assert [m for m in OWNERSHIP if m != "process_round" and f"``{m}``" not in docstring] == []
 
 
 @pytest.mark.parametrize("module", sorted(OWNERSHIP))
@@ -60,29 +88,18 @@ def test_each_module_defines_what_it_owns(module):
 
 @pytest.mark.parametrize(("imported", "owner"), sorted(EXCLUSIVE_IMPORTS.items()))
 def test_some_imports_belong_to_one_module(imported, owner):
-    users = sorted(
-        {
-            name
-            for name, tree in _modules().items()
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.Import, ast.ImportFrom))
-            and any((alias.name.split(".")[0] == imported) for alias in node.names)
-            or (isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == imported)
-        }
-    )
-    assert users == [owner], f"{imported} is imported by {users}; only {owner}.py may use it"
+    users = sorted(name for name, tree in _modules().items() if imported in _imported_roots(tree))
+    assert users == [owner], f"{imported} is imported by {users}; only {owner}.py may"
 
 
 @pytest.mark.parametrize(("call", "owner"), sorted(EXCLUSIVE_CALLS.items()))
 def test_some_calls_belong_to_one_module(call, owner):
-    users = sorted(
-        {
-            name
-            for name, tree in _modules().items()
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == call
-        }
-    )
+    users = sorted(name for name, tree in _modules().items() if call in _called_attributes(tree))
     assert users == [owner], f"{call} is called from {users}; only {owner}.py may"
+
+
+def test_tables_reach_disk_only_through_the_shared_file_helpers():
+    writers = sorted(
+        name for name, tree in _modules().items() if "to_csv" in _called_attributes(tree)
+    )
+    assert writers == [], f"{writers} write CSV directly; use utils.file_io"

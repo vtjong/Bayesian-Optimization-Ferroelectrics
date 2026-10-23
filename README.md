@@ -44,6 +44,7 @@ src/physics/          constants.py, thermal_model.py: the measured Tmax table an
 src/active_learning/  surrogate.py, acquisition.py: the GP and the level-set acquisition
 src/campaign/         plan.py, results.py, reporting.py: the fabrication plan and the sheet the lab fills
 src/electrical/       PUND / P-V / endurance exports -> per-capacitor and per-sample feature tables
+src/utils/            helpers any package may use (writing and reading CSV tables)
 src/design_space.py   the settable (V, t) box
 src/paths.py          where the measured data lives
 src/run_*.py          entry points; scripts/ holds their shell wrappers
@@ -100,11 +101,25 @@ batch in the same format.
 
 Each flashed film is measured on ten or so capacitors with a Keithley 4200A: a PUND train
 (`PUND_pris_1e6_RxCy_30um.xls`, pristine run in sheet `Data`, run after 10⁶ cycles in
-`Append1`), a single P–V sweep (`PV_...`) and an endurance log (`END_1e6_...`). The pipeline
-turns one round of those exports into `raw_index.csv`, `features_per_capacitor.csv` (one row
-per capacitor and state), `features_per_sample.csv` (mean / sd / n / median / MAD per feature,
-per sample and state) and a QC page with every capacitor overlaid. Rounds accumulate in
+`Append1`), a single P–V sweep (`PV_...`) and an endurance log (`END_1e6_...`). One round of
+those exports becomes `raw_index.csv`, `features_per_capacitor.csv` (one row per capacitor and
+state), `features_per_sample.csv` (mean / sd / n / median / MAD per feature, per sample and
+state) and a QC page with every capacitor overlaid. Rounds accumulate in
 `data/electrical/features/campaign_per_capacitor.csv`, the table the correlation study reads.
+
+The package's files are the steps, in the order `process_round.py` runs them:
+
+```mermaid
+flowchart LR
+    F[find_measurement_files] --> K[read_keithley_export] --> R[read_measurement_runs]
+    R --> P[extract_pund_features] & V[extract_pv_features] & E[extract_endurance_features]
+    P & V & E --> T[build_feature_tables] --> Q[write_qc_report]
+    I[flag_issues] -.-> R & T
+```
+
+`convert_units.py` holds the capacitor geometry and the charge and capacitance conversions the
+three extractors share; `flag_issues.py` records the problems found on the way and flags
+outlying capacitors.
 
 ```bash
 ./scripts/run_electrical_features.sh 3        # data/electrical/raw/round3 -> features/round3
