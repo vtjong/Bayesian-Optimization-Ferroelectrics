@@ -27,49 +27,49 @@ READOUT_KIND = "eps_r"
 
 
 @pytest.fixture
-def seed_block() -> ConditionBlock:
-    """Return a three-condition block standing in for a seed."""
+def design_block() -> ConditionBlock:
+    """Return a three-condition block standing in for an initial design."""
     return ConditionBlock(
         label="S",
         voltage_v=np.array([510.0, 620.0, 700.0]),
         pulse_width_ms=np.array([0.1, 1.5, 8.0]),
-        note="seed",
+        note="initial design",
     )
 
 
 @pytest.fixture
-def bridge_block() -> ConditionBlock:
-    """Return a one-condition block standing in for a pilot bridge."""
+def supplement_block() -> ConditionBlock:
+    """Return a one-condition block standing in for a supplementary block."""
     return ConditionBlock(
         label="B",
         voltage_v=np.array([572.0]),
         pulse_width_ms=np.array([4.4]),
-        note="pilot bridge",
+        note="supplement",
     )
 
 
-def test_every_condition_survives_assembly(seed_block, bridge_block) -> None:
+def test_every_condition_survives_assembly(design_block, supplement_block) -> None:
     """No condition is dropped, reordered within a block, or altered."""
-    plan = build_plan([seed_block, bridge_block], READOUT_KIND)
+    plan = build_plan([design_block, supplement_block], READOUT_KIND)
 
-    assert len(plan) == len(seed_block) + len(bridge_block)
+    assert len(plan) == len(design_block) + len(supplement_block)
     assert np.array_equal(
-        plan[VOLTAGE_COLUMN].to_numpy()[: len(seed_block)],
-        seed_block.voltage_v,
+        plan[VOLTAGE_COLUMN].to_numpy()[: len(design_block)],
+        design_block.voltage_v,
     )
     assert np.array_equal(
-        plan[PULSE_WIDTH_COLUMN].to_numpy()[len(seed_block) :],
-        bridge_block.pulse_width_ms,
+        plan[PULSE_WIDTH_COLUMN].to_numpy()[len(design_block) :],
+        supplement_block.pulse_width_ms,
     )
 
 
-def test_indices_are_contiguous_and_reserve_the_control_row(seed_block, bridge_block) -> None:
+def test_indices_are_contiguous_and_reserve_the_control_row(design_block, supplement_block) -> None:
     """Indices run from the first condition index with no gaps.
 
     Index 0 is never assigned here: it belongs to the never-flashed reference,
     which the results template inserts.
     """
-    plan = build_plan([seed_block, bridge_block], READOUT_KIND)
+    plan = build_plan([design_block, supplement_block], READOUT_KIND)
 
     expected = np.arange(len(plan)) + FIRST_CONDITION_INDEX
 
@@ -77,37 +77,37 @@ def test_indices_are_contiguous_and_reserve_the_control_row(seed_block, bridge_b
     assert plan[INDEX_COLUMN].min() > 0
 
 
-def test_blocks_keep_their_labels(seed_block, bridge_block) -> None:
+def test_blocks_keep_their_labels(design_block, supplement_block) -> None:
     """A row can always be traced back to why it was fired."""
-    plan = build_plan([seed_block, bridge_block], READOUT_KIND)
+    plan = build_plan([design_block, supplement_block], READOUT_KIND)
 
     labels = plan[BLOCK_COLUMN].to_numpy()
 
     assert set(labels) == {"S", "B"}
-    assert list(labels).count("S") == len(seed_block)
+    assert list(labels).count("S") == len(design_block)
 
 
-def test_a_repeated_setpoint_is_allowed(seed_block) -> None:
-    """A bridge condition deliberately repeats a setpoint already fired."""
+def test_a_repeated_setpoint_is_allowed(design_block) -> None:
+    """A supplementary condition may deliberately repeat a setpoint already fired."""
     repeat = ConditionBlock(
         label="B",
-        voltage_v=seed_block.voltage_v[:1].copy(),
-        pulse_width_ms=seed_block.pulse_width_ms[:1].copy(),
+        voltage_v=design_block.voltage_v[:1].copy(),
+        pulse_width_ms=design_block.pulse_width_ms[:1].copy(),
         note="deliberate repeat",
     )
 
-    plan = build_plan([seed_block, repeat], READOUT_KIND)
+    plan = build_plan([design_block, repeat], READOUT_KIND)
 
-    assert len(plan) == len(seed_block) + 1
+    assert len(plan) == len(design_block) + 1
     assert plan[INDEX_COLUMN].is_unique
 
 
-def test_annotations_are_carried_through(seed_block) -> None:
+def test_annotations_are_carried_through(design_block) -> None:
     """Reporting columns reach the CSV without becoming setpoints."""
     annotated = ConditionBlock(
         label="S",
-        voltage_v=seed_block.voltage_v,
-        pulse_width_ms=seed_block.pulse_width_ms,
+        voltage_v=design_block.voltage_v,
+        pulse_width_ms=design_block.pulse_width_ms,
         annotations={"sim_Tmax_lo_C": np.array([100.0, 200.0, 300.0])},
     )
 
@@ -138,7 +138,7 @@ def test_a_ragged_annotation_is_rejected() -> None:
         )
 
 
-def test_an_empty_plan_is_rejected(seed_block) -> None:
+def test_an_empty_plan_is_rejected(design_block) -> None:
     """A plan with no conditions is a mistake, not an empty batch."""
     empty = ConditionBlock(
         label="S",
@@ -150,9 +150,9 @@ def test_an_empty_plan_is_rejected(seed_block) -> None:
         build_plan([empty], READOUT_KIND)
 
 
-def test_writing_round_trips(tmp_path, seed_block) -> None:
+def test_writing_round_trips(tmp_path, design_block) -> None:
     """A written plan reads back with the same setpoints."""
-    plan = build_plan([seed_block], READOUT_KIND)
+    plan = build_plan([design_block], READOUT_KIND)
     path = write_plan(tmp_path / "plan.csv", plan)
 
     reloaded = pd.read_csv(path)
@@ -161,18 +161,18 @@ def test_writing_round_trips(tmp_path, seed_block) -> None:
     assert np.allclose(reloaded[PULSE_WIDTH_COLUMN], plan[PULSE_WIDTH_COLUMN])
 
 
-def test_writing_refuses_to_overwrite(tmp_path, seed_block) -> None:
+def test_writing_refuses_to_overwrite(tmp_path, design_block) -> None:
     """A fired plan is a record; replacing it would destroy the only evidence."""
-    plan = build_plan([seed_block], READOUT_KIND)
+    plan = build_plan([design_block], READOUT_KIND)
     path = write_plan(tmp_path / "plan.csv", plan)
 
     with pytest.raises(FileExistsError):
         write_plan(path, plan)
 
 
-def test_description_lists_every_condition(seed_block, bridge_block) -> None:
+def test_description_lists_every_condition(design_block, supplement_block) -> None:
     """The terminal rendering shows one row per condition plus a header."""
-    plan = build_plan([seed_block, bridge_block], READOUT_KIND)
+    plan = build_plan([design_block, supplement_block], READOUT_KIND)
 
     rendered = describe_plan(plan)
 

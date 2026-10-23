@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Generate the campaign seed plan and the blank sheet for the laboratory.
+# Write the initial design plan and the blank sheet the laboratory fills in.
 # Neither file is regenerated once the batch is fired.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python src/run_seed_plan.py "$@"
+python src/run_initial_design.py "$@"

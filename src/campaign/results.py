@@ -75,7 +75,7 @@ DRIFT_T_TOLERANCE_MS = 0.05
 
 
 @dataclass
-class SeedResults:
+class DesignResults:
     """Validated outcomes for a fired batch.
 
     :param table: one row per plan condition, planned and as-fired columns joined.
@@ -136,13 +136,13 @@ def _blank(series: pd.Series) -> np.ndarray:
     return s.isna().to_numpy() | s.astype(str).str.strip().isin(["", "nan", "None"]).to_numpy()
 
 
-def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
+def load(results_path: Path, plan: pd.DataFrame) -> DesignResults:
     """Read a filled results sheet, validate it against the plan, and join the two.
 
     Raises ``ValueError`` on any ambiguity rather than making a choice on the operator's behalf.
 
     :param results_path: filled results CSV.
-    :param plan: the seed plan the results correspond to.
+    :param plan: the plan the results correspond to.
     """
     # keep_default_na=False so an empty cell stays an empty string and is never confused with a
     # legitimate zero; every numeric column is converted explicitly below.
@@ -234,9 +234,9 @@ def load(results_path: Path, plan: pd.DataFrame) -> SeedResults:
     dt = (table[ACTUAL_T_COLUMN] - table["time_ms"]).abs()
     drifted = measured & ((dv > DRIFT_V_TOLERANCE) | (dt > DRIFT_T_TOLERANCE_MS)).fillna(False)
     drifted = drifted.to_numpy()
-    return SeedResults(table=table, measured=measured, drift=table[drifted])
+    return DesignResults(table=table, measured=measured, drift=table[drifted])
 
 
-def unfired(results: SeedResults) -> List[int]:
+def unfired(results: DesignResults) -> List[int]:
     """Plan indices with no usable reading, so a caller can report coverage honestly."""
     return sorted(results.table.loc[~results.measured, PLAN_KEY].astype(int))

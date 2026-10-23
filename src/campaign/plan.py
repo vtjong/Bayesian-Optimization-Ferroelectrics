@@ -2,7 +2,7 @@
 
 A plan is an ordered set of flash conditions grouped into blocks that record
 why each condition is in the batch. Blocks carry no meaning to the surrogate;
-they distinguish, for example, seed conditions from bridge conditions.
+they distinguish, for example, initial-design conditions from later batches.
 """
 
 from collections.abc import Iterable, Mapping
@@ -99,7 +99,7 @@ def build_plan(
 ) -> pd.DataFrame:
     """Assemble condition blocks into an indexed fabrication plan.
 
-    Duplicate setpoints are permitted. For example, a bridge condition may
+    Duplicate setpoints are permitted. For example, a later block may
     deliberately repeat a condition fired in an earlier fabrication batch.
 
     :param blocks: Condition blocks in plan order.

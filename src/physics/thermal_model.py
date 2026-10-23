@@ -112,11 +112,10 @@ class PulseShape(Protocol):
 class FrozenPulse:
     """THE NULL HYPOTHESIS: sin rise then exp decay to a warm plateau, INDEPENDENT of pulse width.
 
-    DO NOT DELETE THIS AS DEAD CODE. It is the zero-tilt hypothesis that the campaign's seed
-    design exists to test. The iso-Tmax ladder (block A of the
-    seed plan) is built specifically to distinguish this shape's prediction -- a flat response
-    across pulse width at fixed peak temperature -- from every other member of the ensemble. Remove
-    it and the experiment has nothing to falsify.
+    DO NOT DELETE THIS AS DEAD CODE. It is the zero-tilt member of the model ensemble: the
+    hypothesis that response depends on peak temperature alone. Its prediction -- a flat response
+    across pulse width at fixed peak temperature -- is what every other member is measured against.
+    Remove it and the ensemble has nothing to falsify.
 
     The commanded pulse width is ignored, so every shot has the same effective dwell and the
     Arrhenius budget collapses to a function of Tmax alone -- i.e. the crystallization boundary is
@@ -388,8 +387,8 @@ class TableThermalModel:
         NOT monotone in V everywhere: it overshoots near the hot end for flash times around 8-9 ms.
         The reachable ceiling is therefore taken from a dense scan rather than from the endpoint,
         and the bisection bracket stops at that maximum so the inverse is single-valued. The whole
-        batch is bisected at once -- inverting points one at a time dominates the runtime of the
-        seed-design search, which evaluates many candidate designs.
+        batch is bisected at once -- inverting points one at a time dominates the runtime of any
+        search that evaluates many candidate conditions.
 
         :param targets_c: desired peak temperatures (deg C).
         :param t: flash times (ms), broadcast against ``targets_c``.

@@ -1,4 +1,4 @@
-"""Emit the blank results sheet for the seed batch, and validate it once the lab fills it in.
+"""Emit the blank results sheet for the initial design, and validate it once the lab fills it in.
 
 Two modes, one file, because the sheet the operator fills and the sheet the campaign reads must be
 the same object. Anything that reconciles two differing formats afterwards is where measurements
@@ -26,8 +26,8 @@ What it reports:
 It deliberately does NOT fit a boundary or propose a next batch. Those decisions belong downstream
 of a human looking at this output.
 
-Usage:  python src/run_seed_results.py --template
-        python src/run_seed_results.py [--results data/flash_plan_seed_results.csv]
+Usage:  python src/run_initial_design_results.py --template
+        python src/run_initial_design_results.py [--results data/flash_plan_initial_results.csv]
 """
 
 import argparse
@@ -53,8 +53,8 @@ from campaign.results import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAN_CSV = ROOT / "data" / "flash_plan_seed.csv"
-RESULTS_CSV = ROOT / "data" / "flash_plan_seed_results.csv"
+PLAN_CSV = ROOT / "data" / "flash_plan_initial.csv"
+RESULTS_CSV = ROOT / "data" / "flash_plan_initial_results.csv"
 
 # Ladder rungs within this many degrees are one iso-Tmax level. Sits between the generator's
 # guarantees: rungs on a level agree to within 2 C, and distinct levels are at least 6 C apart.
@@ -64,7 +64,7 @@ LEVEL_CLUSTER_C = 3.0
 def _write_template(plan: pd.DataFrame, path: Path) -> None:
     """Write a blank results sheet, refusing to clobber one that already has readings in it.
 
-    :param plan: the seed plan.
+    :param plan: the plan.
     :param path: destination CSV.
     """
     if path.exists():
@@ -166,7 +166,9 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.plan.exists():
-        raise SystemExit(f"no plan at {args.plan}; generate one from src/seed.py first")
+        raise SystemExit(
+            f"no plan at {args.plan}; generate one with src/run_initial_design.py first"
+        )
     plan = pd.read_csv(args.plan)
 
     if args.template:
@@ -180,7 +182,7 @@ def main() -> int:
         )
 
     res = load(args.results, plan)
-    print(f"=== seed results: {args.results.name} ===")
+    print(f"=== results: {args.results.name} ===")
     print(f"  plan {args.plan.name}, {len(plan)} conditions\n")
     _report_coverage(res)
     if res.n_measured == 0:

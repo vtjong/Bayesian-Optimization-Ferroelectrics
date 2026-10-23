@@ -31,18 +31,18 @@ A_REAL_ZERO = 0.0  # an amorphous specimen reads zero; this is data, not absence
 
 
 @pytest.fixture
-def plan(seed_plan):
+def plan(design_plan):
     """The committed plan in the CSV's own column names."""
     return pd.DataFrame(
         {
-            PLAN_KEY: np.arange(1, len(seed_plan["voltage_v"]) + 1),
-            "block": seed_plan["block"],
-            "voltage_V": seed_plan["voltage_v"],
-            "time_ms": seed_plan["pulse_width_ms"],
-            "sim_Tmax_lo_C": np.round(seed_plan["tmax_low_c"], 1),
-            "sim_Tmax_hi_C": np.round(seed_plan["tmax_high_c"], 1),
+            PLAN_KEY: np.arange(1, len(design_plan["voltage_v"]) + 1),
+            "block": design_plan["block"],
+            "voltage_V": design_plan["voltage_v"],
+            "time_ms": design_plan["pulse_width_ms"],
+            "sim_Tmax_lo_C": np.round(design_plan["tmax_low_c"], 1),
+            "sim_Tmax_hi_C": np.round(design_plan["tmax_high_c"], 1),
             READOUT_KIND_COLUMN: "eps_r",
-            "note": seed_plan["note"],
+            "note": design_plan["note"],
         }
     )
 
@@ -58,7 +58,7 @@ def _filled(plan, **overrides):
     t = blank_template(plan).astype(object)
     t[STATUS_COLUMN] = "measured"
     t["specimen_id"] = [f"S{i:02d}" for i in range(len(t))]
-    t[READOUT_COLUMN] = np.linspace(0.05, 0.95, len(t))
+    t[READOUT_COLUMN] = np.linspace(0.05, 0.95, len(t)).astype(object)
     for k, v in overrides.items():
         t[k] = v
     return t

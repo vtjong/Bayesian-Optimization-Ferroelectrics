@@ -145,7 +145,7 @@ class TestModelSpread:
     """The reported temperature is a band across simulations, not a point.
 
     There is no measured peak temperature for this tool. A single number would state a precision
-    nothing supports, and the previous seed failed partly because one such number was trusted.
+    nothing supports.
     """
 
     def test_the_envelope_brackets_an_independent_third_simulation(self):
