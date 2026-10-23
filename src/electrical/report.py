@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-OUTLIER_COLS = ["Pr", "kappa_summary", "Psw", "kappa_PUND", "J_leak_A_cm2"]
+OUTLIER_COLS = ["pr_uc_cm2", "kappa_summary", "psw_uc_cm2", "kappa_pund", "j_leak_a_cm2"]
 
 
 def flag_outliers(cap: pd.DataFrame, k: float = 3.5) -> pd.DataFrame:
@@ -43,37 +43,36 @@ def _fig_to_b64(fig) -> str:
 
 
 def sample_figure(sample: str, traces: dict) -> str:
-    """traces: {cap: {"pund": {...}, "pv": {...}, "end": DataFrame}}"""
+    """traces: {cap: {"pund": PundTraces, "pv": PvTraces, "end": DataFrame}}"""
     has_end = any("end" in tr for tr in traces.values())
     fig, ax = plt.subplots(1, 4 if has_end else 3, figsize=(21 if has_end else 16, 4.2))
     cmap = plt.get_cmap("tab10")
     for i, (cap, tr) in enumerate(sorted(traces.items())):
+        c = cmap(i % 10)
+        p = tr.get("pund")
+        if p is not None:
+            ax[0].plot(p.time_s * 1e6, p.current_a * 1e6, lw=0.6, color=c, label=cap)
+            if p.isw_neg_a is not None:
+                ax[1].plot(
+                    p.t_rel_neg_s * 1e6, -p.isw_neg_a * 1e6, lw=0.8, color=c, label=f"{cap} N-D"
+                )
+                ax[1].plot(
+                    p.t_rel_pos_s * 1e6, p.isw_pos_a * 1e6, lw=0.8, color=c, ls=":", alpha=0.7
+                )
+        v = tr.get("pv")
+        if v is not None:
+            ax[2].plot(v.voltage_v, v.charge_c / v.area_cm2 * 1e6, lw=0.8, color=c, label=cap)
         if has_end and "end" in tr:
             e = tr["end"]
             ax[3].semilogx(
-                e["iteration"].clip(lower=0.5),
-                e["Psw"],
+                e["cycles"].clip(lower=0.5),
+                e["psw_uc_cm2"],
                 marker="o",
                 ms=3,
                 lw=0.9,
-                color=cmap(i % 10),
+                color=c,
                 label=cap,
             )
-        c = cmap(i % 10)
-        p = tr.get("pund")
-        if p is not None and "t" in p:
-            ax[0].plot(p["t"] * 1e6, p["I"] * 1e6, lw=0.6, color=c, label=cap)
-            if "Isw_neg" in p:
-                ax[1].plot(
-                    p["t_rel_neg"] * 1e6, -p["Isw_neg"] * 1e6, lw=0.8, color=c, label=f"{cap} N-D"
-                )
-                ax[1].plot(
-                    p["t_rel_pos"] * 1e6, p["Isw_pos"] * 1e6, lw=0.8, color=c, ls=":", alpha=0.7
-                )
-        v = tr.get("pv")
-        if v is not None and "V" in v:
-            A = v.get("area_cm2", 9e-6)
-            ax[2].plot(v["V"], v["Q"] / A * 1e6, lw=0.8, color=c, label=cap)
     ax[0].set(title=f"{sample}: PUND current (all capacitors)", xlabel="t (µs)", ylabel="I (µA)")
     ax[1].set(
         title="switching current  N−D (solid), P−U (dotted)",
@@ -81,13 +80,13 @@ def sample_figure(sample: str, traces: dict) -> str:
         ylabel="|I_sw| (µA)",
     )
     ax[2].set(title="Q–V loops", xlabel="V (V)", ylabel="P (µC/cm²)")
+    ax[2].legend(fontsize=6, ncol=2, loc="upper left")
     if has_end:
         ax[3].set(
             title="endurance: Psw (P−U, N−D mean) vs cycles",
             xlabel="cycles (0 plotted at 0.5)",
             ylabel="Psw (µC/cm²)",
         )
-    ax[2].legend(fontsize=6, ncol=2, loc="upper left")
     for a in ax:
         a.grid(alpha=0.3)
     return _fig_to_b64(fig)
@@ -100,19 +99,19 @@ def write_report(
     show = [
         "cap",
         "switching",
-        "Psw",
-        "Psw_inst",
-        "Pr",
-        "Pr_summary",
+        "psw_uc_cm2",
+        "psw_inst_uc_cm2",
+        "pr_uc_cm2",
+        "pr_gap_uc_cm2",
         "kappa_summary",
-        "kappa_PUND",
-        "J_leak_A_cm2",
-        "Vc_pos",
-        "Vc_neg",
-        "QO_frac_rawN",
-        "split_rule_rawN",
+        "kappa_pund",
+        "j_leak_a_cm2",
+        "peak_pos_coercive_v",
+        "peak_neg_coercive_v",
+        "split_raw_n_dip_fraction_main",
+        "split_raw_n_dip_found",
         "pinching_index",
-        "wake_ratio",
+        "endurance_wake_ratio",
         "pulse_pattern",
         "issues",
         "outlier_flags",
@@ -151,14 +150,14 @@ def write_report(
                 "state",
                 "n",
                 "n_sw",
-                "Psw",
-                "Psw_inst",
-                "Pr",
+                "psw_uc_cm2",
+                "psw_inst_uc_cm2",
+                "pr_uc_cm2",
                 "κ_summary",
-                "κ_PUND",
-                "QO_frac_rawN",
-                "Vc_mean",
-                "wake_ratio",
+                "κ_pund",
+                "split_raw_n_dip_fraction_main",
+                "vc_mean_v",
+                "endurance_wake_ratio",
                 "inhom.",
             ]
         )
@@ -173,9 +172,11 @@ def write_report(
         parts.append(
             f"<tr><td class='l'>{r['sample']}</td><td class='l'>{r['state']}</td>"
             f"<td>{r['n_capacitors']}</td><td>{r['n_switching']}</td>"
-            f"<td>{ms('Psw')}</td><td>{ms('Psw_inst')}</td><td>{ms('Pr')}</td><td>{ms('kappa_summary')}</td>"
-            f"<td>{ms('kappa_PUND')}</td><td>{ms('QO_frac_rawN')}</td><td>{ms('Vc_mean')}</td>"
-            f"<td>{ms('wake_ratio')}</td><td>{'yes' if r.get('inhomogeneous') else ''}</td></tr>"
+            f"<td>{ms('psw_uc_cm2')}</td><td>{ms('psw_inst_uc_cm2')}</td><td>{ms('pr_uc_cm2')}</td><td>{ms('kappa_summary')}</td>"
+            f"<td>{ms('kappa_pund')}</td><td>{ms('split_raw_n_dip_fraction_main')}</td>"
+            f"<td>{ms('vc_mean_v')}</td>"
+            f"<td>{ms('endurance_wake_ratio')}</td>"
+            f"<td>{'yes' if r.get('inhomogeneous') else ''}</td></tr>"
         )
     parts.append("</table>")
     for (rnd, sample, state), g in cap.groupby(["round", "sample", "state"], sort=False):

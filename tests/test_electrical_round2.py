@@ -49,9 +49,11 @@ class TestTheGroupsSheetIsReproduced:
         for key, want in ref.iterrows():
             ours = _pristine(samples, key.capitalize())
             checked += 1
-            assert ours["Psw_inst_mean"] == pytest.approx(want["Pristine_Psw_Mean"], abs=1e-3)
+            assert ours["psw_inst_uc_cm2_mean"] == pytest.approx(
+                want["Pristine_Psw_Mean"], abs=1e-3
+            )
             # Sample15 sits 0.023 off: one of its eleven capacitors has no pristine P-V run.
-            assert ours["Pr_mean"] == pytest.approx(want["Pristine_Pr_Mean"], abs=0.03)
+            assert ours["pr_uc_cm2_mean"] == pytest.approx(want["Pristine_Pr_Mean"], abs=0.03)
             # Sample16, the inhomogeneous film, sits 0.21 off; the others agree within 0.05.
             assert ours["kappa_summary_mean"] == pytest.approx(
                 want["Pristine_Kappa_Mean"], abs=0.25
@@ -62,8 +64,10 @@ class TestTheGroupsSheetIsReproduced:
     def test_sample14_reproduces_the_sheet_exactly(self, round2):
         _, samples = round2
         r = _pristine(samples, "Sample14")
-        assert (r["Psw_inst_mean"], r["Psw_inst_sd"]) == pytest.approx(SAMPLE14_PSW_INST, abs=1e-3)
-        assert (r["Pr_mean"], r["Pr_sd"]) == pytest.approx(SAMPLE14_PR, abs=5e-3)
+        assert (r["psw_inst_uc_cm2_mean"], r["psw_inst_uc_cm2_sd"]) == pytest.approx(
+            SAMPLE14_PSW_INST, abs=1e-3
+        )
+        assert (r["pr_uc_cm2_mean"], r["pr_uc_cm2_sd"]) == pytest.approx(SAMPLE14_PR, abs=5e-3)
         assert (r["kappa_summary_mean"], r["kappa_summary_sd"]) == pytest.approx(
             SAMPLE14_KAPPA, abs=0.02
         )
@@ -73,10 +77,12 @@ class TestTheGroupsSheetIsReproduced:
         capacitors, _ = round2
         s16 = capacitors[(capacitors["sample"] == "Sample16") & (capacitors["state"] == "pris")]
         assert len(s16) == 10 and s16["switching"].all()
-        assert (s16["split_rule_rawN"] == "dip").all()
-        assert s16["QO_frac_rawN"].between(0.62, 0.72).all()
-        assert s16["wake_ratio"].between(1.7, 2.0).all()
-        assert s16["fatigue_ratio"].between(0.95, 1.05).all()
+        assert s16["split_raw_n_dip_found"].all()
+        assert s16["split_raw_n_dip_fraction_main"].between(0.59, 0.72).all()
+        assert s16["split_raw_n_crossover_fraction_main"].between(0.62, 0.72).all()
+        assert s16["split_raw_n_linear_fraction_main"].between(0.68, 0.80).all()
+        assert s16["endurance_wake_ratio"].between(1.7, 2.0).all()
+        assert s16["endurance_fatigue_ratio"].between(0.95, 1.05).all()
 
 
 class TestNothingIsSilentlyDropped:
@@ -90,7 +96,9 @@ class TestNothingIsSilentlyDropped:
     def test_endurance_cycle_zero_agrees_with_the_pristine_pund(self, round2):
         capacitors, _ = round2
         sw = capacitors[capacitors["switching"] & (capacitors["state"] == "pris")]
-        rel = (sw["Psw_cyc0"] - sw["Psw_inst"]).abs() / sw["Psw_inst"]
+        rel = (sw["endurance_psw_cycle0_uc_cm2"] - sw["psw_inst_uc_cm2"]).abs() / sw[
+            "psw_inst_uc_cm2"
+        ]
         assert rel.max() < 0.15, rel.describe()
 
 

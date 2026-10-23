@@ -15,28 +15,19 @@ import pandas as pd
 
 from electrical import locate, workbook
 from electrical.aggregate import add_derived, per_sample
+from electrical.capacitor import CAPACITOR_KEY, CapacitorRecord, capacitor_table
+from electrical.device import area_cm2
 from electrical.endurance import endurance_features
 from electrical.issues import (
     IssueCode,
     UnreadableWorkbookError,
     ValidationIssue,
     WorkbookShapeError,
-    describe_issues,
     error,
-    has_error,
 )
 from electrical.locate import CapacitorRuns, MeasurementFile
 from electrical.pund import pund_features
 from electrical.pv import pv_features
-
-#: Columns that identify one row of the per-capacitor table across rounds.
-CAPACITOR_KEY = ["round", "sample", "cap", "state"]
-#: Messages the feature functions still report as a ``problem`` string, by finding.
-PROBLEM_CODES = {
-    "unexpected pulse pattern": IssueCode.UNEXPECTED_PULSE_PATTERN,
-    "sweep is not positive-first": IssueCode.SWEEP_NOT_POSITIVE_FIRST,
-    "endurance table too short": IssueCode.ENDURANCE_TOO_SHORT,
-}
 
 
 @dataclass
@@ -94,14 +85,14 @@ def process_round(data_dir: Path, round_label) -> RoundResult:
     runs, failed = read_round(data_dir)
     groups = locate.group_runs(runs)
     raw_index = build_raw_index(runs, failed)
-    rows, traces, curves = [], {}, []
+    records, traces, curves = [], {}, []
     for group in groups:
-        row, trace, curve = capacitor_row(group, round_label)
-        rows.append(row)
+        record, trace, curve = capacitor_record(group, round_label)
+        records.append(record)
         traces.setdefault((group.sample_name, group.state), {})[group.capacitor.label] = trace
         if curve is not None:
             curves.append(curve)
-    capacitors = add_derived(pd.DataFrame(rows))
+    capacitors = add_derived(capacitor_table(records))
     curves_df = pd.concat(curves, ignore_index=True) if curves else pd.DataFrame()
     return RoundResult(
         raw_index=raw_index,
@@ -137,74 +128,63 @@ def build_raw_index(runs, failed) -> pd.DataFrame:
     )
 
 
-def capacitor_row(group: CapacitorRuns, round_label) -> tuple[dict, dict, pd.DataFrame | None]:
-    """Reduce one capacitor-state to its feature row, its QC traces and its endurance curve."""
-    row = {
-        "round": round_label,
-        "sample": group.sample_name,
-        "sample_key": group.sample_key,
-        "sample_num": group.sample_number,
-        "cap": group.capacitor.label,
-        "row": group.capacitor.row,
-        "col": group.capacitor.col,
-        "state": group.state,
-        "size_um": None,
-        "switching": False,
-    }
+def capacitor_record(
+    group: CapacitorRuns, round_label
+) -> tuple[CapacitorRecord, dict, pd.DataFrame | None]:
+    """Reduce one capacitor-state to its record, its QC traces and its endurance curve."""
     issues = list(group.issues)
     for run in group.runs:
         issues.extend(run.issues)
-    trace, curve = {}, None
+    side_um = group.runs[0].source.file.side_um
     where = {
         "sample_key": group.sample_key,
         "capacitor": group.capacitor.label,
         "state": group.state,
     }
+    trace, curve = {}, None
+    pund = pv = endurance = None
 
     if group.pund is not None:
-        file = group.pund.source.file
-        row["size_um"] = file.side_um
-        features, pund_trace = _extract(
-            pund_features, group.pund.frame, file.side_um, issues, where
-        )
-        if features is not None:
-            row.update(features)
+        pund, pund_trace = _reduce(pund_features, group.pund, issues, where)
+        if pund is not None:
             trace["pund"] = pund_trace
-            row["pund_executed"] = group.pund.source.settings.executed_at
     if group.pv is not None:
-        file = group.pv.source.file
-        row["size_um"] = file.side_um
-        features, pv_trace = _extract(pv_features, group.pv.frame, file.side_um, issues, where)
-        if features is not None:
-            pv_trace["area_cm2"] = features["area_cm2"]
-            row.update(
-                {k: v for k, v in features.items() if k not in ("area_cm2", "dt_s", "n_points")}
-            )
+        pv, pv_trace = _reduce(pv_features, group.pv, issues, where)
+        if pv is not None:
             trace["pv"] = pv_trace
-            row["pv_executed"] = group.pv.source.settings.executed_at
     if group.endurance is not None:
-        file = group.endurance.source.file
-        features, curve = _extract(
-            endurance_features, group.endurance.frame, file.side_um, issues, where
-        )
-        if features is not None:
-            row.update(features)
-            curve.insert(0, "cap", group.capacitor.label)
-            curve.insert(0, "sample", group.sample_name)
-            curve.insert(0, "round", round_label)
+        endurance, curve_record = _reduce(endurance_features, group.endurance, issues, where)
+        if endurance is not None:
+            curve = curve_record.to_frame(round_label, group.sample_name, group.capacitor.label)
             trace["end"] = curve
+    for features in (pund, pv, endurance):
+        if features is not None:
+            issues.extend(features.issues)
 
-    row["n_issues"] = len(issues)
-    row["has_error"] = has_error(issues)
-    row["issues"] = describe_issues(issues) or None
-    return row, trace, curve
+    record = CapacitorRecord(
+        round_label=round_label,
+        sample_key=group.sample_key,
+        sample_name=group.sample_name,
+        sample_number=group.sample_number,
+        capacitor=group.capacitor,
+        state=group.state,
+        side_um=side_um,
+        area_cm2=area_cm2(side_um),
+        pund_executed_at=group.pund.source.settings.executed_at if group.pund else None,
+        pv_executed_at=group.pv.source.settings.executed_at if group.pv else None,
+        pund=pund,
+        pv=pv,
+        endurance=endurance,
+        issues=tuple(issues),
+    )
+    return record, trace, curve
 
 
-def _extract(reduce, frame, side_um, issues: list, where: dict):
-    """Run one feature function, turning its ``problem`` strings and failures into findings."""
+def _reduce(reduce, run, issues: list, where: dict):
+    """Run one feature function; a failure on unexpected data becomes a finding, not a stop."""
     try:
-        features, trace = reduce(frame, side_um)
-    except Exception as exc:  # the feature functions do not yet classify their own failures
+        return reduce(run)
+    except Exception as exc:  # the one place a surprise in the data is caught and recorded
         issues.append(
             error(
                 IssueCode.FEATURE_FAILURE,
@@ -213,15 +193,6 @@ def _extract(reduce, frame, side_um, issues: list, where: dict):
             )
         )
         return None, None
-    for key in ("problem", "problem_end"):
-        message = features.pop(key, None)
-        if message:
-            code = next(
-                (code for prefix, code in PROBLEM_CODES.items() if message.startswith(prefix)),
-                IssueCode.FEATURE_FAILURE,
-            )
-            issues.append(error(code, message, **where))
-    return features, trace
 
 
 def merge_into_campaign(path: Path, capacitors: pd.DataFrame) -> pd.DataFrame:
@@ -253,9 +224,9 @@ def describe_round(result: RoundResult) -> str:
         f"{samp.shape[0]} sample-states; {n_error} with errors, {n_warn} with findings"
     )
     cols = [
-        "sample", "state", "n_capacitors", "n_switching", "Psw_inst_mean", "Psw_inst_sd",
-        "Pr_mean", "Pr_sd", "kappa_summary_mean", "kappa_summary_sd", "kappa_PUND_mean",
-        "wake_ratio_mean",
+        "sample", "state", "n_capacitors", "n_switching", "psw_inst_uc_cm2_mean",
+        "psw_inst_uc_cm2_sd", "pr_uc_cm2_mean", "pr_uc_cm2_sd", "kappa_summary_mean",
+        "kappa_summary_sd", "kappa_pund_mean", "endurance_wake_ratio_mean",
     ]  # fmt: skip
     table = samp[[c for c in cols if c in samp]].round(3).to_string(index=False)
     return head + "\n" + table
