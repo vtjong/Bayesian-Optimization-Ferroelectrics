@@ -3,8 +3,9 @@ numpy
 matplotlib
 pandas
 scikit-learn
-# pandas Excel backend: run_calibration reads the archival PUND/joulemeter workbooks
+# Excel backends: openpyxl for .xlsx workbooks, xlrd for the Keithley 4200A BIFF .xls exports
 openpyxl
+xlrd
 
 # Optional crystal-structure visualization extras (pymatgen, mp-api, ase) live in
 # requirements-viz.txt - install separately: pip install -r requirements-viz.txt
