@@ -1,0 +1,20 @@
+sample_key,Sample,round,Voltage_V,Pulse_Width_ms,Measured_Energy_Density_J_cm2,Max_Temp_C,Time_Above_450C_ms
+sample1,Sample1,1,709,2.8,13.48,570.0277,2.9696
+sample2,Sample2_square,1,655,3.2,11.81,502.7535,1.9081
+sample3,Sample3,1,691,3.6,13.9,586.9469,3.1981
+sample4,Sample4_again,1,572,4.4,9.62,417.3515,0.0
+sample5,Sample5,1,641,4.9,12.89,546.2601,2.6295
+sample6,Sample6,1,674,5.6,14.9,627.2309,3.712
+sample7,Sample7,1,605,5.9,11.88,505.5734,1.9609
+sample8,Sample8,1,626,6.8,13.15,556.734,2.7826
+sample9,Sample9,1,647,8.7,14.68,618.3684,3.6018
+sample10,Sample10,1,669,9.5,15.94,669.1262,4.2182
+sample11,Sample 11,1,525,1.0,3.37,162.7569,0.0
+sample12,Sample 12,1,525,5.0,8.26,359.7454,0.0
+sample13,Sample 13,1,600,1.0,4.88,223.5857,0.0
+sample14,Sample14,2,643,0.6,3.85,182.0932,0.0
+sample15,Sample15,2,638,0.8,4.82,221.1687,0.0
+sample16,Sample16,2,617,1.7,7.62,333.9637,0.0
+sample17,Sample17,2,600,2.8,9.25,399.6266,0.0
+sample18,Sample18,2,590,4.4,10.5,449.9815,0.0
+sample19,Sample19,2,581,8.3,11.72,499.1279,1.8384
