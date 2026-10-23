@@ -37,7 +37,6 @@ class IssueCode(Enum):
     SWEEP_NOT_POSITIVE_FIRST = "sweep_not_positive_first"
     ENDURANCE_TOO_SHORT = "endurance_too_short"
     SPLIT_NOT_FOUND = "split_not_found"
-    UNRELIABLE_ON_SWITCHING = "unreliable_on_switching"
     ENDURANCE_MISMATCH = "endurance_mismatch"
     FEATURE_FAILURE = "feature_failure"
     OUTLIER = "outlier"

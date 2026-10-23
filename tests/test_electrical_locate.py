@@ -33,7 +33,7 @@ from electrical.workbook import (
         ("PUND_pris_R9C9_30um.xls", MeasurementKind.PUND, "pris", None, "R9C9", False),
         ("PV_pris_1e6_R10C12_30um.xls", MeasurementKind.PV, "pris", "1e6", "R10C12", False),
         ("END_1e6_R8C8_30um.xls", MeasurementKind.END, None, "1e6", "R8C8", False),
-        ("PUND_1e6_R9C10_30um.xls", MeasurementKind.PUND, None, "1e6", "R9C10", False),
+        ("PUND_1e6_R9C10_30um.xls", MeasurementKind.PUND, None, "1e6", "R9C10", True),
         ("END_1E6_R8C11_30um.xls", MeasurementKind.END, None, "1e6", "R8C11", True),
         ("PV_PRIS_1e6_R8C8_30um.xls", MeasurementKind.PV, "pris", "1e6", "R8C8", True),
         ("PUND_pris_1e6_R9c8_30um.xls", MeasurementKind.PUND, "pris", "1e6", "R9C8", True),
@@ -147,10 +147,17 @@ class TestGroupingRuns:
 
     def test_a_post_cycling_file_without_a_state_token_is_its_own_state(self):
         groups = group_runs([_run("PUND_pris_R9C11_30um.xls"), _run("PV_1e6_R9C11_30um.xls")])
-        assert [(g.state, [i.code for i in g.issues]) for g in groups] == [
-            ("post1e6", [IssueCode.UNPAIRED_PUND]),
-            ("pris", [IssueCode.UNPAIRED_PV]),
+        assert [(g.state, {i.code for i in g.issues}) for g in groups] == [
+            ("post1e6", {IssueCode.UNPAIRED_PUND, IssueCode.SUSPECT_FILE_NAME}),
+            ("pris", {IssueCode.UNPAIRED_PV}),
         ]
+
+    def test_a_two_run_file_without_a_state_token_still_starts_pristine(self):
+        runs = [_run("PUND_1e6_R9C10_30um.xls", "Data"), _run("PUND_1e6_R9C10_30um.xls", "Append1")]
+        assert [state for _, state in run_states(runs)] == ["pris", "post1e6"]
+        assert all(
+            IssueCode.SUSPECT_FILE_NAME in [i.code for i in g.issues] for g in group_runs(runs)
+        )
 
     def test_an_append_run_without_a_cycle_count_takes_it_from_the_endurance_log(self):
         runs = [

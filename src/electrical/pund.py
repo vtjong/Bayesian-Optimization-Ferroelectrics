@@ -581,22 +581,12 @@ def pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
     }
 
     issues = []
-    if polarization.switching:
+    if polarization.switching and not splits["raw_n_dip"].found:
         issues.append(
             warning(
-                IssueCode.UNRELIABLE_ON_SWITCHING,
-                "kappa_pund reads high on a switching film; use kappa_summary",
-                **where,
+                IssueCode.SPLIT_NOT_FOUND, "no dip between peak and shoulder on the N ramp", **where
             )
         )
-        if not splits["raw_n_dip"].found:
-            issues.append(
-                warning(
-                    IssueCode.SPLIT_NOT_FOUND,
-                    "no dip between peak and shoulder on the N ramp",
-                    **where,
-                )
-            )
     features = PundFeatures(
         waveform=waveform,
         instrument=inst,

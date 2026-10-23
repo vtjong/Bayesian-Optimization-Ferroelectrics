@@ -151,17 +151,19 @@ def parse_file_name(path: Path) -> MeasurementFile | None:
     tokens = [token for token in re.split(r"[_-]", match["tag"]) if token]
     cycles = [token for token in tokens if CYCLES_RE.match(token)]
     states = [token for token in tokens if not CYCLES_RE.match(token)]
+    kind = MeasurementKind(match["kind"].upper())
     tidy = (
         match["suffix"] is None
         and "-" not in path.name
         and match["kind"].isupper()
         and match["cap"] == match["cap"].upper()
         and all(token == token.lower() for token in tokens)
+        and (bool(states) or kind is MeasurementKind.END)
     )
     folder = path.parent.name
     return MeasurementFile(
         path=path,
-        kind=MeasurementKind(match["kind"].upper()),
+        kind=kind,
         state_token=states[0].lower() if states else None,
         cycles_tag=cycles[0].lower() if cycles else None,
         capacitor=CapacitorId(row=int(capacitor_match["row"]), col=int(capacitor_match["col"])),
@@ -197,10 +199,12 @@ def _file_order(file: MeasurementFile) -> tuple:
     return (number, file.sample_key, file.capacitor.row, file.capacitor.col, file.path.name)
 
 
-def run_state(run: Run) -> str:
+def run_state(run: Run, runs_in_file: int = 1) -> str:
     """Name the state a run measured: ``pris``, ``post<cycles>``, or ``endurance<cycles>``.
 
-    A file without a state token, such as ``PV_1e6_RxCy``, is itself a post-cycling run. An
+    The ``Data`` sheet of a two-run file is the pristine run whatever the file name says: the
+    instrument appends the post-cycling run to the file it started with. A single-run file
+    without a state token, such as ``PV_1e6_RxCy``, is a post-cycling run on its own. An
     ``Append`` sheet in a file whose name carries no cycle count is ``post<sheet>`` until
     ``group_runs`` resolves it from the capacitor's endurance log.
     """
@@ -209,7 +213,9 @@ def run_state(run: Run) -> str:
     if file.kind is MeasurementKind.END:
         return f"endurance{cycles or ''}"
     if run.source.sheet == "Data":
-        return file.state_token if file.state_token else f"post{cycles}"
+        if file.state_token:
+            return file.state_token
+        return PRISTINE_STATE if runs_in_file > 1 else f"post{cycles}"
     return f"post{cycles or run.source.sheet.lower()}"
 
 
@@ -217,13 +223,18 @@ def run_states(runs: Iterable[Run]) -> list[tuple[Run, str]]:
     """Pair every run with its state; ``post<sheet>`` is resolved from the endurance log."""
     runs = list(runs)
     endurance_cycles: dict[tuple[str, str], set[str]] = {}
+    runs_per_file: dict[Path, int] = {}
     for run in runs:
         file = run.source.file
+        runs_per_file[file.path] = runs_per_file.get(file.path, 0) + 1
         if file.kind is MeasurementKind.END and file.cycles_tag:
             endurance_cycles.setdefault((file.sample_key, file.capacitor.label), set()).add(
                 file.cycles_tag
             )
-    return [(run, _resolved_state(run, endurance_cycles)) for run in runs]
+    return [
+        (run, _resolved_state(run, runs_per_file[run.source.file.path], endurance_cycles))
+        for run in runs
+    ]
 
 
 def group_runs(runs: Iterable[Run]) -> list[CapacitorRuns]:
@@ -332,8 +343,8 @@ def group_runs(runs: Iterable[Run]) -> list[CapacitorRuns]:
     return records
 
 
-def _resolved_state(run: Run, endurance_cycles: dict) -> str:
-    state = run_state(run)
+def _resolved_state(run: Run, runs_in_file: int, endurance_cycles: dict) -> str:
+    state = run_state(run, runs_in_file)
     file = run.source.file
     if state.startswith("postappend"):
         tags = endurance_cycles.get((file.sample_key, file.capacitor.label), set())
