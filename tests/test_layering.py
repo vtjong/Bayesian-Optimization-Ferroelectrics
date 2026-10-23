@@ -24,6 +24,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 
 FORWARD = "physics"  # turns a condition into a predicted outcome
 LEARNER = "active_learning"  # chooses what to fire next
+ELECTRICAL = "electrical"  # reduces instrument exports to features; knows nothing of the campaign
 
 
 def _module_name(path: Path) -> str:
@@ -111,3 +112,10 @@ def test_the_guard_would_notice_a_violation():
     assert {d for d in _closure("campaign.reporting") if d.split(".")[0] == FORWARD}, (
         "campaign.reporting should reach the physics; labelling a boundary is its whole job"
     )
+
+
+@pytest.mark.parametrize("module", _modules_in(ELECTRICAL))
+def test_the_feature_pipeline_depends_on_nothing_else_in_src(module):
+    """Electrical features are measurements; a thermal model or a surrogate has no place in them."""
+    leaked = {d for d in _closure(module) if d.split(".")[0] in (FORWARD, LEARNER, "campaign")}
+    assert not leaked, f"{module} reaches {sorted(leaked)}; the feature pipeline must stand alone"
