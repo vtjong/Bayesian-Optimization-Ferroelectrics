@@ -15,7 +15,7 @@ import pandas as pd
 
 from electrical import locate, workbook
 from electrical.aggregate import add_derived, per_sample
-from electrical.capacitor import CAPACITOR_KEY, CapacitorRecord, capacitor_table
+from electrical.capacitor import CapacitorRecord, capacitor_table
 from electrical.device import area_cm2
 from electrical.endurance import endurance_features
 from electrical.issues import (
@@ -193,25 +193,6 @@ def _reduce(reduce, run, issues: list, where: dict):
             )
         )
         return None, None
-
-
-def merge_into_campaign(path: Path, capacitors: pd.DataFrame) -> pd.DataFrame:
-    """Replace this round's rows in the cross-round table and write it back.
-
-    :param path: The campaign CSV; created if absent.
-    :param capacitors: This round's per-capacitor rows.
-    :return: The merged table.
-    """
-    merged = capacitors
-    if path.exists():
-        old = pd.read_csv(path)
-        old = old[
-            ~old.set_index(CAPACITOR_KEY).index.isin(capacitors.set_index(CAPACITOR_KEY).index)
-        ]
-        merged = pd.concat([old, capacitors], ignore_index=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_csv(path, index=False)
-    return merged
 
 
 def describe_round(result: RoundResult) -> str:

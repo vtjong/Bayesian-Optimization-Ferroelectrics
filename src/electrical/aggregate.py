@@ -96,6 +96,8 @@ SWITCHING_ONLY_FEATURES = (
     "endurance_cycles_half_wakeup",
     "endurance_cycles_at_max",
 )
+#: Ratios added to the per-capacitor table, defined on switching capacitors only.
+DERIVED_COLUMNS = ("psw_over_pr", "psw_inst_over_pr")
 SAMPLE_IDENTITY_COLUMNS = ("round", "sample", "sample_key", "sample_num", "state")
 SAMPLE_COUNT_COLUMNS = ("n_capacitors", "n_switching", "frac_switching", "n_errors")
 SAMPLE_SHAPE_COLUMNS = ("pr_grad_row", "pr_grad_col", "pr_rel_sd", "inhomogeneous")
