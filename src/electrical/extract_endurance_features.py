@@ -1,8 +1,9 @@
 """Extract wake-up and fatigue features from one endurance log.
 
 The log is one row per cycle count (0, 1, 8, 52, ... 1e6) with the instrument's ramp-only P,
-U, N, D charges, so its Psw is the definition behind the group's sheet and the cycle-0 row
-should agree with the pristine PUND run's ``psw_inst``.
+U, N, D charges. Psw here is P - U per area, the definition behind the group's summary sheet
+and the endurance plots their script draws, so the cycle-0 row should agree with the pristine
+PUND run's ``psw_inst``. The negative-pulse value -(N - D) is kept beside it on the curve.
 """
 
 from __future__ import annotations
@@ -47,12 +48,11 @@ class EnduranceFeatures:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EnduranceCurve:
-    """Psw against cycle count, uC/cm^2."""
+    """Psw against cycle count, uC/cm^2: P - U, and -(N - D) beside it."""
 
     cycles: np.ndarray
-    psw_pos_uc_cm2: np.ndarray
-    psw_neg_uc_cm2: np.ndarray
     psw_uc_cm2: np.ndarray
+    psw_neg_uc_cm2: np.ndarray
 
     def to_frame(self, round_label, sample: str, capacitor: str) -> pd.DataFrame:
         """Return the curve as rows of ``endurance_curves.csv``."""
@@ -62,9 +62,8 @@ class EnduranceCurve:
                 "sample": sample,
                 "cap": capacitor,
                 "cycles": self.cycles,
-                "psw_pos_uc_cm2": self.psw_pos_uc_cm2,
-                "psw_neg_uc_cm2": self.psw_neg_uc_cm2,
                 "psw_uc_cm2": self.psw_uc_cm2,
+                "psw_neg_uc_cm2": self.psw_neg_uc_cm2,
             }
         )
 
@@ -74,12 +73,10 @@ def extract_endurance_features(log: EnduranceLog) -> tuple[EnduranceFeatures, En
     scale = uc_cm2_per_coulomb(area_cm2(log.source.file.side_um))
     ok = np.isfinite(log.cycles) & np.isfinite(log.p_c) & np.isfinite(log.u_c)
     cycles = log.cycles[ok]
-    psw_pos, psw_neg, psw = switched_polarization(
+    psw, psw_neg, _ = switched_polarization(
         log.p_c[ok], log.u_c[ok], log.n_c[ok], log.d_c[ok], scale
     )
-    curve = EnduranceCurve(
-        cycles=cycles, psw_pos_uc_cm2=psw_pos, psw_neg_uc_cm2=psw_neg, psw_uc_cm2=psw
-    )
+    curve = EnduranceCurve(cycles=cycles, psw_uc_cm2=psw, psw_neg_uc_cm2=psw_neg)
     n = len(cycles)
     if n < 2:
         issue = error(
@@ -114,6 +111,6 @@ def extract_endurance_features(log: EnduranceLog) -> tuple[EnduranceFeatures, En
         fatigue_ratio=last / best if abs(best) > WAKEUP_MIN_PSW_UC_CM2 else np.nan,
         psw_gain_uc_cm2=last - first,
         cycles_half_wakeup=cycles_half,
-        psw_asym_final_uc_cm2=float(psw_pos[-1] - psw_neg[-1]),
+        psw_asym_final_uc_cm2=float(psw[-1] - psw_neg[-1]),
     )
     return features, curve

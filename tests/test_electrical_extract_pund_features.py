@@ -1,15 +1,22 @@
-"""Pulse finding, the Psw definition and the three O / T split rules, on synthetic signals."""
+"""Pulse finding, the Psw definition, the split window and rules, and the group's scripts."""
 
 import numpy as np
 import pytest
+from scipy.signal import savgol_filter
 
 from electrical.extract_pund_features import (
     PulseLabel,
     SplitRule,
+    extract_pund_features,
+    programmed_ramp,
+    read_pulse_timing,
     segment_pulses,
     split_ramp,
     switched_polarization,
 )
+from electrical.find_measurement_files import parse_file_name
+from electrical.read_measurement_runs import read_runs
+from paths import round_raw_dir
 
 AREA_CM2 = 9.0e-6
 DT_S = 5e-9
@@ -62,12 +69,11 @@ class TestPulseFinding:
     def test_ramp_and_plateau_are_located_on_the_waveform(self):
         # The pulse starts where |V| crosses the threshold (0.05 us up a 3 V / 1 us ramp) and the
         # ramp ends where |V| reaches 95 % of the peak, so the detected rise is 0.9 us and the
-        # plateau runs between the two 95 % points; the full nominal ramp is recovered from it.
+        # plateau runs between the two 95 % points. The splits use the programmed ramp instead.
         t, v = trapezoid_train((1, 1, -1, -1))
         p = segment_pulses(v)[0]
         assert t[p.i_ramp_end] - t[p.i_start] == pytest.approx(0.90e-6, abs=2 * DT_S)
         assert t[p.i_plateau_end] - t[p.i_ramp_end] == pytest.approx(1.10e-6, abs=3 * DT_S)
-        assert p.ramp.stop - p.ramp.start == pytest.approx(0.90e-6 / 0.95 / DT_S + 1, abs=2)
 
 
 class TestSplitRules:
@@ -98,3 +104,57 @@ class TestSplitRules:
     def test_a_too_short_ramp_falls_back(self):
         t, current = synthetic_n_ramp()
         assert not split_ramp(current[:5], t[:5], -1, DT_S, SplitRule.DIP, AREA_CM2).found
+
+
+class TestProgrammedTiming:
+    def test_the_n_ramp_of_a_pund_run_is_nine_to_ten_microseconds(self):
+        t = np.arange(3400) * DT_S
+        timing = read_pulse_timing({"td": "1e-6", "trf": "1e-6", "tp": "1e-6"})
+        ramp = programmed_ramp(2, timing, t, DT_S)
+        assert (t[ramp.start], t[ramp.stop - 1]) == pytest.approx((9.0e-6, 9.995e-6))
+
+    def test_missing_timing_is_reported_as_absent(self):
+        assert read_pulse_timing({"td": "1e-6", "tp": "1e-6"}) is None
+
+
+def _matlab_peak_split(t: np.ndarray, current: np.ndarray, rule: str) -> tuple[float, float]:
+    """The group's PeakSplit_dIdt_smoothed_crossover_loop.m and PeakSplit_dIdt_linear_loop.m,
+    line by line: the raw current over indices 1800:2000, absolute time windows."""
+    t, i = t[1799:2000], current[1799:2000]
+    if rule == "crossover":
+        s = savgol_filter(i, 41, 3)
+        g = np.gradient(s, t)
+        k = np.flatnonzero((g[:-1] > 0) & (g[1:] <= 0))
+        crossings = t[k] - g[k] * (t[k + 1] - t[k]) / (g[k + 1] - g[k])
+        crossings = crossings[(crossings >= 9.5e-6) & (crossings <= 9.7e-6)]
+        separation = crossings[np.argmax(np.interp(crossings, t, s))]
+    else:
+        s = savgol_filter(i, 21, 3)
+        g = np.gradient(s, t)
+        rising, falling = (t >= 9.3e-6) & (t <= 9.5e-6), (t >= 9.7e-6) & (t <= 9.9e-6)
+        ka = np.flatnonzero(rising)[np.argmax(g[rising])]
+        kb = np.flatnonzero(falling)[np.argmin(g[falling])]
+        separation = t[kb] - g[kb] / ((g[ka] - g[kb]) / (t[ka] - t[kb]))
+    j = np.flatnonzero(t >= separation)[0]
+    a1, a2 = abs(np.trapezoid(i[: j + 1], t[: j + 1])), abs(np.trapezoid(i[j:], t[j:]))
+    return float(separation), a1 / (a1 + a2)
+
+
+@pytest.fixture(scope="module")
+def sample38_pristine_runs():
+    """Sample38 is the folder the group's peak-split scripts were found in."""
+    files = sorted((round_raw_dir(6) / "Sample38").glob("PUND_*.xls"))
+    return [read_runs(parse_file_name(path))[0] for path in files]
+
+
+@pytest.mark.parametrize("rule", ["crossover", "linear"])
+def test_our_split_rules_reproduce_the_groups_scripts_on_every_capacitor(
+    sample38_pristine_runs, rule
+):
+    for run in sample38_pristine_runs:
+        features, _ = extract_pund_features(run)
+        ours = features.splits[f"raw_n_{rule}"]
+        separation, fraction = _matlab_peak_split(run.time_s, run.current_a, rule)
+        assert ours.found
+        assert ours.fraction_main == pytest.approx(fraction, abs=0.002), run.source.file.path.name
+        assert ours.t_split_s == pytest.approx(separation, abs=DT_S), run.source.file.path.name

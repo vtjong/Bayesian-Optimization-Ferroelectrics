@@ -4,11 +4,15 @@ The sweep is a single 0 -> +V1 -> 0 -> V2 -> 0 triangle from the pristine state,
 quarter starts from an unpoled film and the closed part of the loop is +V1 -> 0 -> V2 -> 0.
 ``Charge`` is the instrument's running integral of ``Imeas``.
 
-Two features reproduce the group's summary sheet: ``pr`` is the charge at V = 0 on the
-+V1 -> 0 branch measured from the loop centre (Qmax + Qmin) / 2, and ``kappa_summary`` is the
-slope of Q against V over 0.8-2.25 V on that branch, scaled by t / (eps0 A). On an imprinted
-loop the two V = 0 crossings differ, so ``pr_gap`` (half their separation) is carried beside
-``pr`` for comparison with the switched charge.
+The group's definitions, confirmed against their summary sheet and the Q-V plots their script
+draws for every capacitor: ``pr`` is the charge at V = 0 on the +V1 -> 0 branch measured from
+the loop centre (Qmax + Qmin) / 2; ``ec_pos`` and ``ec_neg`` are the voltages where that
+centred charge crosses zero on the first 0 -> +V1 rise and on the +V1 -> V2 fall; and
+``kappa_summary`` is the slope of Q against V over 0.8-2.25 V on the +V1 -> 0 branch, scaled
+by t / (eps0 A). On the pristine run the first rise starts from the as-deposited film, so
+``ec_pos`` there is not the mirror of ``ec_neg``. On an imprinted loop the two V = 0 crossings
+differ, so ``pr_gap`` (half their separation) is carried beside ``pr`` for comparison with
+the switched charge.
 """
 
 from __future__ import annotations
@@ -65,10 +69,17 @@ class Remanence:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class NegativeHalfLoop:
-    """The closed negative half-loop: coercive voltage, opening and pinching."""
+class CoerciveVoltage:
+    """Voltages where the centred charge crosses zero: on the first rise and on the fall."""
 
+    ec_pos_v: float
     ec_neg_v: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NegativeHalfLoop:
+    """The closed negative half-loop: opening and pinching."""
+
     loop_width_at_zero_uc_cm2: float
     loop_width_max_uc_cm2: float
     pinching_index: float
@@ -93,6 +104,7 @@ class PvFeatures:
 
     sweep: PvSweep
     remanence: Remanence | None = None
+    coercive: CoerciveVoltage | None = None
     half_loop: NegativeHalfLoop | None = None
     dielectric: PvDielectric | None = None
     issues: tuple[Issue, ...] = ()
@@ -196,8 +208,11 @@ def extract_pv_features(run: PvRun) -> tuple[PvFeatures, PvTraces]:
     )  # vd falls; interp needs rising
     qa_i = np.interp(grid, va, qa)
     opening = (qd_i - qa_i) * scale
-    half_loop = NegativeHalfLoop(
+    coercive = CoerciveVoltage(
+        ec_pos_v=_value_at_crossing(q[rise1], v[rise1], q_centre),
         ec_neg_v=_value_at_crossing(q[fall], v[fall], q_centre),
+    )
+    half_loop = NegativeHalfLoop(
         loop_width_at_zero_uc_cm2=float(opening[-1]),
         loop_width_max_uc_cm2=float(opening.max()),
         pinching_index=float(1.0 - opening[-1] / opening.max()) if opening.max() > 0 else np.nan,
@@ -221,6 +236,7 @@ def extract_pv_features(run: PvRun) -> tuple[PvFeatures, PvTraces]:
     features = PvFeatures(
         sweep=PvSweep(**sweep, q_centre_c=q_centre, q_end_c=float(q[-1]), i_offset_a=i_offset),
         remanence=remanence,
+        coercive=coercive,
         half_loop=half_loop,
         dielectric=dielectric,
     )

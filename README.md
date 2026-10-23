@@ -134,6 +134,13 @@ Round-2 sample by `tests/test_electrical_round2.py`:
 | `Pristine_Psw` | instrument (P − U)/A, rising-ramp integration only | `psw_inst_uc_cm2` |
 | `Pristine_Pr` | [Q(V = 0 on the +3 → 0 branch) − (Qmax + Qmin)/2] / A | `pr_uc_cm2` |
 | `Pristine_Kappa` | slope of Q against V over 0.8–2.25 V on the +3 → 0 branch × t/(ε₀A) | `kappa_summary` |
+| `Pristine_Ec_Pos`, `Pristine_Ec_Neg` (`ML_Summary.xlsx`) | V where the centred charge crosses zero on the first 0 → +3 rise, and on the +3 → −3 fall | `ec_pos_v`, `ec_neg_v` |
+
+The Ec definitions are confirmed against the dotted lines the group's script draws on its Q–V plots
+(`Analysis_Plots/PV_RxCy.png`), not against a table: their Ec values exist only for Round 1, whose
+raw files we do not have. Where the centred charge never crosses zero on the first rise (a few
+linear, non-switching films) `ec_pos_v` is left empty; the group's script reports a value there by
+a rule we have not seen.
 
 Column names carry their unit (`_uc_cm2`, `_v`, `_s`, `_a_cm2`, `_c`); the remaining columns are
 dimensionless. Names used in the earlier prototype and handoff map as follows.
@@ -146,14 +153,18 @@ dimensionless. Names used in the earlier prototype and handoff map as follows.
 | `Pr`, `Pr_summary` | `pr_uc_cm2` | the sheet's Pr, a single centred crossing |
 | `Pr_gap` | `pr_gap_uc_cm2` | half the V = 0 gap between the two branches; offset-free, for comparison with Psw on imprinted loops |
 | `QO_frac_rawN`, `t_split_rawN_s` | `split_raw_n_dip_fraction_main`, `split_raw_n_dip_t_split_s` | O / T partition of the raw N ramp, dip rule (Round-1 slide) |
-| — | `split_raw_n_crossover_*`, `split_raw_n_linear_*` | the same partition under the group's two MATLAB rules (`PeakSplit_dIdt_*.m`) |
+| — | `split_raw_n_crossover_*`, `split_raw_n_linear_*` | the same partition under the group's two MATLAB rules (`PeakSplit_dIdt_*.m`); reproduces their scripts on every Round-6 capacitor |
+
+Every split works on the N ramp as programmed, 9.0 to 10.0 µs from the `td`, `trf` and `tp` in
+the Settings sheet, as the group's scripts and the Round-1 slide do. The measured voltage lags the
+programmed waveform by about 20 ns, so a window detected from V(t) would not match theirs.
 | `QO_frac_sub_neg`, `QO_frac_sub_pos` | `split_sub_n_dip_*`, `split_sub_p_dip_*` | partition of the U/D-subtracted switching currents |
 | `Vc_pos`, `Vc_neg`, `imprint_PUND`, `Vc_mean` | `peak_pos_coercive_v`, `peak_neg_coercive_v`, `imprint_v`, `vc_mean_v` | voltage at the switching-current peak on each polarity |
 | `J_leak_A_cm2` | `j_leak_a_cm2` | median current over the tail of the U and D plateaus |
 | `kappa_PUND` | `kappa_pund` | permittivity from the U / D ramp displacement current; reads high on switching films, use `kappa_summary` there |
 | `kappa0`, `dkappa_rel` | `kappa0`, `dkappa_rel` | zero-field slope and its change with field |
-| `Ec_neg`, `pinching_index` | `ec_neg_v`, `pinching_index` | the closed negative half-loop |
-| `wake_ratio`, `fatigue_ratio`, `cycles_half_wakeup` | `endurance_wake_ratio`, `endurance_fatigue_ratio`, `endurance_cycles_half_wakeup` | from the endurance log, attached to the pristine row |
+| `Ec_neg`, `pinching_index` | `ec_neg_v`, `pinching_index` | Ec⁻ above; pinching on the closed negative half-loop |
+| `wake_ratio`, `fatigue_ratio`, `cycles_half_wakeup` | `endurance_wake_ratio`, `endurance_fatigue_ratio`, `endurance_cycles_half_wakeup` | from the endurance log, attached to the pristine row; Psw there is the instrument's P − U, as on the group's endurance plots |
 
 Findings (a missing P–V run, a hand-typed file name, a split rule that found no shoulder) travel
 on the row they concern in the `issues` column; `has_error` marks rows whose values are lost.

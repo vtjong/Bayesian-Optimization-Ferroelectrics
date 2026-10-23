@@ -50,6 +50,7 @@ class IssueCode(Enum):
     SWEEP_NOT_POSITIVE_FIRST = "sweep_not_positive_first"
     ENDURANCE_TOO_SHORT = "endurance_too_short"
     SPLIT_NOT_FOUND = "split_not_found"
+    TIMING_NOT_IN_SETTINGS = "timing_not_in_settings"
     FEATURE_FAILURE = "feature_failure"
 
 

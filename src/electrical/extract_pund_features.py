@@ -9,8 +9,9 @@ Charges are magnitudes in uC/cm^2 unless the name says otherwise; voltages keep 
 On a switching film the N-ramp current has a main peak and a late shoulder, and the charge on
 either side of the split between them is the O / T partition the correlation study asks for.
 Three split rules are reported side by side: the dip rule behind the Round-1 summary slide and
-the two rules in the group's MATLAB scripts (``PeakSplit_dIdt_*.m``), whose time windows are
-expressed here relative to the start of the ramp.
+the two rules in the group's MATLAB scripts (``PeakSplit_dIdt_*.m``). All three work on the
+ramp as the instrument programmed it (9.0 to 10.0 us for the N pulse), the window the scripts
+and the slide use; the scripts' time windows are expressed relative to the start of that ramp.
 """
 
 from __future__ import annotations
@@ -115,12 +116,6 @@ class Pulse:
     @property
     def whole(self) -> slice:
         return slice(self.i_start, self.i_end + 1)
-
-    @property
-    def ramp(self) -> slice:
-        """The full nominal ramp, extended from the plateau-onset estimate to the peak voltage."""
-        n = int(round((self.i_ramp_end - self.i_start) / PLATEAU_FRACTION))
-        return slice(self.i_start, min(self.i_start + n, self.i_plateau_end) + 1)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -320,6 +315,37 @@ def segment_pulses(voltage_v: np.ndarray) -> tuple[Pulse, ...]:
     else:
         labels = [PulseLabel.UNKNOWN] * len(located)
     return tuple(Pulse(label=label, **p) for label, p in zip(labels, located))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PulseTiming:
+    """The PUND waveform as programmed: delay before and between pulses, ramp time, plateau."""
+
+    delay_s: float
+    ramp_s: float
+    plateau_s: float
+
+
+def read_pulse_timing(inputs: Mapping[str, str]) -> PulseTiming | None:
+    """Read ``td``, ``trf`` and ``tp`` from a run's Settings inputs; ``None`` if any is missing."""
+    try:
+        return PulseTiming(
+            delay_s=float(inputs["td"]), ramp_s=float(inputs["trf"]), plateau_s=float(inputs["tp"])
+        )
+    except (KeyError, ValueError):
+        return None
+
+
+def programmed_ramp(order: int, timing: PulseTiming, t: np.ndarray, dt: float) -> slice:
+    """Return the samples of the ``order``-th pulse's rising ramp as the instrument programmed it.
+
+    Pulse k starts at td + k (2 trf + tp + td) and ramps for trf, so the N ramp of a PUND run
+    is 9.0 to 10.0 us. The measured voltage lags this by about 20 ns; the group's scripts and the
+    Round-1 summary slide use the programmed window, and so does every split here.
+    """
+    start = timing.delay_s + order * (2 * timing.ramp_s + timing.plateau_s + timing.delay_s)
+    inside = np.flatnonzero((t >= start - dt / 2) & (t < start + timing.ramp_s - dt / 2))
+    return slice(int(inside[0]), int(inside[-1]) + 1)
 
 
 def split_ramp(
@@ -566,10 +592,27 @@ def extract_pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
         vc_mean_v=0.5 * (peak_pos.coercive_v - peak_neg.coercive_v),
     )
 
+    timing = read_pulse_timing(run.source.settings.inputs)
+
+    def ramp(pulse: Pulse) -> slice:
+        if timing is None:
+            return pulse.rise
+        return programmed_ramp(pulses.index(pulse), timing, t, dt)
+
+    def ramp_minus(a: Pulse, b: Pulse) -> tuple[np.ndarray, slice]:
+        """The ramp of ``a`` with the same samples of ``b``'s ramp subtracted."""
+        ra, rb = ramp(a), ramp(b)
+        count = min(ra.stop - ra.start, rb.stop - rb.start)
+        ra = slice(ra.start, ra.start + count)
+        return corrected[ra] - corrected[rb.start : rb.start + count], ra
+
+    n_ramp = ramp(n)
+    sub_n, sub_n_ramp = ramp_minus(n, d)
+    sub_p, sub_p_ramp = ramp_minus(p, u)
     ramps = {
-        "raw_n": (current[n.ramp], t[n.ramp], -1),
-        "sub_n": (isw_neg[: n.ramp.stop - n.ramp.start], t[n.ramp], -1),
-        "sub_p": (isw_pos[: p.ramp.stop - p.ramp.start], t[p.ramp], 1),
+        "raw_n": (current[n_ramp], t[n_ramp], -1),
+        "sub_n": (sub_n, t[sub_n_ramp], -1),
+        "sub_p": (sub_p, t[sub_p_ramp], 1),
     }
     splits = {
         f"{ramp}_{rule.value}": split_ramp(*ramps[ramp], dt, rule, area)
@@ -578,6 +621,14 @@ def extract_pund_features(run: PundRun) -> tuple[PundFeatures, PundTraces]:
     }
 
     issues = []
+    if timing is None:
+        issues.append(
+            warning(
+                IssueCode.TIMING_NOT_IN_SETTINGS,
+                "td, trf or tp missing from Settings; the split uses the detected ramp",
+                **where,
+            )
+        )
     if polarization.switching and not splits["raw_n_dip"].found:
         issues.append(
             warning(

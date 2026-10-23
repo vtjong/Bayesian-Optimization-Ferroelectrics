@@ -6,8 +6,9 @@ and the order of the blocks in the ``flatten_*`` functions below is the order of
 ``CAPACITOR_COLUMNS`` is that layout with every block empty.
 
 The per-sample table reduces each sample and state to mean, sd, n, median and MAD per feature.
-Features that only mean something on a switching capacitor (coercive voltages, the O / T split,
-wake-up) are averaged over the switching capacitors alone.
+Features that only mean something on a switching capacitor (PUND switching-peak voltages, the
+O / T split, wake-up) are averaged over the switching capacitors alone. The P-V coercive
+voltages are averaged over every capacitor, as the group's summary does.
 
 The campaign table holds every round's per-capacitor rows and is what the correlation study
 reads. A rerun round replaces its own rows, and the file is written atomically.
@@ -38,6 +39,7 @@ from electrical.extract_pund_features import (
     SwitchingPeak,
 )
 from electrical.extract_pv_features import (
+    CoerciveVoltage,
     NegativeHalfLoop,
     PvDielectric,
     PvFeatures,
@@ -126,6 +128,7 @@ def flatten_pv_features(f: PvFeatures | None) -> dict[str, object]:
     row = {}
     row |= _record_columns("", PvSweep, f and f.sweep)
     row |= _record_columns("", Remanence, f and f.remanence)
+    row |= _record_columns("", CoerciveVoltage, f and f.coercive)
     row |= _record_columns("", NegativeHalfLoop, f and f.half_loop)
     row |= _record_columns("", PvDielectric, f and f.dielectric)
     return row
@@ -237,6 +240,7 @@ HEADLINE_FEATURES = (
     "pr_gap_corrected_uc_cm2",
     "pmax_uc_cm2",
     "pmax_minus_pr_uc_cm2",
+    "ec_pos_v",
     "ec_neg_v",
     "pinching_index",
     "loop_width_at_zero_uc_cm2",
@@ -258,7 +262,6 @@ SWITCHING_ONLY_FEATURES = (
     "imprint_v",
     "peak_pos_t_peak_s",
     "peak_neg_t_peak_s",
-    "ec_neg_v",
     "pinching_index",
     *DERIVED_COLUMNS,
     "endurance_wake_ratio",

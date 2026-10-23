@@ -75,10 +75,10 @@ class TestTheGroupsSheetIsReproduced:
         s16 = capacitors[(capacitors["sample"] == "Sample16") & (capacitors["state"] == "pris")]
         assert len(s16) == 10 and s16["switching"].all()
         assert s16["split_raw_n_dip_found"].all()
-        assert s16["split_raw_n_dip_fraction_main"].between(0.59, 0.72).all()
-        assert s16["split_raw_n_crossover_fraction_main"].between(0.62, 0.72).all()
-        assert s16["split_raw_n_linear_fraction_main"].between(0.68, 0.80).all()
-        assert s16["endurance_wake_ratio"].between(1.7, 2.0).all()
+        assert s16["split_raw_n_dip_fraction_main"].between(0.60, 0.72).all()
+        assert s16["split_raw_n_crossover_fraction_main"].between(0.63, 0.73).all()
+        assert s16["split_raw_n_linear_fraction_main"].between(0.60, 0.70).all()
+        assert s16["endurance_wake_ratio"].between(1.8, 2.0).all()
         assert s16["endurance_fatigue_ratio"].between(0.95, 1.05).all()
 
 
@@ -96,7 +96,7 @@ class TestNothingIsSilentlyDropped:
         rel = (sw["endurance_psw_cycle0_uc_cm2"] - sw["psw_inst_uc_cm2"]).abs() / sw[
             "psw_inst_uc_cm2"
         ]
-        assert rel.max() < 0.15, rel.describe()
+        assert rel.max() < 0.12, rel.describe()
 
 
 class TestGoldenTables:
