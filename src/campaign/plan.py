@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from utils.file_io import write_csv
+
 # Plan CSV schema. These names are a data contract with the
 # ``campaign.results``; changing one invalidates sheets already in circulation.
 INDEX_COLUMN = "index"
@@ -156,12 +158,7 @@ def write_plan(path: Path, plan: pd.DataFrame) -> Path:
     :return: Path of the written plan.
     :raises FileExistsError: If the destination already exists.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("x", encoding="utf-8", newline="") as destination:
-        plan.to_csv(destination, index=False)
-
-    return path
+    return write_csv(path, plan)
 
 
 def describe_plan(
