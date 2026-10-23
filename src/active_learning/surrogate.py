@@ -165,8 +165,11 @@ class BoundarySurrogate:
 
     def _factorize(self, sigma_f: float, ells, sigma_n: float) -> None:
         """Fix hyperparameters and rebuild the Cholesky factorization."""
-        self._hypers = {"sigma_f": float(sigma_f), "ells": np.asarray(ells, float),
-                        "sigma_n": float(sigma_n)}
+        self._hypers = {
+            "sigma_f": float(sigma_f),
+            "ells": np.asarray(ells, float),
+            "sigma_n": float(sigma_n),
+        }
         self._mean = float(np.mean(self._y))
         centred = self._y - self._mean
         gram = matern52(self._x, self._x, sigma_f, ells)
@@ -187,9 +190,7 @@ class BoundarySurrogate:
             return -np.inf  # an invalid corner of hyperparameter space
         alpha = np.linalg.solve(chol.T, np.linalg.solve(chol, centred))
         return float(
-            -0.5 * centred @ alpha
-            - np.sum(np.log(np.diag(chol)))
-            - 0.5 * n * np.log(2.0 * np.pi)
+            -0.5 * centred @ alpha - np.sum(np.log(np.diag(chol))) - 0.5 * n * np.log(2.0 * np.pi)
         )
 
     def _log_prior(self, log_theta: np.ndarray) -> float:

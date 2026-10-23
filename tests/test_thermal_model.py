@@ -145,7 +145,7 @@ class TestModelSpread:
     """The reported temperature is a band across simulations, not a point.
 
     There is no measured peak temperature for this tool. A single number would state a precision
-    nothing supports, and the previous seed failed partly because one such number was trusted.
+    nothing supports.
     """
 
     def test_the_envelope_brackets_an_independent_third_simulation(self):
@@ -157,9 +157,7 @@ class TestModelSpread:
         """
         v = np.array([709, 655, 691, 572, 641, 674, 605, 626, 647, 669], float)
         t = np.array([2.8, 3.2, 3.6, 4.4, 4.9, 5.6, 5.9, 6.8, 8.7, 9.5])
-        third = np.array(
-            [561.3, 496.1, 577.9, 406.8, 533.6, 620.7, 505.0, 560.3, 626.1, 676.7]
-        )
+        third = np.array([561.3, 496.1, 577.9, 406.8, 533.6, 620.7, 505.0, 560.3, 626.1, 676.7])
         lo, hi = tmax_envelope(v, t)
         assert np.all((third >= lo) & (third <= hi)), (
             "the envelope no longer contains the independent simulation it was justified by"

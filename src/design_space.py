@@ -131,6 +131,7 @@ def min_separation(v: np.ndarray, t: np.ndarray) -> float:
     np.fill_diagonal(d, np.inf)
     return float(d.min())
 
+
 # Resolution of the dense mesh used to score a fitted boundary over the box. Not a design
 # parameter -- it only sets how finely a reported misclassified area is integrated. Named
 # MESH_* rather than GRID_* because GRID_V/GRID_T above are the table's own axes.

@@ -58,11 +58,11 @@ CONTROL_LIFT_SIGMAS = 3.0
 
 
 def _plans() -> list:
-    """Every plan CSV in the campaign, seed first, in the order they were fired."""
-    seed = DATA / "flash_plan_seed.csv"
+    """Every plan CSV in the campaign, initial design first, in the order they were fired."""
+    initial = DATA / "flash_plan_initial.csv"
     # exclude the results sheets, which share the prefix and would otherwise be read as plans
     later = sorted(p for p in DATA.glob("flash_plan_batch*.csv") if not p.stem.endswith("_results"))
-    return [p for p in [seed, *later] if p.exists()]
+    return [p for p in [initial, *later] if p.exists()]
 
 
 def _results_for(plan_path: Path) -> Path:
@@ -136,7 +136,7 @@ def _report_lift(y: np.ndarray, control: float) -> None:
     exceeded 0.002 and one that reached 1.000.
 
     WHAT WOULD RESOLVE IT: replicated conditions, or several control specimens. Either gives a
-    noise estimate that does not contain the signal. The seed as fired has neither, so this prints
+    noise estimate that does not contain the signal. The design as fired has neither, so this prints
     the numbers and leaves the judgement to a reader who knows what the readout does.
 
     :param y: readings from the fired conditions.
@@ -145,7 +145,7 @@ def _report_lift(y: np.ndarray, control: float) -> None:
     print("\n=== is any of this above an un-annealed film? ===")
     if control is None:
         print("  No as-deposited control measured, so there is no reference at all and the")
-        print("  question cannot be approached. Measure index 0 of the seed results sheet.")
+        print("  question cannot be approached. Measure index 0 of the results sheet.")
         return
     order = np.sort(y)
     print(f"  as-deposited control      {control:.4g}")
@@ -258,7 +258,7 @@ def main() -> int:
     for line in lines:
         print(line)
     if v.size == 0:
-        print("\nNothing measured yet. Fire the seed and fill in its results sheet.")
+        print("\nNothing measured yet. Fire the initial design and fill in its results sheet.")
         return 0
     print(f"  {v.size} fired conditions in total")
     if control is None:
@@ -288,8 +288,10 @@ def main() -> int:
     moved = _report_stability(gp, v, t, y, vv, tt)
 
     entropy = mean_boundary_entropy(gp, vv, tt)
-    print(f"\n=== convergence proxy ===\n  mean boundary entropy {entropy:.4f} nats "
-          f"(saturates at {np.log(2):.3f}; tolerance {ENTROPY_TOLERANCE})")
+    print(
+        f"\n=== convergence proxy ===\n  mean boundary entropy {entropy:.4f} nats "
+        f"(saturates at {np.log(2):.3f}; tolerance {ENTROPY_TOLERANCE})"
+    )
     settled = entropy < ENTROPY_TOLERANCE and np.isfinite(moved) and moved < STABILITY_TOLERANCE
     if settled:
         print("  Both the entropy proxy and the between-cycle movement are below tolerance.")
@@ -298,9 +300,7 @@ def main() -> int:
 
     if args.no_propose:
         return 0
-    bv, bt = select_batch(
-        gp, v, t, args.batch, T_LO, T_HI, args.acquisition, seed=args.seed
-    )
+    bv, bt = select_batch(gp, v, t, args.batch, T_LO, T_HI, args.acquisition, seed=args.seed)
     index = len(_plans())
     path = _write_batch(bv, bt, index)
     print(f"\n=== proposed next: {args.batch} conditions by {args.acquisition} ===")

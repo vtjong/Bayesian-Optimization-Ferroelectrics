@@ -35,66 +35,39 @@ zero fitted parameters. It depends on `τ` only through `τ/t`, so conduction �
 timescale — makes the effective dwell exactly proportional to the pulse width.
 
 **Nothing measured yet distinguishes these.** One digitized `T(τ)` at two pulse widths would, and
-costs no film. The seed design is built to be informative regardless of which is true.
+costs no film. The initial design is built to be informative regardless of which is true.
 
 ## Repository layout
 
 ```
-src/discovery/
-  constants.py    every number, grouped by the kind of claim it makes
-                  (physical / prior / shape / readout / numerical)
-  synthetic.py    measured Tmax table + the four pulse shapes + the thermal model
-  kinetics.py     the four boundary models, pinned to one onset anchor
-  picker.py       the active learner: GP, LSE/BALD/entropy acquisitions, batching
-src/
-  run_flash_plan.py     the seed design  -> data/flash_plan_seed.csv
-  run_seed_power.py     can the seed identify the tilt?
-  run_thermal_check.py  what the thermal model can and cannot be checked against
-  run_calibration.py    onset and readout calibration against archival data
-  run_picker_demo.py    acquisition comparison
-  run_batch_demo.py     batch-size study
-  run_seed_budget.py    seed/active split study
-tests/            pytest suite over the models and the seed design
-scripts/          shell wrappers; each emits PNGs under predictions/
+src/physics/          constants.py, thermal_model.py: the measured Tmax table and the cooling laws
+src/active_learning/  surrogate.py, acquisition.py: the GP and the level-set acquisition
+src/campaign/         plan.py, results.py, reporting.py: the fabrication plan and the sheet the lab fills
+src/design_space.py   the settable (V, t) box
+src/paths.py          where the measured data lives
+src/run_*.py          entry points; scripts/ holds their shell wrappers
+data/                 measured inputs and campaign records
+tests/                pytest suite
 ```
 
 ## Quick start
 
 ```bash
 ./setup_venv.sh && source venv/bin/activate
-./scripts/run_tests.sh          # 51 checks over the models and the design
-./scripts/run_flash_plan.sh     # regenerate the seed plan
-./scripts/run_seed_power.sh     # its acceptance test
+./scripts/run_tests.sh              # the suite
+./scripts/run_initial_design.sh     # the initial design plan and the sheet the lab fills in
+python src/run_campaign.py          # read results, fit, propose the next batch
 ```
 
-## The seed design
+## The initial design
 
-14 shots of an 80-shot budget. Rather than a uniform Latin hypercube over `(V, t)` — which is not
-uniform in the quantity that matters, since `Tmax` spans 82–563 °C while the transition is tens of
-degrees wide — the generator stratifies the **measured** quantity: LHS over `(Tmax, log t)`,
-inverted through the table to `(V, t)`.
-
-| block | n | purpose |
-|---|---|---|
-| A | 4 | iso-`Tmax` ladder: one peak temperature, four pulse widths. The tilt test. |
-| B | 7 | stratified core over `Tmax` ∈ [310, 490] °C, maximin against A. The GP's seed. |
-| E | 1 | amorphous floor anchor. |
-| D | +2 | replicates on separate specimens — the go/no-go on variables outside `(V, t)`. |
-
-Boundary-search conditions are restricted to `t ≥ 2.6 ms`: the table has no node below that, across
-which `Tmax` rises 374 °C *and* the surface maximum lies, so any `Tmax` quoted there is a spline
-artifact. Every condition is scored against all four hypotheses and the CSV records the spread
-rather than a single predicted label.
-
-Acceptance test (`run_seed_power.py`, calibrated heteroscedastic readout noise):
-
-```
-power to DETECT a tilt when one exists      : 98.7 %
-power to CONFIRM no tilt when there is none : 95.8 %
-```
-
-`diffusion` and `rect` separate only 50/50 — expected, they are ~1 °C apart and imply the same
-experimental conclusion.
+The first batch is a set of conditions chosen by the principal investigator, recorded in
+`data/flash_plan_initial.csv` with the reason for each condition and the simulated peak-temperature
+band attached for reading only. `run_initial_design.py` writes that plan and the blank results sheet
+once; `run_initial_design_results.py` validates the filled sheet (every row carries an explicit
+status, a blank is never read as zero) and reports coverage, as-fired drift and replicate contrast.
+From then on `run_campaign.py` reads the measured results, fits the surrogate and proposes the next
+batch in the same format.
 
 ## Method
 

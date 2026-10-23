@@ -18,13 +18,11 @@ Measured data is NOT here: the peak-temperature table is read from ``data/flash_
 so that file stays the single source of truth, and the paths to it live in ``paths.py``. Note that
 the table's VALUES are simulation output, not measurements -- see ``thermal_model``.
 
-ARCHIVAL NUMBERS HAVE BEEN REMOVED RATHER THAN MARKED. An earlier version of this file annotated
-quantities derived from the KHM005/KHM006 shots and the FE_HZCO RTA series as [ARCHIVAL] and warned
-that only some carry over. That warning was correct and was ignored: the transition prior built
-from those films drove a seed that returned ten crystallized specimens. Marking a number as
-untrustworthy does not stop it being used, so the untrustworthy ones are now simply absent.
+ARCHIVAL NUMBERS ARE ABSENT RATHER THAN MARKED. Quantities derived from the KHM005/KHM006 shots
+and the FE_HZCO RTA series describe different films on a different tool, and only some carry over.
+Marking a number as untrustworthy does not stop it being used, so the untrustworthy ones are not
+here at all.
 """
-
 
 # --- PHYSICAL ------------------------------------------------------------------------------
 KB_EV = 8.617333e-5  # Boltzmann constant (eV/K)
@@ -35,8 +33,7 @@ T_ROOM_C = 25.0  # ambient the film returns to between shots
 # with a 447 C midpoint, does not survive its own provenance: it came from six shots on the earlier
 # Sinteron at 2-3 kV rather than this tool, it was labelled by 2*Qsw, which measures ferroelectric
 # switching rather than crystallinity, and the temperatures assigned to those shots were computed by
-# the same CERA table the bracket was then used to vouch for. The seed fired against it returned ten
-# crystallized specimens at conditions the bracket put well below onset.
+# the same CERA table the bracket was then used to vouch for.
 #
 # What replaced it is a measurement rather than a prior: the lowest delivered fluence among the
 # pilot conditions observed to crystallize. That number lives with the pilot data, not here, because
